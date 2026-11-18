@@ -1,0 +1,141 @@
+# lib/gui: Windows 95-style GUI for the MEGA65
+
+`gui.asm` is a self-contained windowing toolkit for the 640x200, 256-colour Full Colour screen. It has
+overlapping windows with title bars, close boxes, dragging and a front-to-back order, plus buttons,
+labels, text boxes, password boxes, list boxes and text views, keyboard focus, and a two-sprite
+mouse pointer. Nothing in it
+is specific to MegaNet, so it can become a separate library later.
+
+## Needs
+
+`lib/fcm640.asm`, `lib/draw640.asm` (+ `lib/font8.asm`), `lib/dma.asm`, `lib/mouse.asm` (with
+`MOUSE_MAX_X = 639` defined before it), `lib/hwsprite.asm`, `lib/keyboard.asm`, and `lib/zp.asm`'s
+`txt_ptr`, `tmp6` and `ptr1`. It puts its text buffers in `.section bss`: the program needs a
+`.dsection bss`.
+
+## Use
+
+```
+        jsr gui_init                    ; after f640_init (it writes $D031, which resets sprites)
+        #GUI_WIN 1, 100, 40, 300, 100, GWF_CLOSE | GWF_MOVABLE, title
+        #GUI_GAD 1, 1, GK_LABEL, 8, 4, 80, 12, 0, 0, s_name
+        #GUI_GAD 1, 2, GK_TEXT, 96, 4, 180, 12, 0, 16, 0
+        #GUI_GAD 1, 3, GK_BUTTON, 100, 60, 80, 16, GGF_DEFAULT, 0, s_ok
+        jsr gui_redraw
+loop:   jsr wait_frame
+        jsr gui_update                  ; carry set: ge_type, ge_win, ge_gid, ge_key
+        bcc loop
+        ...
+```
+
+The routines and arguments are listed at the top of `gui.asm`. Window coordinates are the outer
+size on screen; gadget coordinates are inside the window's client area (`GUI_CLIENT_X/Y` from its top
+left corner).
+
+- **Colours:** palette entries 0-15 (`GC_*`). `gui_init` writes them. A program's art uses 16-254;
+  entry 255 shows the colour-RAM colour in FCM.
+- **Events:**
+  - `GE_CLICK`: a button released over itself, or RETURN for the front window's `GGF_DEFAULT` button.
+  - `GE_CLOSE`: the close box. The program decides whether to call `gui_win_close`.
+  - `GE_KEY`: a key no gadget used, with `ge_gid` = the focused gadget.
+  - `GE_SELECT`: a list row clicked. `ge_val` = the row; bit 15 is set for a double click (the
+    same row again within half a second).
+- **Lists and text views:**
+  - Each one gets an 8 KB block at `GUI_BIG_MEM` (default `$8200000`, attic), at most
+    `GUI_MAXBIG` (default 8) at a time.
+- **Limits** (`.weak`: define them before including `gui.asm` to change them):
+  - `GUI_MAXWIN` windows open at once (default 8);
+  - `GUI_MAXGAD` gadgets in all of them together (default 48, at most 127);
+  - `GUI_MAXBIG` lists, views, text areas and drop-downs (default 8, up to 255).
+  - When they run out, a window opens with gadgets missing, or not at all. MegaNet uses
+    12 / 80 / 16 (`client-src/main.asm`).
+  - A list holds 128 rows of up to 63 characters: set them with `gui_list_total` and
+    `gui_list_row`, then `gui_gad_redraw`.
+  - A text view keeps its last 64 lines of up to 63 characters. `gui_view_append` word-wraps a
+    line to the view's width and redraws it.
+- **Drawing waits for `gui_win_show`:** a window isn't drawn at all until `gui_win_show` says
+  it's complete. That includes full redraws, so a half-filled window never flashes up. Fill
+  its gadgets first, then show it once.
+- **Menu bar:** set `gui_menubar` = 1 to show a Windows 95-style bar across the top
+  (`GUI_MENU_H` = 11 rows); windows are then kept below it, both when opened and when dragged.
+  - Build the menus with `gui_menu_clear` and `gui_menu_add`: `gp_gid` = id, `gp_win` = parent
+    (0 for a title on the bar), `gp_text` = label, and `"-"` for a separator line.
+  - Click a title for its drop-down. The row under the pointer is lit, and clicking it gives
+    `GE_MENU` with `ge_val` = the id. Cursor up/down and RETURN also work; ESC or a click
+    elsewhere closes it.
+  - With `GUI_WINMENU` = 1 there's also a built-in **Window** menu at the end, listing the open
+    windows front first. Picking one brings it to the front; the program never sees that pick.
+  - Titles go across in the order they were added, then Window. Set `gui_menu_late` to an id
+    and the titles with ids from it to it + 15 go right of Window instead (0, the default:
+    none do).
+- **Toast:** `gui_toast` (`txt_ptr` = text, A = seconds, X = a notification slot or `$ff`)
+  shows a short line in a yellow box at the bottom right of the screen, over everything. It
+  takes no keys and doesn't change which window is in front. It goes after the given seconds
+  or when clicked; with a slot, the click gives `GE_NOTIFY` for that slot, as if the icon were
+  clicked. A new toast replaces the old one.
+- **Buttons that need text:** a button with `GGF_NEEDTEXT` and `gg_val` = a text box's id
+  (MegaNet: `S.SET_VALUE` on the button) is greyed while that box is empty, and comes back
+  as soon as something is typed, with no round trip to the server.
+- **Minimize:** a window with `GWF_MIN` (8) has a minimize box left of its close box.
+  - Clicking it shrinks the window to its title bar (156 wide) in a row along the bottom of
+    the screen, at y `GUI_MIN_Y` (168), one row above the toast. There are 4 places
+    across (`GUI_MIN_COLS`, `.weak`); when a row is full they go on the row above.
+  - The bar has a restore box and the close X. Minimized windows stay behind every other
+    window (clicking one doesn't bring it forward), so the next window gets the front.
+    Their gadgets aren't drawn and take no clicks or keys, but they still take updates.
+  - Restore (the box, or the window's name in the Window menu) puts it back where it was,
+    in front. A program opening the window again (`gui_win_open`) restores it too while
+    `gui_open_restore` is 1 (the default). With 0 it stays minimized and only the place it
+    restores to changes. MegaNet sets it to 1 for half a second after the server answers a
+    click, so a window the user asked for comes back and a refresh doesn't pop one up.
+  - It's all in the GUI: the program isn't told.
+- **Busy:** `gui_busy` with A = 1 turns the pointer into an hourglass, and `gui_update` then
+  ignores clicks and keys; the pointer still moves. A = 0 brings back the arrow. Use it while
+  waiting for something such as a server's answer.
+- **Notification icons:** `gui_notify` (A = slot 0-4, X = icon) puts a small button at the
+  right end of the menu bar. They are packed from the right: the shown icon with the lowest
+  slot is rightmost, and empty slots leave no gap. Icon 1 is an alert that flashes red twice
+  a second, icon 2 an envelope, icon 3 a Wi-Fi fan (connected), icon 4 the fan greyed with a
+  red X (not connected), icon 5 a person (a black pawn), icon 6 a speech bubble, and 0
+  removes it. There are 6 slots (0-5). A click gives `GE_NOTIFY` with `ge_val` = the
+  slot.
+- **Scroll bars:** every list and text view has a Windows 95 scroll bar on its right, 11 pixels
+  wide.
+  - The arrows scroll a row and the track a page. The thumb shows how much is visible
+    (dragging it isn't done yet), and the arrows are grey when everything fits.
+  - A text view that's scrolled to the bottom stays there as lines arrive. One filled before
+    its window is shown opens at the top.
+- **Dragging windows:** press on a title bar and move. Four yellow corner brackets, hardware
+  sprites `GUI_FRAME_SPR` to `+3` (default 2-5), follow the pointer and show where the window
+  will land. They cost no drawing at all. On release the brackets go and the window is drawn
+  once at its new place, kept on the screen and below the menu bar. The pointer uses sprites
+  `GUI_PTR_SPR` and `+1` (0-1), so a program has sprites 6 and 7 free.
+- **Desktop:** `gui_desk_hook` = a routine that draws the backdrop, or 0 for a plain `GUI_DESK` fill.
+- **Typing:** the focused text box takes printable keys, DEL, cursor left/right and HOME. TAB moves to
+  the window's next text box. Clicking puts the cursor where you clicked.
+- **Tests:**
+  - Mouse events: write `type, x lo, x hi, y` quads to `gui_dbg_ev` and the count to `gui_dbg_evn`
+    (`EV_DOWN` = 2, `EV_UP` = 3).
+  - Keys: write them to `keyboard.asm`'s `dbg_keys` / `dbg_klen`. Set `dbg_klen` to 0 before
+    rewriting `dbg_keys` and `dbg_kpos`, or the old keys play again.
+
+## Look
+
+The shapes and colours follow Windows 95:
+- grey faces and two-layer bevels (white/light grey top-left, black/dark grey bottom-right);
+- sunken white text boxes;
+- a navy title bar with bold white text (grey when the window isn't in front);
+- an extra black border on the default button;
+- an etched look for disabled buttons.
+
+The 640x200 pixel is twice as tall as it is wide, so a one-pixel horizontal line is as thick as a
+two-pixel vertical one. The pointer is a black outline sprite over a white fill sprite.
+
+## Not yet
+
+These are listed in the project's `TODO.md`:
+- dragging a scroll bar's thumb, and holding an arrow to repeat;
+- check boxes, radio buttons and progress bars;
+- a toolbar of small icon buttons under the menu bar;
+- maximize and resize (with gadgets anchored to the edges);
+- a dragging outline, focus rectangles and a proportional font.

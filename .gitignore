@@ -1,0 +1,14 @@
+*.lbl
+*.lst
+*.d81
+target/
+# generated on every build by tools/build_assets.py
+src/gen/
+client-src/gen/
+# Python caches; the server's live database (users, passwords, messages)
+__pycache__/
+*.pyc
+server-src/data/
+.claude/settings.local.json
+# Personal notes, examples, non-build tools, temp data, the MEGA65 book: never published
+private/
