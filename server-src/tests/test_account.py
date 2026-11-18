@@ -87,7 +87,7 @@ class AccountTest(PagesBase):
         g = win.gadgets
         labels = [g[i] for i in sorted(g) if g[i]["kind"] == Kind.LABEL]
         names = ["Username:", "First Name:", "Last Name:", "Email Address:", "Location:",
-                 "Birthdate:", "About Me:", "Last Login:"]
+                 "Birthdate:", "About Me:", "Last Login:", "Karma Points:"]
         col = [lab for lab in labels if lab["text"] in names]
         self.assertEqual([lab["text"] for lab in col], names)
         self.assertEqual({lab["box"][0] for lab in col}, {LABEL_X}, "one label column")
@@ -95,8 +95,12 @@ class AccountTest(PagesBase):
         self.assertEqual(FIELD_X, LABEL_X + widest + 8, "8 px after the longest label")
         ys = [lab["box"][1] for lab in col]
         gaps = [b - a for a, b in zip(ys, ys[1:])]
-        self.assertEqual(gaps[:6], [15] * 6, "even rows")
-        self.assertEqual(gaps[6], 30 + 3, "About Me is 30 high, then the gap")
+        self.assertEqual(gaps[:6], [14] * 6, "even rows")
+        self.assertEqual(gaps[6], 30 + 1, "About Me is 30 high, then the gap")
+        self.assertEqual(gaps[7], 14, "Karma Points under Last Login")
+        karma_box = next(lab for lab in labels if lab["box"][1] == ys[8] and
+                         lab["box"][0] == FIELD_X)
+        self.assertEqual(karma_box["text"], "%d (Low)" % self.server.db.user("bob")["karma"])
         # The role is beside the username; first and last names are empty boxes to start.
         role = g[win.find("Role: %s" % self.server.db.user("bob")["role"])]["box"]
         self.assertEqual(role[1], ys[0])
@@ -142,7 +146,7 @@ class AccountTest(PagesBase):
         self.assertEqual(g[win.find("OK")]["flags"] & 1, 1, "OK is the default")
         status = g[gadget_of(win, Kind.LABEL, -1)]["box"]
         self.assertLessEqual(status[1] + status[3], cancel[1], "status above the buttons")
-        self.assertGreater(status[1], ys[-1] + 10, "below Last Login")
+        self.assertGreaterEqual(status[1], ys[-1] + 10, "below Karma Points, not over it")
         self.assertGreaterEqual(status[2] // 8, len(PARTIAL), "room for the messages")
         win.find("This is your first sign-on.")
 

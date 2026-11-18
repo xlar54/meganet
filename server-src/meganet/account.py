@@ -4,7 +4,8 @@ protocol.MENU_MY_ACCOUNT), and the Reset Password dialog.
     9  = My Account: Username (and the Role beside it), First Name and Last Name (required),
          Email Address, Location (63-character text boxes that scroll), Birthdate (Month / Day /
          Year drop-downs, "--" = not set), About Me (an EDIT text area, up to db.ABOUT_LINES
-         lines), Last Login (the sign-on before this one); a status line; Reset Password at the bottom left, OK (default) and Cancel at the
+         lines), Last Login (the sign-on before this one), Karma Points (karma.describe:
+         "42 (OK)", shown, not edited); a status line; Reset Password at the bottom left, OK (default) and Cancel at the
          bottom right
     19 = Reset Password (modal): Current password, New password, Confirm; OK, Cancel
 
@@ -18,6 +19,7 @@ import textwrap
 import time
 
 from . import db as dbmod
+from . import karma
 from .protocol import WFlag, GFlag, clean_text
 from .ui import add_buttons, closer, Window, Button, Label, TextBox, Password, DropDown, TextArea
 
@@ -30,7 +32,8 @@ FIELD_W = 260                    # text boxes show 32 of their 63 characters and
                                  # About Me lines are (260 - 6 - 11) // 8 = 30 characters
 W = FIELD_X + FIELD_W + 4        # 388: client area (the window is centred)
 H = 171                          # = protocol.CLIENT_MAX_H
-ROW = 15                         # rows are this far apart; a TextBox / DropDown is 12 high
+ROW = 14                         # rows are this far apart; a TextBox / DropDown is 12 high
+TOP = 2                          # the first row (all of it fits in CLIENT_MAX_H)
 BOX_H = 12
 ABOUT_H = 30                     # About Me shows (30 - 6) // 8 = 3 lines
 BUTTON_W, BUTTON_H = 64, 16
@@ -116,7 +119,7 @@ class Account:
             return None
         win = Window.centred("My Account", W, H, flags=WFlag.CLOSE | WFlag.MOVABLE,
                              win_id=WIN_ACCOUNT)
-        y = 4
+        y = TOP
 
         def label(text, y):
             win.add(Label(LABEL_X, y + 2, LABEL_W, 10, text))
@@ -156,12 +159,15 @@ class Account:
         # could be 63 characters: wrap them to its width for the client.
         about = user["about"] or ""
         win.about.lines = wrap_lines(about.split("\n"), win.about.columns()) if about else []
-        y += ABOUT_H + ROW - BOX_H              # the usual gap below it
+        y += ABOUT_H + 1
         label("Last Login:", y)
         last = session.previous_login
         win.add(Label(FIELD_X, y + 2, FIELD_W, 10,
                       when(last) if last else "This is your first sign-on."))
-        y += ROW - 1
+        y += ROW
+        label("Karma Points:", y)                # (as the User Editor says it)
+        win.karma = win.add(Label(FIELD_X, y + 2, FIELD_W, 10, karma.describe(user["karma"])))
+        y += ROW - 2                            # (right under it: the buttons come next)
         win.status = win.add(Label(LABEL_X, y, W - 2 * LABEL_X, 10, status or ""))
         y = H - 2 - BUTTON_H
         win.add(Button(LABEL_X, y, 144, BUTTON_H, "Reset Password...", on_click=self._reset))

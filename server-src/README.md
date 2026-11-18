@@ -573,8 +573,11 @@ Areas > Chat Rooms (`meganet/chat.py`, `chat.use`; also the Chat desktop icon) t
 back to your room, or else opens the Chat Rooms list to pick one from (not straight into the
 Lobby). You are in one room at a time: joining another leaves the one you were in.
 
-- **The room** (window 2, 600x160, titled with the room's name):
-  - the topic, the conversation, and who is here (" (muted)" marks);
+- **The room** (window 2, 624x160, titled with the room's name):
+  - the topic, the conversation (488 px wide), and who is here (a 112 px list at the right
+    under "Here (* muted)": "*" marks the muted);
+  - moderators get their buttons in a row under the conversation (their window is 171
+    high, the conversation 9 px shorter);
   - a line to type (it has the keyboard when the room opens) with Send, plus Rooms... and
     the close box leaves. RETURN sends.
 - **Chat Rooms** (window 26, 400x160) lists the rooms and how many people are in each.
@@ -628,19 +631,21 @@ Every user has Karma Points, 0-100 (`users.karma`, `meganet/karma.py`): how well
 
 MegaNet > My Account (client menu, MENU_PICK $22; `meganet/account.py`): window 9, centred,
 client area 388x171. Labels in one column (x 4, 112 wide), fields in a second (x 124, 260
-wide: 8 px after "Email Address:"), rows 15 px apart:
+wide: 8 px after "Email Address:"), rows 14 px apart (tight, so Karma Points fits in the
+client's 171):
 
 | Row | Gadgets (x, y, w, h) |
 |---|---|
-| Username | Label (124, 6, 96, 10); "Role: ..." Label (220, 6, 164, 10) |
-| First Name | TextBox (124, 19, 166, 12): required, 20 characters |
-| Last Name | TextBox (124, 34, 166, 12): required, 20 characters |
-| Email Address | TextBox (124, 49, 260, 12): 63 characters, scrolls |
-| Location | TextBox (124, 64, 260, 12) |
-| Birthdate | DropDown Month (124, 79, 48, 12) "--", Jan..Dec; Day (176, 79, 40, 12) "--", 1..31; Year (220, 79, 56, 12) "--", this year down to 1960 |
-| About Me | Edit (124, 94, 260, 30): 3 lines visible, 30 characters a line, up to 8 lines |
-| Last Login | Label (124, 129): the sign-on before this one |
-| status | Label (4, 141, 380, 10): 47 characters |
+| Username | Label (124, 4, 96, 10); "Role: ..." Label (220, 4, 164, 10) |
+| First Name | TextBox (124, 16, 166, 12): required, 20 characters |
+| Last Name | TextBox (124, 30, 166, 12): required, 20 characters |
+| Email Address | TextBox (124, 44, 260, 12): 63 characters, scrolls |
+| Location | TextBox (124, 58, 260, 12) |
+| Birthdate | DropDown Month (124, 72, 48, 12) "--", Jan..Dec; Day (176, 72, 40, 12) "--", 1..31; Year (220, 72, 56, 12) "--", this year down to 1960 |
+| About Me | Edit (124, 86, 260, 30): 3 lines visible, 30 characters a line, up to 8 lines |
+| Last Login | Label (124, 119): the sign-on before this one |
+| Karma Points | Label (124, 133): the user's karma and its level, "42 (OK)" (shown, not edited) |
+| status | Label (4, 143, 380, 10): 47 characters |
 | buttons | Reset Password... (4, 153, 144, 16); OK (248, 153, 64, 16, default); Cancel (320, 153, 64, 16) |
 
 OK checks the first and last names (required: letters, spaces, ' - and ., at most 20

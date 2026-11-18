@@ -175,7 +175,7 @@ class ModerationTest(ChatBase):
         await self.pick_person(alice, "bob")
         alice.click_text(WIN_ROOM, "Mute")
         await bob.wait_for(lambda: "* bob was muted by alice" in self.lines(bob), "muted")
-        await bob.wait_for(lambda: "bob (muted)" in self.people(bob), "marked")
+        await bob.wait_for(lambda: "*bob" in self.people(bob), "marked")
         await self.say(bob, "let me talk")
         await bob.wait_for(lambda: status_of(self.room(bob)) == "You are muted in this room.",
                            "refused")
@@ -233,7 +233,7 @@ class ModerationTest(ChatBase):
                            "protected")
         await self.pick_person(alice, "bob")
         alice.click_text(WIN_ROOM, "Mute")
-        await alice.wait_for(lambda: "bob (muted)" in self.people(alice), "admin over moderator")
+        await alice.wait_for(lambda: "*bob" in self.people(alice), "admin over moderator")
 
 
 class KarmaTest(ChatBase):

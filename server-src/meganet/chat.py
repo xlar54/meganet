@@ -2,10 +2,10 @@
 a time.
 
     2  = the room you are in (titled with its name): the topic, the conversation (TextView),
-         who is here (" (muted)" marks), a line to type, Send, Rooms... (the close box
-         leaves the room). Moderators
-         (chat.moderate) also get Kick, Mute / Unmute, Ban, Unban..., Karma +, Karma - (for the
-         person picked in the list) and Topic (sets the line typed as the topic; nothing
+         who is here (a narrow list at the right; "*" marks the muted), a line to type, Send,
+         Rooms... (the close box leaves the room). Moderators (chat.moderate) also get a
+         row of Kick, Mute / Unmute, Ban, Unban..., Karma +, Karma - (for the person picked
+         in the list) under the conversation, and Topic (sets the line typed as the topic; nothing
          clears it). Picking a person shows a moderator their Karma Points.
     26 = Chat Rooms (what Areas > Chat Rooms opens, unless you're in a room): the listed
          rooms with how many are in each; Go; then under a line and "Create A Room", a Room
@@ -30,7 +30,7 @@ import time
 from . import db as dbmod
 from . import karma
 from . import permissions as perms
-from .protocol import WFlag, GFlag, clean_text
+from .protocol import WFlag, GFlag, clean_text, CLIENT_MAX_H
 from .ui import (add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView,
                  CheckBox, DropDown, Group)
 
@@ -241,7 +241,11 @@ class Chat:
 
 
 class RoomWindow:
-    W, H = 600, 160
+    W, H = 624, 160
+    H_MAX = CLIENT_MAX_H                 # (171: the moderators' window)
+    VIEW_H = 112                         # the conversation and who's here
+    LIST_W = 112                         # who's here: a 10-character name and the "*" mark
+    MOD_ROW = 20                         # moderators: a row of buttons under the conversation
 
     def __init__(self, chat, room, session):
         self.chat = chat
@@ -260,32 +264,39 @@ class RoomWindow:
         """Send the window (keep: with the conversation so far, after a permissions change)."""
         lines = self.view.lines if keep and self.win is not None else []
         room, mod = self.room, self.mod
-        win = Window.centred(room.name, self.W, self.H, flags=WFlag.CLOSE | WFlag.MOVABLE,
+        # moderators' extra row comes out of the conversation's height (the client's windows
+        # are at most CLIENT_MAX_H high)
+        view_h = self.VIEW_H - (self.MOD_ROW - (self.H_MAX - self.H) if mod else 0)
+        h = self.H_MAX if mod else self.H
+        win = Window.centred(room.name, self.W, h, flags=WFlag.CLOSE | WFlag.MOVABLE,
                              win_id=WIN_ROOM, on_close=self._closed)
-        self.topic = win.add(Label(8, 2, 584, 10, self.topic_text()))
-        self.view = win.add(TextView(8, 14, 420, 112, lines))
-        self.list = win.add(ListBox(436, 14, 156, 58 if mod else 112, self.people_rows(),
+        lx = self.W - 8 - self.LIST_W                # the people list, at the right
+        self.topic = win.add(Label(8, 2, lx - 16, 10, self.topic_text()))
+        win.add(Label(lx, 2, self.LIST_W, 10, "Here (* muted)"))
+        self.view = win.add(TextView(8, 14, lx - 16, view_h, lines))
+        self.list = win.add(ListBox(lx, 14, self.LIST_W, view_h, self.people_rows(),
                                     on_select=self._pick))
         self.on_person = []              # moderators' buttons for the person picked
         self.unban_button = None
-        if mod:
+        y = 14 + view_h + 2
+        if mod:                          # a row of them under the conversation
             for i, (text, fn) in enumerate([("Kick", self._kick), ("Mute", self._mute),
                                             ("Ban", self._ban), ("Unban...", self._unban),
                                             ("Karma +", self._up), ("Karma -", self._down)]):
-                b = win.add(Button(436 + (i % 2) * 80, 76 + (i // 2) * 18, 76, 16, text,
-                                   on_click=fn))
+                b = win.add(Button(8 + i * 80, y, 76, 16, text, on_click=fn))
                 if text == "Mute":
                     self.mute_button = b
                 if text == "Unban...":
                     self.unban_button = b
                 else:
                     self.on_person.append(b)
-        self.entry = win.add(TextBox(8, 130, 290, 12))
-        win.add(Button(304, 128, 56, 16, "Send", GFlag.DEFAULT, on_click=self._send))
+            y += self.MOD_ROW
+        self.entry = win.add(TextBox(8, y + 2, 290, 12))
+        win.add(Button(304, y, 56, 16, "Send", GFlag.DEFAULT, on_click=self._send))
         if mod:
-            win.add(Button(366, 128, 64, 16, "Topic", on_click=self._topic))
-        win.add(Button(516, 128, 76, 16, "Rooms...", on_click=self._rooms))
-        self.status = win.add(Label(8, 146, 584, 10, "You are in %s." % room.name))
+            win.add(Button(366, y, 64, 16, "Topic", on_click=self._topic))
+        win.add(Button(self.W - 8 - 88, y, 88, 16, "Rooms...", on_click=self._rooms))
+        self.status = win.add(Label(8, y + 18, self.W - 16, 10, "You are in %s." % room.name))
         self.win = win
         self.buttons()
         win.show(self.session)
@@ -298,8 +309,7 @@ class RoomWindow:
 
     def people_rows(self):
         self.people = sorted(self.room.windows, key=lambda s: s.user.lower())
-        return [s.user + (" (muted)" if s.user_id in self.room.muted else "")
-                for s in self.people]
+        return [("*" if s.user_id in self.room.muted else "") + s.user for s in self.people]
 
     def fill_people(self):
         self.list.set_rows(self.people_rows())
