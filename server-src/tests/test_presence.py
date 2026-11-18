@@ -207,3 +207,24 @@ class SettingsTest(PresenceBase):
         await bob.wait_for(lambda: not bob.enabled(WIN_WHO, "Send Message..."), "bob greyed")
         await bob.wait_for(lambda: status_of(bob.windows[WIN_WHO]) ==
                            "New users can't send messages.", "bob told")
+
+
+class BroadcastTest(PresenceBase):
+    async def test_broadcast(self):
+        alice, bob = self.alice, self.bob                  # alice: Sysop
+        self.assertNotIn("Broadcast...", bob.menu_items("Admin") if "Admin" in bob.menu_titles()
+                         else [])
+        alice.pick("Broadcast...")
+        win = await alice.wait_window("Broadcast")
+        self.assertFalse(alice.enabled(win.id, "Send"))    # nothing typed yet
+        alice.value(win.id, gadget_of(win, Kind.TEXTBOX), "Server restart in 5 minutes")
+        self.assertTrue(alice.enabled(win.id, "Send"))
+        alice.click_text(win.id, "Send")
+        line = (20, "To all users:  Server restart in 5 minutes")
+        await bob.wait_for(lambda: line in bob.broadcasts, "bob got it")
+        await alice.wait_for(lambda: line in alice.broadcasts, "and alice")
+        self.assertNotIn(win.id, alice.windows)
+        # bob can't send one, even by asking for the window
+        self.server.screens.open_broadcast(self.session("bob"))
+        await self.roundtrip(bob)
+        self.assertFalse(any(w.title == "Broadcast" for w in bob.windows.values()))

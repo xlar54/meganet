@@ -401,8 +401,21 @@ class TextArea(Gadget):
 
 
 class Progress(Gadget):
-    """A progress bar. set_value(v) fills v/65535 of it."""
+    """A progress bar: sunken white, filled navy from the left. set_percent(p), 0-100
+    (S.SET_VALUE)."""
     kind = Kind.PROGRESS
+
+    def __init__(self, x, y, w, h=12, percent=0, **kw):
+        super().__init__(x, y, w, h, "", **kw)
+        self.percent = percent
+
+    def send_contents(self):
+        if self.percent:
+            self.set_value(self.percent)
+
+    def set_percent(self, percent):
+        self.percent = max(0, min(100, int(percent)))
+        self.set_value(self.percent)
 
 
 class Image(Gadget):

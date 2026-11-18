@@ -1,4 +1,4 @@
-﻿# MegaNet TODO
+# MegaNet TODO
 
 ## Client (client-src/, 45GS02 assembly)
 - [x] 640x200 FCM desktop, two-sprite mouse pointer
@@ -108,5 +108,11 @@
       speech-bubble icon
 - [x] System Settings: whether New Users can send and receive instant messages
 - [ ] IM: a sound for the toast; an "ignore" list; history after sign-off
+- [x] Desktop icons from the server (Chat, Message Boards), with a "One moment..." progress
+      window while they arrive at sign-on
+- [x] Desktop icons for the File Library and Games; Admin > Broadcast... (the bottom row,
+      yellow on red, for everyone)
+- [ ] Desktop icons: more of them (Private Messages, Who's Online); outlines that show
+      on the black desktop; keyboard selection; dragging them
 - [ ] News, file library
 - [ ] Pace FILE_DATA by FILE_ACK

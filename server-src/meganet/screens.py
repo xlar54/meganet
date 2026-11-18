@@ -23,6 +23,7 @@ from .account import Account, WIN_ACCOUNT
 from .admin import Admin
 from .boards import Boards
 from .chat import Chat
+from .desktop import Desktop
 from .im import IMs
 from .presence import Presence, STATUSES, LABELS
 from . import karma
@@ -30,7 +31,8 @@ from .mail import Mail
 from .pages import Pages
 from .signup import Signup
 from .protocol import (WFlag, GFlag, MENU_SEPARATOR, VERSION, SLOT_PAGE, SLOT_ADMIN_MAIL,
-                       SLOT_MAIL, SLOT_NEW_USER, SLOT_IM, MENU_MY_ACCOUNT, MENU_LATE, Icon)
+                       SLOT_MAIL, SLOT_NEW_USER, SLOT_IM, MENU_MY_ACCOUNT, MENU_LATE, Icon,
+                       S, Writer, clean_text, BROADCAST_MAX, BROADCAST_SECS)
 from .ui import Window, Button, Label, TextBox, ListBox, TextView, Menu, add_buttons, closer
 
 WIN_WELCOME = 1
@@ -53,6 +55,7 @@ M_ABOUT, M_GETTING_AROUND, M_PAGE_ADMIN = 0x40, 0x41, 0x42
 M_STATUS = 0x05                  # the last title before the client's Window menu
 M_AVAILABLE, M_AWAY, M_OFFLINE = 0x50, 0x51, 0x52
 M_SETTINGS = 0x34
+M_BROADCAST = 0x35
 STATUS_ITEMS = dict(zip((M_AVAILABLE, M_AWAY, M_OFFLINE), STATUSES))
 WIN_WHO_W, WIN_WHO_H = 300, 136
 
@@ -91,11 +94,13 @@ MENU_TREE = [
         (M_MOTD, "Message of the Day...", perms.ADMIN_MOTD, "open_motd"),
         (M_ADMIN_MSGS, "Messages from users...", perms.ADMIN_PAGES, "open_admin_messages"),
         (M_SETTINGS, "System Settings...", perms.ADMIN_SETTINGS, "open_settings"),
+        (M_BROADCAST, "Broadcast...", perms.ADMIN_BROADCAST, "open_broadcast"),
     ]),
 ]
 
 DENIED = "Your account can't use %s."
-ADMIN_KEYS = (perms.ADMIN_USERS, perms.ADMIN_ROLES, perms.ADMIN_MOTD, perms.ADMIN_SETTINGS)
+ADMIN_KEYS = (perms.ADMIN_USERS, perms.ADMIN_ROLES, perms.ADMIN_MOTD, perms.ADMIN_SETTINGS,
+              perms.ADMIN_BROADCAST)
 
 
 def is_admin(session):
@@ -128,13 +133,15 @@ class Screens:
         self.who = {}                # session -> its open Who's Online window
         self.presence = Presence(server)
         self.ims = IMs(server)
+        self.desktop = Desktop(self)
 
-    def signed_on(self, session, welcome=True):
-        """Everything a session gets on signing on. `welcome` False: no welcome window yet (the
-        sign-up wizard shows it after its "account set up" window)."""
+    def signed_on(self, session, welcome=True, after=None):
+        """Everything a session gets on signing on. The desktop icons come first, under a
+        "One moment..." window; then the welcome window, or (`welcome` False) `after()`: the
+        sign-up wizard's "account set up" window, which shows the welcome after it."""
         self.send_menu(session)
-        if welcome:
-            self.welcome(session)
+        then = (lambda: self.welcome(session)) if welcome else after
+        self.desktop.start(session, then)
         self.pages.signed_on(session)
         self.mail.signed_on(session)
         self.new_users_changed()          # (a new account is a new user for the admins)
@@ -219,6 +226,20 @@ class Screens:
     def open_settings(self, session, item=None):
         return self.admin.open_settings(session)
 
+    def open_broadcast(self, session, item=None):
+        return self.admin.open_broadcast(session)
+
+    def broadcast(self, sender, text):
+        """A message to everyone signed on (S.BROADCAST): the bottom row, yellow on red."""
+        line = ("To all users:  " + clean_text(text).strip())[:BROADCAST_MAX]
+        for s in self.online():
+            s.send(S.BROADCAST, Writer().u8(BROADCAST_SECS).str(line))
+        sender.log("broadcast: %s" % text)
+        return len(self.online())
+
+    def open_files(self, session, item=None):
+        return session.alert("File Library", "Coming soon.")
+
     def status_changed(self, session):
         """Someone's status changed: their Status menu, and everyone's Who's Online."""
         self.send_menu(session)
@@ -231,7 +252,7 @@ class Screens:
     def open_chat(self, session, item=None):
         return self.chat.open(session)
 
-    def open_games(self, session, item):
+    def open_games(self, session, item=None):
         return self.server.games.open(session)
 
     def open_roles(self, session, item):
@@ -428,6 +449,7 @@ class Screens:
         self.boards.permissions_changed(session)
         self.new_users_changed()
         self.im_rules_changed()
+        self.desktop.refresh(session)
         if (session.perms, session.role) == old:
             return
         self.send_menu(session)

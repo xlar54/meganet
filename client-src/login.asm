@@ -63,6 +63,7 @@ login_open:
         lda #0                          ; no menu bar until signed on
         sta gui_menubar
         jsr gui_menu_clear
+        jsr gui_desk_clear              ; nor desktop icons
         ; (fall through)
 ; the Connect window
 open_connect:

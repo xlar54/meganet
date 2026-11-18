@@ -52,6 +52,7 @@ class Session:
         self.menu = None             # the ui.Menu last sent (MENU_PICKs are checked against it)
         self.game = None             # games.base.Player while in a game
         self.notify = {}             # menu-bar icons shown: slot -> (icon, hint)
+        self.desk = []               # desktop icons sent (desktop.py), slot order
         self.previous_login = None   # the sign-on before this one (My Account's Last Login)
         self.chat_lines = 0          # lines said in chat (karma: CHAT_LINES make a point)
         self.status = "available"    # Status menu: available / away / offline (presence.py)
@@ -243,6 +244,12 @@ class Session:
                 karma.suspicious(self, "notify click %d: no icon there" % slot)
             else:
                 await call(self.server.screens.notify_click(self, slot))
+        elif msg_type == C.DESK_OPEN:
+            slot = r.u8()
+            if slot >= len(self.desk):
+                karma.suspicious(self, "desk open %d: no icon there" % slot)
+            else:
+                await call(self.server.screens.desktop.open(self, slot))
         elif msg_type == C.FILE_ACK:
             r.u32()          # TODO: pace FILE_DATA by FILE_ACK
         else:
@@ -285,7 +292,7 @@ class Session:
         else:
             self.login_result(False, message)
 
-    def sign_on(self, name, message, new=False, welcome=True):
+    def sign_on(self, name, message, new=False, welcome=True, after=None):
         """LOGIN_RESULT ok, then the session is signed on as `name` (an existing account):
         the menu bar, the welcome window and the rest (screens.signed_on)."""
         self.login_result(True, message)
@@ -294,7 +301,7 @@ class Session:
         self.previous_login = self.server.db.record_login(self.user_id)
         self.load_permissions()
         self.log("signed on" + (" (new user)" if new else ""))
-        self.server.screens.signed_on(self, welcome=welcome)
+        self.server.screens.signed_on(self, welcome=welcome, after=after)
 
     def login_refused(self):
         """Why no LOGIN can be taken now, or None."""

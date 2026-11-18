@@ -87,7 +87,8 @@ class RolesTest(RolesBase):
         self.assertEqual(self.alice.menu_items("Admin"), ["User Editor...", "Roles...",
                                                           "Message of the Day...",
                                                           "Messages from users...",
-                                                          "System Settings..."])
+                                                          "System Settings...",
+                                                          "Broadcast..."])
         self.assertTrue(self.session("alice").can(permissions.ADMIN_ROLES))
         for key in permissions.keys():
             self.assertTrue(self.session("alice").can(key), key)

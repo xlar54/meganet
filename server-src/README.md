@@ -203,6 +203,8 @@ for a button or a MENU_PICK for an item it was never given.
 | `admin.roles` | Edit roles and their permissions | | | | x |
 | `admin.motd` | Edit the message of the day | | | | x |
 | `admin.pages` | Answer pages from users (and read their messages) | | | x | x |
+| `admin.settings` | System Settings (Auto-Away, New Users' instant messages) | | | | x |
+| `admin.broadcast` | Broadcast a line to everyone signed on | | | | x |
 | `mail.use` | Use private messages | x | x | x | x |
 
 These four roles are made the first time the server opens a database. After that they are
@@ -402,6 +404,35 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
 - `private_messages` (id, from_user, to_user, sent, subject, body, read, del_sender,
   del_recip): a message stays until both sides have deleted it. The recipient, if signed on,
   gets the slot 2 icon; otherwise at their next sign-on.
+
+## Broadcast
+
+**Admin > Broadcast...** (`admin.broadcast`; window 31, a small dialog) sends one line to
+everyone signed on. Send is greyed until something is typed.
+- Every client shows "To all users:  *message*" across the whole bottom row of the screen,
+  yellow on red, for 20 seconds or until clicked (`S.BROADCAST` `$23`: seconds, text of at
+  most 79 characters).
+- It takes no input, and a toast arriving meanwhile goes one row up.
+- The server log records who sent what.
+
+## Desktop icons
+
+`meganet/desktop.py`: a column of icons down the left of the client's desktop, under the
+windows. Each is a 32x16 picture (the client's pixels are twice as tall, so it looks square)
+with a label of one or two lines. There are four: **Chat**, **Message Boards**, **File
+Library** (Members and up, `files.download`; "Coming soon." for now) and **Games**.
+- **Server-driven:** `ICONS` are text pictures, one character a pixel (`PALETTE` maps them to
+  the GUI's colours 0-15, `.` is see-through). `DESKTOP` lists the icons with the permission
+  each needs and the action it runs. Only icons the user may use are sent, and the column
+  follows permission changes.
+- **Messages:** `S.DESK_ICON` `$1F` (slot, two label lines, 512 bytes of pixels; an empty
+  line 1 removes the icon). A double click sends `C.DESK_OPEN` `$8C` (slot).
+- **At sign-on**, a **"One moment..."** window opens first: modal, with no close box and a
+  progress bar. It stays while the icons arrive one at a time (`PACE` = 0.15 s between them),
+  then it closes and the welcome window opens. For a new account, the "account set up"
+  window opens instead.
+- The client keeps the icons in attic RAM only for the session. Signing off clears them,
+  and nothing is written to disk.
 
 ## Status, Who's Online and instant messages
 

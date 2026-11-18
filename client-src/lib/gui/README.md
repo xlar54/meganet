@@ -89,6 +89,20 @@ left corner).
     restores to changes. MegaNet sets it to 1 for half a second after the server answers a
     click, so a window the user asked for comes back and a refresh doesn't pop one up.
   - It's all in the GUI: the program isn't told.
+- **Desktop icons:** `gui_desk_icon` (A = slot 0-7; `gui_dk_l1` / `gui_dk_l2` = the label's
+  two lines, `gui_dk_px` = the picture) puts an icon on the desktop, Windows 95 style.
+  - The picture is 32 x 16 bytes (it looks square), colours 0-15, `$ff` see-through. It's
+    copied to attic (`GUI_DESK_MEM`, 512 bytes a slot).
+  - The labels are up to 10 characters each, white and centred under the picture.
+  - Icons go in columns of 4 down the left of the desktop, under every window.
+  - A click selects one (its label on navy). The same one again within half a second gives
+    `GE_DESK` with `ge_val` = the slot. A click elsewhere on the desktop clears the selection.
+  - Line 1 empty removes the icon; `gui_desk_clear` removes them all.
+- **Broadcast:** `gui_banner` (`txt_ptr` = text, up to 79 characters; A = seconds) puts a
+  line across the whole bottom row, yellow on red, over everything. It takes no keys and
+  goes after the given seconds or when clicked. A toast moves up a row while it's there.
+- **Progress bars** (`GK_PROGRESS`): sunken white, filled navy from the left for `gg_val`
+  percent (0-100, set with `gui_set_value`).
 - **Busy:** `gui_busy` with A = 1 turns the pointer into an hourglass, and `gui_update` then
   ignores clicks and keys; the pointer still moves. A = 0 brings back the arrow. Use it while
   waiting for something such as a server's answer.
@@ -135,7 +149,7 @@ two-pixel vertical one. The pointer is a black outline sprite over a white fill 
 
 These are listed in the project's `TODO.md`:
 - dragging a scroll bar's thumb, and holding an arrow to repeat;
-- check boxes, radio buttons and progress bars;
+- (check boxes, radio buttons and progress bars are done);
 - a toolbar of small icon buttons under the menu bar;
 - maximize and resize (with gadgets anchored to the edges);
 - a dragging outline, focus rectangles and a proportional font.

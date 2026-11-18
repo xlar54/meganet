@@ -80,7 +80,16 @@ GUI_FRAME_SPR   = 2                     ; dragging: these four (corner brackets)
 GUI_DESK        = GC_DESK               ; desktop colour when gui_desk_hook is 0
 GUI_MAXBIG      = 8                     ; lists, views, text areas, drop-downs at once
 GUI_BIG_MEM     = $8200000              ; their rows: GUI_MAXBIG x 8 KB (attic)
+GUI_MAXICON     = 8                     ; desktop icons (columns of GUI_ICON_ROWS)
+GUI_DESK_MEM    = $8240000              ; their pictures, 512 bytes each (64 KB aligned)
         .endweak
+GUI_ICON_W      = 32                    ; a desktop icon's picture (pixels are twice as tall
+GUI_ICON_H      = 16                    ; as wide: it looks square), a label under it
+GUI_ICON_LBL    = 11                    ; label line: 10 characters + 0
+GUI_ICON_CELLW  = 80                    ; the column's width; icon centred, label too
+GUI_ICON_CELLH  = 40
+GUI_ICON_ROWS   = 4
+GUI_ICON_TOP    = 11 + 4                ; (below the menu bar)
 GUI_MAXMENU     = 48                    ; menu entries (titles + items)
 GUI_MENULEN     = 24                    ; bytes a label, with the 0
 GUI_MAXTITLE    = 12                    ; titles on the bar
@@ -144,6 +153,7 @@ GE_KEY          = 3
 GE_SELECT       = 4                     ; a list row clicked: ge_val (bit 15 = double click)
 GE_MENU         = 5                     ; a menu item picked: ge_val = its id
 GE_NOTIFY       = 6                     ; a notification icon clicked: ge_val = its slot
+GE_DESK         = 7                     ; a desktop icon double-clicked: ge_val = its slot
 
 EV_NONE         = 0                     ; gui_poll's raw events
 EV_KEY          = 1
@@ -1335,7 +1345,8 @@ _plain: lda #0
         sta gr_y1
         lda #GUI_DESK
         jsr l_gd_fill
-_wins:  jsr l_gw_draw_mins                ; minimized ones first: behind everything
+_wins:  jsr l_dk_draw                     ; the desktop icons
+        jsr l_gw_draw_mins                ; minimized windows: behind every other one
         ldy #0
 -       cpy gw_n
         beq +
@@ -1731,6 +1742,351 @@ l_mm_y:
 .for k in range(GUI_MAXWIN)
         .byte GUI_MIN_Y - (k / GUI_MIN_COLS) * GUI_MIN_H >= GUI_MENU_H ? GUI_MIN_Y - (k / GUI_MIN_COLS) * GUI_MIN_H : GUI_MENU_H
 .endfor
+
+;=======================================================================================
+; desktop icons: a picture (GUI_ICON_W x GUI_ICON_H) with one or two label lines under it,
+; in columns down the left of the desktop, under every window
+;=======================================================================================
+gui_dk_l1:      .word 0                 ; gui_desk_icon: label line 1 ("" removes the icon),
+gui_dk_l2:      .word 0                 ; line 2 ("" none), the picture's bytes (colour
+gui_dk_px:      .word 0                 ; $ff = see-through)
+dk_used:        .fill GUI_MAXICON
+dk_l1:          .fill GUI_MAXICON * GUI_ICON_LBL
+dk_l2:          .fill GUI_MAXICON * GUI_ICON_LBL
+l_dk_sel:       .byte $ff               ; the selected one, $ff none
+l_dk_clk:       .byte 0                 ; frame_count at the last click on it
+l_dk_k:         .byte 0
+l_dk_r:         .byte 0
+l_dk_c:         .byte 0
+l_dk_t:         .byte 0
+l_dk_off:                               ; icon k: its label's offset, cell centre x, top y
+.for k in range(GUI_MAXICON)
+        .byte k * GUI_ICON_LBL
+.endfor
+l_dk_mx:
+.for k in range(GUI_MAXICON)
+        .byte (k / GUI_ICON_ROWS) * GUI_ICON_CELLW + GUI_ICON_CELLW / 2
+.endfor
+l_dk_y:
+.for k in range(GUI_MAXICON)
+        .byte GUI_ICON_TOP + (k % GUI_ICON_ROWS) * GUI_ICON_CELLH
+.endfor
+        .cerror (GUI_MAXICON - 1) / GUI_ICON_ROWS * GUI_ICON_CELLW + GUI_ICON_CELLW > 255, "icon columns"
+
+; A = slot: set it from gui_dk_l1 / l2 / px, or remove it. Drawn at the next frame
+gui_desk_icon:
+        cmp #GUI_MAXICON
+        bcc +
+        rts
++       sta l_dk_k
+        tax
+        lda #0
+        sta dk_used,x
+        cpx l_dk_sel
+        bne +
+        lda #$ff
+        sta l_dk_sel
++       clc                             ; the labels
+        lda #<dk_l1
+        adc l_dk_off,x
+        sta tmp7
+        lda #>dk_l1
+        adc #0
+        sta tmp7+1
+        lda gui_dk_l1
+        sta tmp6
+        lda gui_dk_l1+1
+        sta tmp6+1
+        jsr l_dk_copy
+        ldx l_dk_k
+        clc
+        lda #<dk_l2
+        adc l_dk_off,x
+        sta tmp7
+        lda #>dk_l2
+        adc #0
+        sta tmp7+1
+        lda gui_dk_l2
+        sta tmp6
+        lda gui_dk_l2+1
+        sta tmp6+1
+        jsr l_dk_copy
+        ldy #0                          ; no line 1: removed
+        lda gui_dk_l1
+        sta tmp6
+        lda gui_dk_l1+1
+        sta tmp6+1
+        lda (tmp6),y
+        beq _done
+        lda gui_dk_px                   ; the picture to GUI_DESK_MEM + k * 512
+        sta tmp6
+        lda gui_dk_px+1
+        sta tmp6+1
+        lda #<GUI_DESK_MEM
+        sta ptr0
+        lda l_dk_k
+        asl
+        clc
+        adc #>GUI_DESK_MEM
+        sta ptr0+1
+        lda #`GUI_DESK_MEM
+        sta ptr0+2
+        lda #GUI_DESK_MEM >> 24
+        sta ptr0+3
+        ldx #GUI_ICON_W * GUI_ICON_H / 256
+_pg:    ldy #0
+        ldz #0
+-       lda (tmp6),y
+        sta [ptr0],z
+        iny
+        inz
+        bne -
+        inc tmp6+1
+        inc ptr0+1
+        dex
+        bne _pg
+        ldz #0
+        ldx l_dk_k
+        lda #1
+        sta dk_used,x
+_done:  jmp gui_redraw_later
+
+; tmp6 -> tmp7: a label line, at most GUI_ICON_LBL - 1 characters and the 0
+l_dk_copy:
+        ldy #0
+-       lda (tmp6),y
+        beq +
+        sta (tmp7),y
+        iny
+        cpy #GUI_ICON_LBL - 1
+        bne -
+        lda #0
++       sta (tmp7),y
+        rts
+
+; every icon gone (signing off)
+gui_desk_clear:
+        lda #0
+        ldx #GUI_MAXICON - 1
+-       sta dk_used,x
+        dex
+        bpl -
+        lda #$ff
+        sta l_dk_sel
+        rts
+
+l_dk_draw:
+        ldx #0
+_lp:    stx l_dk_k
+        lda dk_used,x
+        beq _nx
+        jsr l_dk_one
+_nx:    ldx l_dk_k
+        inx
+        cpx #GUI_MAXICON
+        bne _lp
+        ldz #0
+        rts
+
+; icon l_dk_k: its picture, 8 pixels at a time (one cell row each), then its labels
+l_dk_one:
+        lda #0
+        sta l_dk_r
+_row:   lda #0
+        sta l_dk_c
+_chk:   ldx l_dk_k
+        lda l_dk_c                      ; x = centre - 16 + c * 8 (a multiple of 8)
+        asl
+        asl
+        asl
+        clc
+        adc l_dk_mx,x
+        sec
+        sbc #GUI_ICON_W / 2
+        sta d6_x
+        lda #0
+        sta d6_x+1
+        sta d6_y+1
+        clc
+        lda l_dk_y,x
+        adc l_dk_r
+        sta d6_y
+        jsr d6_addr                     ; d6_p: the screen
+        lda l_dk_r                      ; ptr0: the picture, + r * 32 + c * 8
+        and #7
+        lsr
+        ror
+        ror
+        ror
+        sta l_dk_t
+        lda l_dk_c
+        asl
+        asl
+        asl
+        ora l_dk_t
+        sta ptr0
+        lda l_dk_r
+        lsr
+        lsr
+        lsr
+        sta l_dk_t
+        lda l_dk_k
+        asl
+        clc
+        adc l_dk_t
+        adc #>GUI_DESK_MEM
+        sta ptr0+1
+        lda #`GUI_DESK_MEM
+        sta ptr0+2
+        lda #GUI_DESK_MEM >> 24
+        sta ptr0+3
+        ldz #7
+-       lda [ptr0],z
+        cmp #$ff
+        beq +
+        sta [d6_p],z
++       dez
+        bpl -
+        inc l_dk_c
+        lda l_dk_c
+        cmp #GUI_ICON_W / 8
+        bne _chk
+        inc l_dk_r
+        lda l_dk_r
+        cmp #GUI_ICON_H
+        bne _row
+        ldz #0
+        ldx l_dk_k                      ; the labels: white, on navy when it's selected
+        clc
+        lda #<dk_l1
+        adc l_dk_off,x
+        sta txt_ptr
+        lda #>dk_l1
+        adc #0
+        sta txt_ptr+1
+        lda #GUI_ICON_H + 2
+        jsr l_dk_label
+        ldx l_dk_k
+        clc
+        lda #<dk_l2
+        adc l_dk_off,x
+        sta txt_ptr
+        lda #>dk_l2
+        adc #0
+        sta txt_ptr+1
+        lda #GUI_ICON_H + 11
+        ; (fall through)
+; txt_ptr = a label line, A = its y below the icon's top: centred under it
+l_dk_label:
+        ldx l_dk_k
+        clc
+        adc l_dk_y,x
+        sta gt_y
+        ldy #0
+-       lda (txt_ptr),y
+        beq +
+        iny
+        bra -
++       cpy #0
+        beq _none
+        tya                             ; x = centre - n * 4
+        asl
+        asl
+        sta l_dk_t
+        sec
+        lda l_dk_mx,x
+        sbc l_dk_t
+        sta gt_x
+        lda #0
+        sta gt_x+1
+        sta gt_pw
+        lda #$ff
+        sta gt_n
+        sta gt_bg
+        lda #GC_WHITE
+        sta gt_fg
+        cpx l_dk_sel
+        bne +
+        lda #GC_TITLE
+        sta gt_bg
++       jsr gui_text
+        lda #$ff
+        sta gt_bg
+_none:  rts
+
+; a click on the desktop (no window there): an icon is selected; the same one again
+; within half a second is a double click -> GE_DESK. Elsewhere: none selected
+l_gu_desk:
+        jsr l_gw_front                  ; (a modal window in front: nothing)
+        cmp #$ff
+        beq +
+        tax
+        lda gw_flags,x
+        and #GWF_MODAL
+        beq +
+        clc
+        rts
++       ldx #0
+_lp:    lda dk_used,x
+        beq _nx
+        stx l_dk_k
+        lda l_dk_mx,x                   ; the icon and its labels: centre - 32 .. + 31,
+        sec                             ; top .. top + 35
+        sbc #32
+        sta gr_x0
+        clc
+        adc #63
+        sta gr_x1
+        lda l_dk_y,x
+        sta gr_y0
+        clc
+        adc #GUI_ICON_H + 19
+        sta gr_y1
+        lda #0
+        sta gr_x0+1
+        sta gr_x1+1
+        sta gr_y0+1
+        sta gr_y1+1
+        jsr l_pt_in
+        ldx l_dk_k
+        bcs _hit
+_nx:    inx
+        cpx #GUI_MAXICON
+        bne _lp
+        lda l_dk_sel                    ; nothing there: none selected
+        cmp #$ff
+        beq _out
+        lda #$ff
+        sta l_dk_sel
+        jsr gui_redraw_later
+_out:   clc
+        rts
+_hit:   cpx l_dk_sel
+        bne _sel
+        lda frame_count
+        sec
+        sbc l_dk_clk
+        cmp #25
+        bcs _clk
+        stx ge_val                      ; double click
+        lda #0
+        sta ge_val+1
+        sta ge_win
+        sta ge_gid
+        lda frame_count                 ; (a third click isn't another double)
+        sec
+        sbc #100
+        sta l_dk_clk
+        lda #GE_DESK
+        sta ge_type
+        sec
+        rts
+_sel:   stx l_dk_sel
+        jsr gui_redraw_later
+_clk:   lda frame_count
+        sta l_dk_clk
+        clc
+        rts
 
 ; an X in the middle of gr (the close box's inside)
 l_gd_cross:                             ; corner to corner of gr, two pixels thick
@@ -2146,6 +2502,9 @@ l_gui_draw_gad0:
         cmp #GK_GROUP
         bne +
         jmp l_gd_group
++       cmp #GK_PROGRESS
+        bne +
+        jmp l_gd_progress
 +       cmp #GK_CHECK
         beq _chk
         cmp #GK_RADIO
@@ -2154,6 +2513,71 @@ l_gui_draw_gad0:
 _chk:   jmp l_gd_check
 _tb:    jmp l_gd_textbox
 _box:   jmp l_gd_rows
+
+; a progress bar: sunken, white, navy from the left for gg_val percent (0-100)
+l_gd_progress:
+        jsr l_gd_sunken                 ; (gr: inside the bevel)
+        lda #GC_WHITE
+        jsr l_gd_fill
+        ldx l_gd_gs
+        lda gg_val,x
+        beq _done
+        cmp #100
+        bcc +
+        lda #100
++       sta l_pg_v
+        sec                             ; the inside's width
+        lda gr_x1
+        sbc gr_x0
+        sta l_pg_w
+        lda gr_x1+1
+        sbc gr_x0+1
+        sta l_pg_w+1
+        inc l_pg_w
+        bne +
+        inc l_pg_w+1
++       lda l_pg_w                      ; filled = width * v / 100: (width * v) * 656 >> 16
+        sta $d770                       ; (the hardware multiplier)
+        lda l_pg_w+1
+        sta $d771
+        lda #0
+        sta $d772
+        sta $d773
+        sta $d775
+        sta $d776
+        sta $d777
+        lda l_pg_v
+        sta $d774
+        lda $d778
+        ldx $d779
+        sta $d770
+        stx $d771
+        lda #<656
+        sta $d774
+        lda #>656
+        sta $d775
+        lda $d77a
+        sta l_pg_w
+        lda $d77b
+        sta l_pg_w+1
+        ora l_pg_w
+        beq _done
+        clc
+        lda gr_x0
+        adc l_pg_w
+        sta gr_x1
+        lda gr_x0+1
+        adc l_pg_w+1
+        sta gr_x1+1
+        lda gr_x1
+        bne +
+        dec gr_x1+1
++       dec gr_x1
+        lda #GC_TITLE
+        jsr l_gd_fill
+_done:  rts
+l_pg_v:         .byte 0
+l_pg_w:         .word 0
 
 l_gd_label:
         lda #GC_FACE
@@ -2663,7 +3087,9 @@ _no:    clc
 
 l_gu_down:
         jsr l_gw_at
-        bcc l_gu_none
+        bcs +
+        jmp l_gu_desk                   ; the desktop: its icons
++
         stx l_gu_ws
         jsr l_gw_front
         cmp l_gu_ws
@@ -4797,6 +5223,16 @@ _text:  ldy #0                          ; the text, and its width: 8 a character
         jmp gui_redraw_later            ; (it removes the old one; the toast is drawn last)
 _out:   rts
 
+; A = the toast's top row: one row higher while a broadcast has the bottom one
+l_ts_top:
+        lda l_bc_t
+        ora l_bc_t+1
+        beq +
+        lda #L_TS_Y0 - (L_TS_Y1 - L_TS_Y0 + 1)
+        rts
++       lda #L_TS_Y0
+        rts
+
 ; gr = the toast's box
 l_ts_rect:
         lda l_ts_x0
@@ -4807,9 +5243,10 @@ l_ts_rect:
         sta gr_x1
         lda #>636
         sta gr_x1+1
-        lda #L_TS_Y0
+        jsr l_ts_top
         sta gr_y0
-        lda #L_TS_Y1
+        clc
+        adc #L_TS_Y1 - L_TS_Y0
         sta gr_y1
         lda #0
         sta gr_y0+1
@@ -4817,6 +5254,7 @@ l_ts_rect:
         rts
 
 l_ts_draw:
+        jsr l_bc_draw                   ; a broadcast first (the toast goes above it)
         lda l_ts_t
         ora l_ts_t+1
         bne +
@@ -4839,7 +5277,9 @@ l_ts_draw:
         sta gt_n
         lda #0
         sta gt_pw
-        lda #L_TS_Y0 + 3
+        jsr l_ts_top
+        clc
+        adc #3
         sta gt_y
         clc
         lda l_ts_x0
@@ -4852,6 +5292,7 @@ l_ts_draw:
 
 ; once a frame: count down; at 0 the screen is drawn again without it
 l_ts_tick:
+        jsr l_bc_tick
         lda l_ts_t
         ora l_ts_t+1
         beq _out
@@ -4869,10 +5310,10 @@ _out:   rts
 l_ts_click:
         lda l_ts_t
         ora l_ts_t+1
-        beq _no
+        beq _bc
         jsr l_ts_rect
         jsr l_pt_in
-        bcc _no
+        bcc _bc
         lda #0
         sta l_ts_t
         sta l_ts_t+1
@@ -4893,8 +5334,114 @@ _none:  lda #GE_NONE                     ; nothing to report, but the press is u
         pla
         clc
         rts
+_bc:    lda l_bc_t                      ; on the broadcast: it goes, nothing to report
+        ora l_bc_t+1
+        beq _no
+        jsr l_bc_rect
+        jsr l_pt_in
+        bcc _no
+        lda #0
+        sta l_bc_t
+        sta l_bc_t+1
+        jsr gui_redraw_later
+        bra _none
 _no:    clc
         rts
+
+;---------------------------------------------------------------------------------------
+; a broadcast: a message to everyone, across the whole bottom row, yellow on red, over
+; everything (a toast goes one row up meanwhile). It takes no input; a click removes it.
+;   gui_banner  txt_ptr = text (GUI_BANNER_MAX characters kept), A = seconds
+;---------------------------------------------------------------------------------------
+GUI_BANNER_MAX  = 79
+
+gui_banner:
+        tax                             ; frames = seconds * 50
+        lda #0
+        sta l_bc_t
+        sta l_bc_t+1
+_sec:   cpx #0
+        beq _text
+        clc
+        lda l_bc_t
+        adc #50
+        sta l_bc_t
+        bcc +
+        inc l_bc_t+1
++       dex
+        bra _sec
+_text:  ldy #0
+-       lda (txt_ptr),y
+        cpy #GUI_BANNER_MAX
+        bcc +
+        lda #0
++       sta l_bc_buf,y
+        cmp #0
+        beq +
+        iny
+        bra -
++       jmp gui_redraw_later
+
+; gr = the bottom row
+l_bc_rect:
+        lda #0
+        sta gr_x0
+        sta gr_x0+1
+        sta gr_y0+1
+        sta gr_y1+1
+        lda #<639
+        sta gr_x1
+        lda #>639
+        sta gr_x1+1
+        lda #L_TS_Y0
+        sta gr_y0
+        lda #L_TS_Y1
+        sta gr_y1
+        rts
+
+l_bc_draw:
+        lda l_bc_t
+        ora l_bc_t+1
+        bne +
+        rts
++       jsr d6_clip_all
+        jsr l_bc_rect
+        lda #GC_RED
+        jsr l_gd_fill
+        lda #<l_bc_buf
+        sta txt_ptr
+        lda #>l_bc_buf
+        sta txt_ptr+1
+        lda #GC_YELLOW
+        sta gt_fg
+        lda #$ff
+        sta gt_bg
+        sta gt_n
+        lda #0
+        sta gt_pw
+        sta gt_x+1
+        lda #4
+        sta gt_x
+        lda #L_TS_Y0 + 3
+        sta gt_y
+        jmp gui_text
+
+l_bc_tick:
+        lda l_bc_t
+        ora l_bc_t+1
+        beq _out
+        lda l_bc_t
+        bne +
+        dec l_bc_t+1
++       dec l_bc_t
+        lda l_bc_t
+        ora l_bc_t+1
+        bne _out
+        jmp gui_redraw_later
+_out:   rts
+
+l_bc_t:         .word 0                 ; frames left, 0 = none
+l_bc_buf:       .fill GUI_BANNER_MAX + 1
 
 l_ts_t:         .word 0                 ; frames left, 0 = no toast
 l_ts_x0:        .word 0

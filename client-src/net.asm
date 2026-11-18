@@ -422,9 +422,9 @@ net_sb: .byte 0
 ;         +4 session (the client: 0 = no connection wanted, else a new number each connect)
 ;         +5 state (the bridge: 0 working on it, 1 connected, 2 can't connect, 3 closed)
 ;=======================================================================================
-BR_RX           = $c000
-BR_TX           = $c100
-BR_CTL          = $c200
+BR_RX           = $cd00                 ; (the top of bank 0's RAM, under the I/O at $D000;
+BR_TX           = $ce00                 ; private/tools/xemu_bridge.py has the same three)
+BR_CTL          = $cf00
 br_session:     .byte 0
 
 net_start:

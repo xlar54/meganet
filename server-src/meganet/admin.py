@@ -34,6 +34,7 @@ from .ui import (Window, Button, Label, TextBox, Password, ListBox, DropDown, Ch
 WIN_SET_PASSWORD = 4
 WIN_KARMA = 28                   # a user's karma history (from the User Editor)
 WIN_SETTINGS = 29                # Admin > System Settings...
+WIN_BROADCAST = 31               # Admin > Broadcast...
 LOW_KARMA = 30                   # the User Editor's Low Karma list: below this
 WIN_ROLES = 5
 WIN_USERS = 6
@@ -126,6 +127,32 @@ class Admin:
         add_buttons(win, [("OK", self._settings_ok, GFlag.DEFAULT), ("Cancel", closer, 0)])
         win.show(session)
         return win
+
+    # ---- Broadcast (admin.broadcast) ----
+
+    def open_broadcast(self, session):
+        """A line to send to everyone signed on: the bottom row of their screens."""
+        if not session.can(perms.ADMIN_BROADCAST):
+            return refuse(session, "open_broadcast", perms.ADMIN_BROADCAST)
+        win = Window.centred("Broadcast", 400, 62, flags=WFlag.CLOSE | WFlag.MOVABLE,
+                             win_id=WIN_BROADCAST, minimize=False)
+        win.add(Label(8, 4, 384, 10, "A message to everyone signed on:"))
+        win.text = win.add(TextBox(8, 16, 384, 12))
+        send, _ = add_buttons(win, [("Send", self._broadcast_send, GFlag.DEFAULT),
+                                    ("Cancel", closer, 0)])
+        send.needs = win.text                   # (greyed until something is typed)
+        win.show(session)
+        return win
+
+    @guarded(perms.ADMIN_BROADCAST)
+    def _broadcast_send(self, button):
+        win, session = button.window, button.session
+        text = clean_text(win.text.value).strip()
+        if not text:
+            return None
+        win.close()
+        self.server.screens.broadcast(session, text)
+        return None
 
     @guarded(perms.ADMIN_SETTINGS)
     def _settings_ok(self, button):

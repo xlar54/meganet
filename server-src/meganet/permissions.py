@@ -91,6 +91,7 @@ ADMIN_PAGES = register("admin.pages", "Answer pages from users", like="chat.mode
 MAIL_USE = register("mail.use", "Use private messages", like="chat.use")
 CHAT_ROOMS = register("chat.rooms", "Make chat rooms", like="boards.post")
 ADMIN_SETTINGS = register("admin.settings", "Admin: system settings")
+ADMIN_BROADCAST = register("admin.broadcast", "Admin: broadcast")
 IM_SEND = "im.send"
 
 # The roles a fresh database starts with: (name, level, permission keys). A higher level sorts

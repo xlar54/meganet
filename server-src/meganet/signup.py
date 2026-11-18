@@ -326,10 +326,9 @@ class Wizard:
         session.log("sign-up accepted: %s" % self.name)
         screens = session.server.screens
         session.sign_on(self.name, "Welcome to MegaNet, %s!" % self.name, new=True,
-                        welcome=False)
+                        welcome=False, after=lambda: set_up_window(session, first))
         if not first:
             screens.pages.messages_changed()          # the admins' envelope icons
-        set_up_window(session, first)
         return None
 
     def _cancel(self, button):

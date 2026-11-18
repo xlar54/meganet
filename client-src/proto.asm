@@ -40,9 +40,12 @@ S_NOTIFY        = $1b
 S_PONG          = $1c
 S_SET_FLAGS     = $1d
 S_TOAST         = $1e
+S_DESK_ICON     = $1f
+S_BROADCAST     = $23
 C_HELLO         = $80
 C_CLICK         = $81
 C_VALUE         = $82
+C_DESK_OPEN     = $8c
 C_SELECT        = $83
 C_MENU_PICK     = $85
 C_WIN_CLOSED    = $86
@@ -208,11 +211,11 @@ _go:    txa
         jmp (_jumps,x)
 _types: .byte S_HELLO, S_LOGIN_RESULT, S_WIN_OPEN, S_WIN_CLOSE, S_GADGET, S_SET_TEXT
         .byte S_SET_VALUE, S_FOCUS, S_ALERT, S_WIN_DONE, S_LIST_ROWS, S_APPEND, S_MENU
-        .byte S_NOTIFY, S_SET_FLAGS, S_TOAST
+        .byte S_NOTIFY, S_SET_FLAGS, S_TOAST, S_DESK_ICON, S_BROADCAST
 _n = * - _types
 _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_text
         .word pm_set_value, pm_focus, pm_alert, pm_win_done, pm_list_rows, pm_append
-        .word pm_menu, pm_notify, pm_set_flags, pm_toast
+        .word pm_menu, pm_notify, pm_set_flags, pm_toast, pm_desk_icon, pm_broadcast
 
 ; u8 slot, u8 icon, str hint (the hint isn't shown yet). The server's slot n is the GUI's
 ; n + 1: the GUI's slot 0, rightmost, is the connectivity icon (link.asm)
@@ -422,6 +425,37 @@ pm_toast:
         plx
         pla
         jmp gui_toast
+
+; u8 seconds, str text: a message to everyone, across the bottom row
+pm_broadcast:
+        jsr rd_u8
+        pha
+        ldx #0
+        jsr rd_str
+        sta txt_ptr
+        stx txt_ptr+1
+        pla
+        jmp gui_banner
+
+; u8 slot, str line 1 ("" removes it), str line 2, then the picture's 32 x 16 bytes: a
+; desktop icon
+pm_desk_icon:
+        jsr rd_u8
+        pha
+        ldx #0
+        jsr rd_str
+        sta gui_dk_l1
+        stx gui_dk_l1+1
+        ldx #1
+        jsr rd_str
+        sta gui_dk_l2
+        stx gui_dk_l2+1
+        lda pr_ptr
+        sta gui_dk_px
+        lda pr_ptr+1
+        sta gui_dk_px+1
+        pla
+        jmp gui_desk_icon
 
 ; u8 win, u8 gid, u8 flags: e.g. a button greyed out or back
 pm_set_flags:
@@ -802,7 +836,15 @@ proto_gui_event:
         beq _close
         cmp #GE_KEY
         beq _key
-        cmp #GE_NOTIFY
+        cmp #GE_DESK
+        bne +
+        jsr busy_click
+        lda #C_DESK_OPEN
+        jsr tx_begin
+        lda ge_val
+        jsr tx_u8
+        jmp tx_end
++       cmp #GE_NOTIFY
         bne +
         jsr busy_click
         lda #C_NOTIFY_CLICK

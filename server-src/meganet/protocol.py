@@ -107,6 +107,14 @@ class S(IntEnum):
     TOAST = 0x1E         # u8 seconds, u8 slot, str text  (a short line in a box at the bottom
                          # right for a while, over everything, taking no input; a click on it
                          # removes it and, unless slot is $FF, acts as a NOTIFY_CLICK of slot)
+    DESK_ICON = 0x1F     # u8 slot, str line 1, str line 2, then (unless line 1 is empty, which
+                         # removes the icon) DESK_ICON_W x DESK_ICON_H bytes of pixels, row by
+                         # row: GUI colours 0-15, DESK_CLEAR = transparent. A desktop icon in
+                         # the column at the left, Windows 95 style: a click selects it, a
+                         # double click sends C.DESK_OPEN
+    BROADCAST = 0x23     # u8 seconds, str text  (a message to everyone: the whole bottom row of
+                         # the screen, yellow on red, over everything but a toast, for that
+                         # long or until clicked; it takes no input. BROADCAST_MAX characters)
     FILE_BEGIN = 0x20    # u32 size, str name
     FILE_DATA = 0x21     # u32 offset, bytes...
     FILE_END = 0x22      # u32 crc32
@@ -132,6 +140,7 @@ class C(IntEnum):
     TEXT = 0x8B          # u8 win, u8 gid, u8 n, n x str  (an EDIT gadget's lines, trailing
                          # empty lines dropped; sent for every EDIT of the window before a
                          # CLICK, as VALUE is for text boxes)
+    DESK_OPEN = 0x8C     # u8 slot  (the S.DESK_ICON in that slot was double-clicked)
     PING = 0x8F          # (nothing)  "are you there?": the server answers S.PONG. The client
                          # sends it after 30 s with nothing from the server, and shows its
                          # connectivity icon with an X if no answer comes in 10 s
@@ -192,6 +201,13 @@ class GFlag(IntFlag):
     NEEDTEXT = 32        # a button the client greys out while one text box is empty (the
                          # box's gid comes after the GADGET as the button's S.SET_VALUE)
 
+
+BROADCAST_MAX = 79       # S.BROADCAST: characters across the bottom row
+BROADCAST_SECS = 20
+DESK_SLOTS = 8           # S.DESK_ICON slots 0-7, top to bottom
+DESK_ICON_W, DESK_ICON_H = 32, 16   # (640x200 pixels are twice as tall: it looks square)
+DESK_LABEL_MAX = 10      # characters a label line
+DESK_CLEAR = 0xFF        # a transparent pixel
 
 LOGIN_NEW_USER = 0x01    # C.LOGIN flags bit 0
 SELECT_DOUBLE = 0x8000   # C.SELECT index bit 15 = double-click

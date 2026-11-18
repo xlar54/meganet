@@ -3,7 +3,8 @@ of the windows the server has opened, the way the MEGA65 client will."""
 
 import asyncio
 
-from meganet.protocol import (GFlag, S, C, Kind, Writer, Deframer, LOGIN_NEW_USER, MENU_FIRST,
+from meganet.protocol import (BROADCAST_MAX, DESK_SLOTS, DESK_ICON_W, DESK_ICON_H, DESK_LABEL_MAX,
+                              DESK_CLEAR, GFlag, S, C, Kind, Writer, Deframer, LOGIN_NEW_USER, MENU_FIRST,
                               MENU_LAST, MENU_SEPARATOR, NOTIFY_SLOTS, NOTIFY_HINT_MAX, Icon,
                               window_fits, DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES,
                               EDIT_COLS_MAX)
@@ -43,6 +44,7 @@ class FakeClient:
         self.windows = {}        # open windows: id -> FakeWindow
         self.alerts = []         # (title, text)
         self.toasts = []         # (seconds, slot or None, text)
+        self.broadcasts = []     # (seconds, text)
         self.login_results = []  # (ok, message)
         self.hello = None        # (version, session id)
         self.update = None       # (build, nfiles, message)
@@ -51,6 +53,8 @@ class FakeClient:
         self.menu = []           # the menu bar: [(id, parent, label)] from the last S.MENU
         self.menus_received = 0  # how many S.MENU messages have come
         self.notify = {}         # menu-bar icons: slot -> (icon, hint)  (icon 0 removes one)
+        self.desk = {}           # desktop icons: slot -> (line 1, line 2, pixels)
+        self.events = []         # ("open" / "close" / "icon", window title or slot), in order
         self._changed = asyncio.Event()
 
     async def connect(self, port):
@@ -75,6 +79,13 @@ class FakeClient:
 
     def send_login(self, name, password, new=False):
         self.send(C.LOGIN, Writer().u8(LOGIN_NEW_USER if new else 0).str(name).str(password))
+
+    def desk_labels(self):
+        return [(" ".join(x for x in self.desk[s][:2] if x)) for s in sorted(self.desk)]
+
+    def desk_open(self, label):
+        slot = next(s for s in self.desk if " ".join(x for x in self.desk[s][:2] if x) == label)
+        self.send(C.DESK_OPEN, Writer().u8(slot))
 
     def click(self, win, gid):
         # Like the real client: every EDIT gadget's lines go first (C.TEXT), as VALUE does for
@@ -228,6 +239,7 @@ class FakeClient:
             win, x, y, w, h, _flags = r.u8(), r.u16(), r.u8(), r.u16(), r.u8(), r.u8()
             assert 1 <= win <= 0xEF, "server used a client window id"
             self.windows[win] = FakeWindow(win, r.str())
+            self.events.append(("open", self.windows[win].title))
             self.windows[win].size = (w, h)
             self.windows[win].pos = (x, y)
             self.windows[win].flags = _flags
@@ -268,6 +280,23 @@ class FakeClient:
             self.windows[win].gadgets[gid] = dict(
                 kind=kind, text=text, value=DROPDOWN_NONE if kind == Kind.DROPDOWN else 0,
                 rows=[], lines=[], box=(x, y, w, h), flags=_flags)
+        elif t == S.DESK_ICON:
+            slot, one, two = r.u8(), r.str(), r.str()
+            assert 0 <= slot < DESK_SLOTS, "desktop slot %d" % slot
+            if not one:
+                assert not two and not r.rest(), "a removed desktop icon carries nothing"
+                self.desk.pop(slot, None)
+            else:
+                assert len(one) <= DESK_LABEL_MAX and len(two) <= DESK_LABEL_MAX, "label"
+                px = r.rest()
+                assert len(px) == DESK_ICON_W * DESK_ICON_H, "icon is %d bytes" % len(px)
+                assert all(p < 16 or p == DESK_CLEAR for p in px), "icon colours 0-15"
+                self.desk[slot] = (one, two, px)
+                self.events.append(("icon", slot))
+        elif t == S.BROADCAST:
+            secs, text = r.u8(), r.str()
+            assert len(text) <= BROADCAST_MAX, "broadcast too long for the row"
+            self.broadcasts.append((secs, text))
         elif t == S.TOAST:
             secs, slot = r.u8(), r.u8()
             self.toasts.append((secs, None if slot == 0xFF else slot, r.str()))
@@ -277,7 +306,8 @@ class FakeClient:
         elif t == S.WIN_DONE:
             self.windows[r.u8()].done = True
         elif t == S.WIN_CLOSE:
-            self.windows.pop(r.u8(), None)
+            gone = self.windows.pop(r.u8(), None)
+            self.events.append(("close", gone.title if gone else None))
         elif t == S.SET_TEXT:
             win, gid = r.u8(), r.u8()
             g = self.windows[win].gadgets[gid]

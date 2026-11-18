@@ -1,4 +1,4 @@
-﻿# MegaNet design
+# MegaNet design
 
 MegaNet is a graphical, multi-user online service for the MEGA65, in the style of mid-90s
 point-and-click services. It has a fat client and a thin protocol. The **server** (Python,
