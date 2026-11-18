@@ -113,11 +113,15 @@
       window while they arrive at sign-on
 - [x] Desktop icons for the File Library and Games; Admin > Broadcast... (the bottom row,
       yellow on red, for everyone)
-- [ ] Desktop icons: more of them (Private Messages, Who's Online); outlines that show
-      on the black desktop; keyboard selection; dragging them
+- [x] Desktop icons down the right edge (slots 8-11): Who's Online, News, Voting
+- [ ] Desktop icons: Private Messages; outlines that show on the black desktop; keyboard
+      selection; dragging them
 - [x] Areas > Voting: polls with a question, a description, 2-6 choices and an end date;
       one vote each; Results as a bar graph
-- [ ] Voting: a desktop icon; hiding results until you've voted (an option per poll);
+- [ ] Voting: hiding results until you've voted (an option per poll);
       editing a poll before anyone has voted
-- [ ] News, file library
+- [x] Areas > News: bulletins; news.post writes, edits and deletes them in the composer;
+      "new news, read it now?" after the welcome window
+- [ ] News: a notify icon when a bulletin is posted while you're on
+- [ ] File library
 - [ ] Pace FILE_DATA by FILE_ACK

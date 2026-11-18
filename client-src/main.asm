@@ -10,7 +10,7 @@
 ;   $20000-$3F3FF  the framebuffer (the ROM area, unprotected after the takeover):
 ;                  mega-ip will take $42000-$47FFF and $50000-$515FF (weather65's layout)
 ;   $8000000     the logo (attic)
-;   $8200000     GUI list / view rows (16 x 8 KB); $8240000 desktop icon pictures (8 x 512)
+;   $8200000     GUI list / view rows (16 x 8 KB); $8240000 desktop icon pictures (12 x 512)
 ;   $CD00-$CF05  the bridge build's rings (Xemu only)
 ;=======================================================================================
         .cpu "45gs02"

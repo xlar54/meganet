@@ -126,8 +126,7 @@ class ChatTest(ServerTest):
         a = await self.signed_on("alice")
         b = await self.signed_on("bob")
         for c in (a, b):
-            c.pick("Chat Rooms")
-            await c.wait_window("Lobby")
+            await c.enter_room("Lobby")
         lobby = a.windows[WIN_LOBBY]
         kinds = {g["kind"]: gid for gid, g in lobby.gadgets.items()}
         view, people, entry = kinds[8], kinds[5], kinds[3]       # TEXTVIEW, LISTBOX, TEXTBOX

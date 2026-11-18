@@ -28,7 +28,8 @@ from . import db as dbmod
 from . import karma
 from .compose import Composer, refuse
 from .protocol import WFlag, GFlag, clean_text
-from .ui import add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView, CheckBox
+from .ui import (add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView,
+                 CheckBox, Group)
 
 READ, POST, MODERATE = "boards.read", "boards.post", "boards.moderate"
 
@@ -316,19 +317,22 @@ class Browser:
             self.list.selected = self.ids.index(self.forum_id)
         self.need = [win.add(Button(416, 14, 136, 16, "Open", GFlag.DEFAULT,
                                     on_click=self._open_forum))]      # (need a forum picked)
-        if self.mod:
+        if self.mod:                     # under a line and a heading, set apart from Open
             picked = self.db.forum(self.forum_id) if self.forum_id in self.ids else None
-            win.add(Label(416, 38, 136, 10, "Forum name:"))
-            self.name = win.add(TextBox(416, 50, 136, 12, picked["name"] if picked else ""))
-            win.add(Button(416, 66, 66, 16, "New", on_click=self._new_forum))
-            self.need.append(win.add(Button(486, 66, 66, 16, "Rename", on_click=self._rename)))
-            self.need.append(win.add(Button(416, 86, 66, 16, "Delete",
+            win.add(Group(416, 36, 136, 2))
+            win.add(Label(416, 42, 136, 10, "Admin Tools", GFlag.BOLD | GFlag.CENTRE))
+            win.add(Label(416, 56, 136, 10, "Forum name:"))
+            self.name = win.add(TextBox(416, 68, 136, 12, picked["name"] if picked else ""))
+            win.add(Button(416, 84, 66, 16, "New", on_click=self._new_forum,
+                           needs=self.name))                  # (greyed until a name is typed)
+            self.need.append(win.add(Button(486, 84, 66, 16, "Rename", on_click=self._rename)))
+            self.need.append(win.add(Button(416, 104, 66, 16, "Delete",
                                             on_click=self._delete_forum)))
-            self.lock = win.add(Button(486, 86, 66, 16,
+            self.lock = win.add(Button(486, 104, 66, 16,
                                        "Unlock" if picked and picked["locked"] else "Lock",
                                        on_click=self._lock))
             self.need.append(self.lock)
-            self.need.append(win.add(Button(416, 106, 136, 16, "Access...",
+            self.need.append(win.add(Button(416, 124, 136, 16, "Access...",
                                             on_click=self._access)))
         if status is None:
             status = "Pick a forum and Open it." if rows else "There are no forums yet."

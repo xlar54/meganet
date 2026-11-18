@@ -70,7 +70,7 @@ CORE = [
     ("boards.post", "Post on message boards"),
     ("boards.moderate", "Moderate boards"),
     ("news.read", "Read the news"),
-    ("news.post", "Post news"),
+    ("news.post", "Post, edit, delete news"),
     ("files.download", "Download files"),
     ("files.upload", "Upload files"),
     ("im.send", "Send instant messages"),
@@ -95,6 +95,7 @@ ADMIN_BROADCAST = register("admin.broadcast", "Admin: broadcast")
 POLLS_VOTE = register("polls.vote", "Vote in polls", like="chat.use")
 POLLS_MANAGE = register("polls.manage", "Set up polls", like="boards.moderate")
 IM_SEND = "im.send"
+NEWS_READ, NEWS_POST = "news.read", "news.post"     # (Sysop only at first: Roles gives it out)
 
 # The roles a fresh database starts with: (name, level, permission keys). A higher level sorts
 # lower in the lists. The last one gets every permission, admin ones included.

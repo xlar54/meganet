@@ -157,6 +157,15 @@ CREATE TABLE IF NOT EXISTS poll_votes (
     at        INTEGER NOT NULL,
     PRIMARY KEY (poll_id, user_id)  -- one vote each
 );
+CREATE TABLE IF NOT EXISTS news (
+    id        INTEGER PRIMARY KEY,
+    headline  TEXT NOT NULL,
+    body      TEXT NOT NULL,            -- lines joined with newlines
+    author    INTEGER REFERENCES users(id),
+    posted    INTEGER NOT NULL,
+    edited    INTEGER,                  -- NULL: never edited
+    editor    INTEGER REFERENCES users(id)
+);
 CREATE TABLE IF NOT EXISTS files (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -1004,3 +1013,34 @@ class Database:
             self.conn.execute("DELETE FROM poll_votes WHERE poll_id = ?", (poll_id,))
             self.conn.execute("DELETE FROM poll_choices WHERE poll_id = ?", (poll_id,))
             self.conn.execute("DELETE FROM polls WHERE id = ?", (poll_id,))
+
+    # ---- news bulletins (Areas > News, news.py) ----
+
+    _NEWS_SQL = ("SELECT n.id, n.headline, n.body, n.posted, n.edited, a.name AS author_name, "
+                 "e.name AS editor_name FROM news n LEFT JOIN users a ON a.id = n.author "
+                 "LEFT JOIN users e ON e.id = n.editor ")
+
+    def news(self):
+        """Every bulletin, newest first."""
+        return self.conn.execute(self._NEWS_SQL + "ORDER BY n.posted DESC, n.id DESC").fetchall()
+
+    def bulletin(self, news_id):
+        return self.conn.execute(self._NEWS_SQL + "WHERE n.id = ?", (news_id,)).fetchone()
+
+    def post_news(self, headline, lines, author):
+        """A new bulletin; returns its id."""
+        with self.conn:
+            cur = self.conn.execute("INSERT INTO news (headline, body, author, posted) "
+                                    "VALUES (?, ?, ?, ?)",
+                                    (headline, "\n".join(lines), author, int(time.time())))
+        return cur.lastrowid
+
+    def edit_news(self, news_id, headline, lines, editor):
+        with self.conn:
+            self.conn.execute("UPDATE news SET headline = ?, body = ?, edited = ?, editor = ? "
+                              "WHERE id = ?", (headline, "\n".join(lines), int(time.time()),
+                                               editor, news_id))
+
+    def delete_news(self, news_id):
+        with self.conn:
+            self.conn.execute("DELETE FROM news WHERE id = ?", (news_id,))

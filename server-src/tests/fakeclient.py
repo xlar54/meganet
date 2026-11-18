@@ -208,6 +208,22 @@ class FakeClient:
         await self.wait_for(lambda: find() is not None, "window %r" % title_start)
         return find()
 
+    async def enter_room(self, name="Lobby", via=None):
+        """Into chat room `name` as a user would: Areas > Chat Rooms (or `via()`: the desktop
+        icon, say) opens the room list; pick the room's row, Go. Returns the room window."""
+        CHAT_ROOMS = 26                          # (chat.WIN_ROOMS)
+        self.windows.pop(CHAT_ROOMS, None)
+        (via or (lambda: self.pick("Chat Rooms")))()
+        rl = await self.wait_window("Chat Rooms")
+        lb = next(g for g in sorted(rl.gadgets) if rl.gadgets[g]["kind"] == Kind.LISTBOX)
+        await self.wait_for(lambda: any(r.split("  ")[0].strip() == name
+                                        for r in rl.gadgets[lb].get("rows", [])), "row " + name)
+        rows = rl.gadgets[lb]["rows"]
+        index = next(i for i, r in enumerate(rows) if r.split("  ")[0].strip() == name)
+        self.select(CHAT_ROOMS, lb, index)
+        self.click_text(CHAT_ROOMS, "Go")
+        return await self.wait_window(name)
+
     def all_lines(self, win, gid):
         return self.windows[win].gadgets[gid]["lines"] if win in self.windows else []
 

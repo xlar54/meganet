@@ -7,9 +7,11 @@ a time.
          (chat.moderate) also get Kick, Mute / Unmute, Ban, Unban..., Karma +, Karma - (for the
          person picked in the list) and Topic (sets the line typed as the topic; nothing
          clears it). Picking a person shows a moderator their Karma Points.
-    26 = Chat Rooms: the listed rooms with how many are in each; Go; a Room name box, Private
-         and Go to Room (joins a room by name, private ones too, or makes a member room:
-         chat.rooms); moderators also New Room (a permanent one) and Delete Room
+    26 = Chat Rooms (what Areas > Chat Rooms opens, unless you're in a room): the listed
+         rooms with how many are in each; Go; then under a line and "Create A Room", a Room
+         name box, Private and Create Room (makes a member room: chat.rooms; or joins the
+         room of that name, private ones too); moderators also Delete Room (under Go) and
+         New Room (a permanent one)
     27 = Unban (moderators): a drop-down of who is banned from the room, Unban
 
 Rooms:
@@ -29,7 +31,8 @@ from . import db as dbmod
 from . import karma
 from . import permissions as perms
 from .protocol import WFlag, GFlag, clean_text
-from .ui import add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView, CheckBox, DropDown
+from .ui import (add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView,
+                 CheckBox, DropDown, Group)
 
 USE, MODERATE, ROOMS = "chat.use", "chat.moderate", perms.CHAT_ROOMS
 WIN_ROOM = 2
@@ -125,16 +128,14 @@ class Chat:
     # ---- joining and leaving ----
 
     def open(self, session):
-        """Areas > Chat Rooms: back to your room, or into the Lobby."""
+        """Areas > Chat Rooms: back to your room if you're in one, else the list of rooms to
+        pick from (not straight into the Lobby)."""
         if not session.can(USE):
             return refuse(session, USE)
         room = self.where.get(session)
         if room is not None:
             return room.windows[session].show()
-        problem = self.join(session, dbmod.LOBBY)
-        if problem:                      # (banned from the Lobby, say): say so, or the
-            session.alert(TITLE, problem)        # client just waits with its hourglass
-        return None
+        return self.open_list(session)
 
     def join(self, session, name, private=False, create=False):
         """Into room `name`; with `create`, a member room is made if there's none. Returns a
@@ -522,16 +523,23 @@ class RoomList:
         win.add(Label(8, 2, 272, 10, "Room               In"))
         self.list = win.add(ListBox(8, 14, 272, 128, self.rows(), on_select=self._pick))
         self.go_b = win.add(Button(288, 14, 104, 16, "Go", GFlag.DEFAULT, on_click=self._go))
-        win.add(Label(288, 38, 104, 10, "Room name:"))
-        self.name = win.add(TextBox(288, 50, 104, 12))
-        self.private = win.add(CheckBox(288, 66, 104, 12, "Private"))
-        win.add(Button(288, 82, 104, 16, "Go to Room", needs=self.name,
-                       on_click=self._go_named))
+        y = 34
         self.delete_b = None
-        if self.mod:
-            win.add(Button(288, 102, 104, 16, "New Room", needs=self.name, on_click=self._new))
-            self.delete_b = win.add(Button(288, 120, 104, 16, "Delete Room",
+        if self.mod:                     # (acts on the picked room, like Go)
+            self.delete_b = win.add(Button(288, y, 104, 16, "Delete Room",
                                            on_click=self._delete))
+            y += 20
+        win.add(Group(288, y + 2, 104, 2))                    # a line, then making a room
+        win.add(Label(288, y + 8, 104, 10, "Create A Room", GFlag.BOLD | GFlag.CENTRE))
+        win.add(Label(288, y + 22, 104, 10, "Room name:"))
+        self.name = win.add(TextBox(288, y + 34, 104, 12))
+        self.private = win.add(CheckBox(288, y + 50, 104, 12, "Private"))
+        # Create Room: makes a member room, or joins the room of that name if there is one
+        # (the way into a private room, which isn't listed)
+        win.add(Button(288, y + 66, 104, 16, "Create Room", needs=self.name,
+                       on_click=self._go_named))
+        if self.mod:
+            win.add(Button(288, y + 86, 104, 16, "New Room", needs=self.name, on_click=self._new))
         self.status = win.add(Label(8, 146, 272, 10, status or "Pick a room and Go."))
         self.win = win
         self.buttons()

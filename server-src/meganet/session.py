@@ -250,7 +250,7 @@ class Session:
                 await call(self.server.screens.notify_click(self, slot))
         elif msg_type == C.DESK_OPEN:
             slot = r.u8()
-            if slot >= len(self.desk):
+            if slot >= len(self.desk) or self.desk[slot] is None:
                 karma.suspicious(self, "desk open %d: no icon there" % slot)
             else:
                 await call(self.server.screens.desktop.open(self, slot))

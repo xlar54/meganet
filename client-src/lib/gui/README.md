@@ -76,6 +76,9 @@ left corner).
 - **Buttons that need text:** a button with `GGF_NEEDTEXT` and `gg_val` = a text box's id
   (MegaNet: `S.SET_VALUE` on the button) is greyed while that box is empty, and comes back
   as soon as something is typed, with no round trip to the server.
+- **Bold labels:** a label with `GGF_BOLD` (64) is drawn twice, one pixel apart, like window
+  titles (Message Boards' "Admin Tools" heading). A `GK_GROUP` 2 pixels high is an etched
+  separator line.
 - **Minimize:** a window with `GWF_MIN` (8) has a minimize box left of its close box.
   - Clicking it shrinks the window to its title bar (156 wide) in a row along the bottom of
     the screen, at y `GUI_MIN_Y` (168), one row above the toast. There are 4 places
@@ -89,12 +92,13 @@ left corner).
     restores to changes. MegaNet sets it to 1 for half a second after the server answers a
     click, so a window the user asked for comes back and a refresh doesn't pop one up.
   - It's all in the GUI: the program isn't told.
-- **Desktop icons:** `gui_desk_icon` (A = slot 0-7; `gui_dk_l1` / `gui_dk_l2` = the label's
+- **Desktop icons:** `gui_desk_icon` (A = slot 0-11; `gui_dk_l1` / `gui_dk_l2` = the label's
   two lines, `gui_dk_px` = the picture) puts an icon on the desktop, Windows 95 style.
   - The picture is 32 x 16 bytes (it looks square), colours 0-15, `$ff` see-through. It's
     copied to attic (`GUI_DESK_MEM`, 512 bytes a slot).
   - The labels are up to 10 characters each, white and centred under the picture.
-  - Icons go in columns of 4 down the left of the desktop, under every window.
+  - Icons go in columns of 4, under every window: slots 0-7 (`GUI_ICON_LEFT`) from the left
+    edge, slots 8-11 down the right edge.
   - A click selects one (its label on navy). The same one again within half a second gives
     `GE_DESK` with `ge_val` = the slot. A click elsewhere on the desktop clears the selection.
   - Line 1 empty removes the icon; `gui_desk_clear` removes them all.

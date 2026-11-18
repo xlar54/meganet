@@ -1,4 +1,4 @@
-"""Desktop icons: a column of Windows 95-style icons at the left of the client's desktop,
+"""Desktop icons: columns of Windows 95-style icons at the left and right of the client's desktop,
 each a 32x16 picture (it looks square: the client's pixels are twice as tall as wide) with a
 label of one or two lines under it. A click selects one; a double click opens it (C.DESK_OPEN).
 
@@ -9,8 +9,8 @@ the column follows when their permissions change.
 
 import asyncio
 
-from .protocol import (S, WFlag, Writer, DESK_SLOTS, DESK_ICON_W, DESK_ICON_H, DESK_LABEL_MAX,
-                       DESK_CLEAR)
+from .protocol import (S, WFlag, Writer, DESK_SLOTS, DESK_LEFT, DESK_ICON_W, DESK_ICON_H,
+                       DESK_LABEL_MAX, DESK_CLEAR)
 from .ui import Window, Label, Progress
 
 # text picture character -> the client's GUI colour (lib/gui GC_*); '.' is transparent
@@ -95,12 +95,73 @@ ICONS["games"] = [                               # a joystick: ball, stick, base
     "....kkkkkkkkkkkkkkkkkkkkkkkk....",
 ]
 
-# The column, top to bottom: (picture, label, permission or None, Screens action)
+ICONS["who"] = [                                 # two people, side by side
+    "................................",
+    "........kkkkk......kkkkk........",
+    ".......kyyyyyk....kyyyyyk.......",
+    "......kyykyykyk..kyykyykyk......",
+    "......kyyyyyyyk..kyyyyyyyk......",
+    "......kyykkkyyk..kyykkkyyk......",
+    ".......kyyyyyk....kyyyyyk.......",
+    "........kkkkk......kkkkk........",
+    "......kkkkkkkkk..kkkkkkkkk......",
+    ".....kbbbbbbbbbkkrrrrrrrrrk.....",
+    "....kbbbbbbbbbbbkrrrrrrrrrrk....",
+    "....kbbbbbbbbbbbkrrrrrrrrrrk....",
+    "....kbbbbbbbbbbbkrrrrrrrrrrk....",
+    "....kbbbbbbbbbbbkrrrrrrrrrrk....",
+    "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+    "................................",
+]
+ICONS["news"] = [                                # a newspaper: masthead, a picture, columns
+    "..kkkkkkkkkkkkkkkkkkkkkkkkkk....",
+    "..kwwwwwwwwwwwwwwwwwwwwwwwwk....",
+    "..kwkkkkkkkkkkkkkkkkkkkkkkwk....",
+    "..kwkkkkkkkkkkkkkkkkkkkkkkwkk...",
+    "..kwwwwwwwwwwwwwwwwwwwwwwwwkdk..",
+    "..kwssssssssssssssssssssswwkdk..",
+    "..kwwwwwwwwwwwwwwwwwwwwwwwwkdk..",
+    "..kwbbbbbbbbwwssssswwssssswkdk..",
+    "..kwbbyybbbbwwwwwwwwwwwwwwwkdk..",
+    "..kwbbbbbbbbwwssssswwssssswkdk..",
+    "..kwbbbbbbbbwwwwwwwwwwwwwwwkdk..",
+    "..kwsssssssswwssssswwssssswkdk..",
+    "..kwwwwwwwwwwwwwwwwwwwwwwwwkdk..",
+    "..kwsssssssswwssssswwssssswkdk..",
+    "..kkkkkkkkkkkkkkkkkkkkkkkkkkdk..",
+    "....kdddddddddddddddddddddddk...",
+]
+ICONS["voting"] = [                              # a ballot with a tick going into a box
+    "..........kkkkkkkkkkkk..........",
+    "..........kwwwwwwwwwwk..........",
+    "..........kwwwwwwwwGwk..........",
+    "..........kwwwwwwwGGwk..........",
+    "..........kwGwwwwGGwwk..........",
+    "..........kwGGwwGGwwwk..........",
+    "..........kwwGGGGwwwwk..........",
+    "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+    "....kssssskkkkkkkkkkkksssssk....",
+    "....kbbbbbbbbbbbbbbbbbbbbbbk....",
+    "....kbbbbbbbbbbbbbbbbbbbbbbk....",
+    "....kbbbbbbwwwwwwwwwwbbbbbbk....",
+    "....kbbbbbbwkkwkkwkkwbbbbbbk....",
+    "....kbbbbbbwwwwwwwwwwbbbbbbk....",
+    "....kbbbbbbbbbbbbbbbbbbbbbbk....",
+    "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+]
+
+# The columns, top to bottom: (picture, label, permission or None, Screens action). LEFT
+# fills slots 0-7 from the left edge, RIGHT slots 8-11 from the right edge (protocol).
 DESKTOP = [
     ("chat", "Chat", "chat.use", "open_chat"),
     ("boards", "Message Boards", "boards.read", "open_boards"),
     ("files", "File Library", "files.download", "open_files"),
     ("games", "Games", "games.play", "open_games"),
+]
+DESKTOP_RIGHT = [
+    ("who", "Who's Online", None, "open_who"),
+    ("news", "News", "news.read", "open_news"),
+    ("voting", "Voting", "polls.vote", "open_voting"),
 ]
 
 
@@ -131,14 +192,20 @@ class Desktop:
         self.screens = screens
 
     def icons_for(self, session):
-        return [d for d in DESKTOP if d[2] is None or session.can(d[2])][:DESK_SLOTS]
+        """Slot -> icon (None = empty): the left ones from slot 0, the right from DESK_LEFT."""
+        ok = lambda d: d[2] is None or session.can(d[2])
+        left = [d for d in DESKTOP if ok(d)][:DESK_LEFT]
+        right = [d for d in DESKTOP_RIGHT if ok(d)][:DESK_SLOTS - DESK_LEFT]
+        if not right:
+            return left
+        return left + [None] * (DESK_LEFT - len(left)) + right
 
     def start(self, session, then=None):
         """At sign-on: a "One moment..." window with a progress bar (modal, no close box)
         while the icons go one at a time; then it closes and `then()` runs (the welcome
         window). Returns the task (None if there are no icons: then() at once)."""
         want = self.icons_for(session)
-        if not want:
+        if not any(want):
             self.refresh(session)
             return then() if then else None
         win = Window.centred("One moment...", 240, 34, flags=WFlag.MODAL, win_id=WIN_LOADING,
@@ -147,13 +214,15 @@ class Desktop:
         bar = win.add(Progress(8, 16, 224, 12))
         win.show(session)
 
+        steps = [i for i, d in enumerate(want) if d is not None]    # one icon at a time
+
         async def run():
-            for i in range(len(want)):
+            for n, i in enumerate(steps):
                 await asyncio.sleep(PACE)
                 if session.closed:
                     return
                 self._send(session, want[:i + 1])
-                bar.set_percent((i + 1) * 100 // len(want))
+                bar.set_percent((n + 1) * 100 // len(steps))
             await asyncio.sleep(PACE)
             if session.closed:
                 return
@@ -186,7 +255,7 @@ class Desktop:
     def open(self, session, slot):
         """C.DESK_OPEN: the icon's action, if this session was sent it and still may use it."""
         icons = getattr(session, "desk", [])
-        if not 0 <= slot < len(icons):
+        if not 0 <= slot < len(icons) or icons[slot] is None:
             return None
         picture, label, key, action = icons[slot]
         if key is not None and not session.can(key):

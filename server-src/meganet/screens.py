@@ -7,7 +7,7 @@ Fixed window ids (all below session.FIRST_DYNAMIC_WIN):
     11 = the Message of the Day editor (admin.py), 12 = Help > Getting Around,
     13-16 = Page Admin and the messages to the admins (pages.py),
     17-18 = Private Messages (mail.py), 19 = Reset Password (account.py),
-    22-25 = Message Boards (boards.py),
+    22-25 = Message Boards (boards.py), 32-35 = Voting (polls.py), 36-38 = News (news.py),
     20 = the New User sign-up wizard (signup.py, before sign-on);
     private chats with an admin take dynamic ids
 
@@ -26,6 +26,7 @@ from .boards import Boards
 from .chat import Chat
 from .desktop import Desktop
 from .polls import Polls
+from .news import News
 from .im import IMs
 from .presence import Presence, STATUSES, LABELS
 from . import karma
@@ -65,7 +66,7 @@ WIN_WHO_W, WIN_WHO_H = 300, 136
 # (id, label, permission or None for everyone signed on, action name on Screens)
 MENU_TREE = [
     (M_AREAS, "Areas", [
-        (M_NEWS, "News", "news.read", "coming_soon"),
+        (M_NEWS, "News", perms.NEWS_READ, "open_news"),
         (M_BOARDS, "Message Boards", "boards.read", "open_boards"),
         (M_CHAT, "Chat Rooms", "chat.use", "open_chat"),
         (M_MAIL, "Private Messages", perms.MAIL_USE, "open_mail"),
@@ -144,6 +145,7 @@ class Screens:
         self.ims = IMs(server)
         self.desktop = Desktop(self)
         self.polls = Polls(server)
+        self.news = News(server)
 
     def signed_on(self, session, welcome=True, after=None):
         """Everything a session gets on signing on. The desktop icons come first, under a
@@ -283,6 +285,9 @@ class Screens:
     def open_voting(self, session, item=None):
         return self.polls.open(session)
 
+    def open_news(self, session, item=None):
+        return self.news.open(session)
+
     def open_mail(self, session, item):
         return self.mail.open_inbox(session)
 
@@ -404,13 +409,20 @@ class Screens:
         view (one APPEND per line; the client wraps and scrolls), and OK. `motd` replaces the
         saved message (the editor's Preview)."""
         lines = self.server.db.motd() if motd is None else list(motd)
+        # At sign-on (not the editor's Preview), closing it asks about new news (news.py).
+        after = (lambda w: self.news.offer(session)) if motd is None else None
         win = Window.centred("Welcome, %s" % session.user, self.WELCOME_W, self.WELCOME_H,
                              flags=WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_WELCOME,
-                             minimize=False)
+                             minimize=False, on_close=after)
+
+        def ok(button):
+            button.window.close()
+            if after:
+                after(button.window)
         win.add(Label(8, 2, 400, 10, "Message of the Day", GFlag.CENTRE))
         win.motd = win.add(TextView(*self.MOTD_VIEW, lines))
         win.version = win.add(Label(8, self.VERSION_Y, 400, 10, version_line(), GFlag.CENTRE))
-        add_buttons(win, [("OK", closer, GFlag.DEFAULT)], centre=True)
+        add_buttons(win, [("OK", ok, GFlag.DEFAULT)], centre=True)
         win.show(session)
         return win
 
@@ -464,6 +476,7 @@ class Screens:
         self.mail.permissions_changed(session)
         self.boards.permissions_changed(session)
         self.polls.permissions_changed(session)
+        self.news.permissions_changed(session)
         self.new_users_changed()
         self.im_rules_changed()
         self.desktop.refresh(session)
@@ -483,6 +496,7 @@ class Screens:
         self.mail.disconnected(session)
         self.boards.disconnected(session)
         self.polls.disconnected(session)
+        self.news.disconnected(session)
         self.ims.disconnected(session)
         self.pages.disconnected(session)
         self.who.pop(session, None)

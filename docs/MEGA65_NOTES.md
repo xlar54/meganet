@@ -262,6 +262,7 @@ Dan Sanderson's recommended default model:
 
 - `.cpu "45gs02"` at the top of every file (or `64tass --m45gs02`), or you don't get map/eom/bra/ldz/Q ops.
 - **`STZ` stores the Z register, not zero.** Use `lda #0 / sta`. Code that assumes otherwise "works" while Z happens to be 0 and fails intermittently. [HW] Xemu accepted `stz $D063` while real hardware left the screen-pointer megabyte nonzero: never use STZ on VIC-IV registers. Grep for `stz` when something is subtly wrong.
+- **Pulls set the flags, stores don't.** `lda src,x / plx / sta dst,x / beq done` tests X from the `plx`, not the byte just copied. A copy loop like that ran until X wrapped to 0 and wrote 256 bytes over the GUI's gadget tables (MegaNet's text-area line join). Put `cmp #0` (or the load) right before the branch.
 - `inw`/`dew`/`asw` work on the base page only.
 - There is no `lda abs,z`, `cpx abs,x`, `cpy abs,x` or `ldx abs,x`.
 - 32-bit indirect: `lda [zp],z` / `sta [zp],z` with a 28-bit address in 4 base-page bytes reaches all chip RAM and attic. Set Z (`ldz #0`) before each one. Keep IRQs off if an IRQ handler might change Z [?].

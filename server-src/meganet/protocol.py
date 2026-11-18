@@ -206,11 +206,13 @@ class GFlag(IntFlag):
     CENTRE = 16          # a label's text centred in its width
     NEEDTEXT = 32        # a button the client greys out while one text box is empty (the
                          # box's gid comes after the GADGET as the button's S.SET_VALUE)
+    BOLD = 64            # a label's text in bold (older clients draw it plain)
 
 
 BROADCAST_MAX = 79       # S.BROADCAST: characters across the bottom row
 BROADCAST_SECS = 20
-DESK_SLOTS = 8           # S.DESK_ICON slots 0-7, top to bottom
+DESK_SLOTS = 12          # S.DESK_ICON slots: 0-7 in columns from the left edge, top to
+DESK_LEFT = 8            # bottom; 8-11 down the right edge (older clients ignore those)
 DESK_ICON_W, DESK_ICON_H = 32, 16   # (640x200 pixels are twice as tall: it looks square)
 DESK_LABEL_MAX = 10      # characters a label line
 DESK_CLEAR = 0xFF        # a transparent pixel

@@ -151,8 +151,7 @@ class RolesTest(RolesBase):
         self.assertIsNone(self.server.db.role_by_name("New Role"))
 
     async def test_take_chat_away_from_new_users(self):
-        self.bob.pick("Chat Rooms")
-        await self.bob.wait_window("Lobby")
+        await self.bob.enter_room("Lobby")
 
         roles = await self.edit_role(self.alice, "New User")
         chat = roles.find("Chat in the lobby")

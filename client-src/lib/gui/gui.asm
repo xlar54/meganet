@@ -80,7 +80,8 @@ GUI_FRAME_SPR   = 2                     ; dragging: these four (corner brackets)
 GUI_DESK        = GC_DESK               ; desktop colour when gui_desk_hook is 0
 GUI_MAXBIG      = 8                     ; lists, views, text areas, drop-downs at once
 GUI_BIG_MEM     = $8200000              ; their rows: GUI_MAXBIG x 8 KB (attic)
-GUI_MAXICON     = 8                     ; desktop icons (columns of GUI_ICON_ROWS)
+GUI_MAXICON     = 12                    ; desktop icons (columns of GUI_ICON_ROWS): slots
+GUI_ICON_LEFT   = 8                     ; 0-7 from the left edge, 8-11 from the right
 GUI_DESK_MEM    = $8240000              ; their pictures, 512 bytes each (64 KB aligned)
         .endweak
 GUI_ICON_W      = 32                    ; a desktop icon's picture (pixels are twice as tall
@@ -145,6 +146,7 @@ GGF_RAWKEYS     = 4
 GGF_MULTILINE   = 8
 GGF_CENTRE      = 16                    ; label text centred
 GGF_NEEDTEXT    = 32                    ; button greyed while text box gg_val (an id) is empty
+GGF_BOLD        = 64                    ; label text bold (drawn twice, one pixel apart)
 
 GE_NONE         = 0
 GE_CLICK        = 1
@@ -1745,7 +1747,7 @@ l_mm_y:
 
 ;=======================================================================================
 ; desktop icons: a picture (GUI_ICON_W x GUI_ICON_H) with one or two label lines under it,
-; in columns down the left of the desktop, under every window
+; in columns down the left of the desktop (slots 0-7) and the right (8-11), under every window
 ;=======================================================================================
 gui_dk_l1:      .word 0                 ; gui_desk_icon: label line 1 ("" removes the icon),
 gui_dk_l2:      .word 0                 ; line 2 ("" none), the picture's bytes (colour
@@ -1763,15 +1765,20 @@ l_dk_off:                               ; icon k: its label's offset, cell centr
 .for k in range(GUI_MAXICON)
         .byte k * GUI_ICON_LBL
 .endfor
+l_dk_cx         .function k             ; icon k's cell centre x: left columns, then right
+                .endf k < GUI_ICON_LEFT ? (k / GUI_ICON_ROWS) * GUI_ICON_CELLW + GUI_ICON_CELLW / 2 : 640 - GUI_ICON_CELLW / 2 - ((k - GUI_ICON_LEFT) / GUI_ICON_ROWS) * GUI_ICON_CELLW
 l_dk_mx:
 .for k in range(GUI_MAXICON)
-        .byte (k / GUI_ICON_ROWS) * GUI_ICON_CELLW + GUI_ICON_CELLW / 2
+        .byte <l_dk_cx(k)
+.endfor
+l_dk_mxh:
+.for k in range(GUI_MAXICON)
+        .byte >l_dk_cx(k)
 .endfor
 l_dk_y:
 .for k in range(GUI_MAXICON)
-        .byte GUI_ICON_TOP + (k % GUI_ICON_ROWS) * GUI_ICON_CELLH
+        .byte GUI_ICON_TOP + ((k < GUI_ICON_LEFT ? k : k - GUI_ICON_LEFT) % GUI_ICON_ROWS) * GUI_ICON_CELLH
 .endfor
-        .cerror (GUI_MAXICON - 1) / GUI_ICON_ROWS * GUI_ICON_CELLW + GUI_ICON_CELLW > 255, "icon columns"
 
 ; A = slot: set it from gui_dk_l1 / l2 / px, or remove it. Drawn at the next frame
 gui_desk_icon:
@@ -1901,11 +1908,18 @@ _chk:   ldx l_dk_k
         asl
         clc
         adc l_dk_mx,x
+        sta d6_x
+        lda l_dk_mxh,x
+        adc #0
+        sta d6_x+1
         sec
+        lda d6_x
         sbc #GUI_ICON_W / 2
         sta d6_x
-        lda #0
+        lda d6_x+1
+        sbc #0
         sta d6_x+1
+        lda #0
         sta d6_y+1
         clc
         lda l_dk_y,x
@@ -1997,8 +2011,10 @@ l_dk_label:
         lda l_dk_mx,x
         sbc l_dk_t
         sta gt_x
-        lda #0
+        lda l_dk_mxh,x
+        sbc #0
         sta gt_x+1
+        lda #0
         sta gt_pw
         lda #$ff
         sta gt_n
@@ -2034,17 +2050,22 @@ _lp:    lda dk_used,x
         sec                             ; top .. top + 35
         sbc #32
         sta gr_x0
+        lda l_dk_mxh,x
+        sbc #0
+        sta gr_x0+1
         clc
+        lda gr_x0
         adc #63
         sta gr_x1
+        lda gr_x0+1
+        adc #0
+        sta gr_x1+1
         lda l_dk_y,x
         sta gr_y0
         clc
         adc #GUI_ICON_H + 19
         sta gr_y1
         lda #0
-        sta gr_x0+1
-        sta gr_x1+1
         sta gr_y0+1
         sta gr_y1+1
         jsr l_pt_in
@@ -2593,8 +2614,25 @@ l_gd_label:
         and #GGF_CENTRE
         beq +
         jsr l_gd_hmid
-+       jsr gui_text
-        jmp d6_clip_all
++       lda gt_x                        ; (bold: drawn again one pixel right, as titles are)
+        sta l_gd_bx
+        lda gt_x+1
+        sta l_gd_bx+1
+        jsr gui_text
+        ldx l_gd_gs
+        lda gg_flags,x
+        and #GGF_BOLD
+        beq +
+        clc
+        lda l_gd_bx
+        adc #1
+        sta gt_x
+        lda l_gd_bx+1
+        adc #0
+        sta gt_x+1
+        jsr gui_text
++       jmp d6_clip_all
+l_gd_bx:        .word 0
 
 ; gt_y = text centred in gr's height
 l_gd_vmid:
@@ -6296,6 +6334,7 @@ _join:  lda gb_row,y                    ; at the start: onto the end of the line
         lda l_ed_tail,x
         plx
         sta l_gb_line,x
+        cmp #0                          ; (plx set Z from X, and sta sets nothing: test A)
         beq +
         inx
         inc l_ed_i

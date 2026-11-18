@@ -24,9 +24,9 @@ class ChatBase(PagesBase):
         return w.gadgets[gadget_of(w, Kind.LISTBOX)]["rows"] if w and w.done else []
 
     async def enter(self, c, title="Lobby"):
+        """Areas > Chat Rooms opens the list (not the Lobby): pick the room, Go."""
         c.windows.pop(WIN_ROOM, None)
-        c.pick("Chat Rooms")
-        return await c.wait_window(title)
+        return await c.enter_room(title)
 
     async def say(self, c, text):
         w = self.room(c)
@@ -48,7 +48,7 @@ class ChatBase(PagesBase):
         if private:
             c.select(WIN_ROOMS, gadget_of(w, Kind.CHECKBOX), 1)
         c.windows.pop(WIN_ROOM, None)
-        c.click_text(WIN_ROOMS, "Go to Room")
+        c.click_text(WIN_ROOMS, "Create Room")
         if title:
             return await c.wait_window(title)
         return None
@@ -99,9 +99,13 @@ class RoomsTest(ChatBase):
                              "listed for moderators")
         row = next(r for r in self.room_rows(alice) if r.startswith("Secret"))
         self.assertTrue(row.endswith(" private"), row)       # (one word: it fits the list)
-        # Go to Room greys itself while the name box is empty (the client does it as you type)
+        # Create Room greys itself while the name box is empty (the client does it as you
+        # type), under a line and a bold "Create A Room"
         w = alice.windows[WIN_ROOMS]
-        go = next(g for g in w.gadgets.values() if g["text"] == "Go to Room")
+        go = next(g for g in w.gadgets.values() if g["text"] == "Create Room")
+        head = next(g for g in w.gadgets.values() if g["text"] == "Create A Room")
+        self.assertTrue(head["flags"] & GFlag.BOLD)
+        self.assertTrue(any(g["kind"] == Kind.GROUP for g in w.gadgets.values()), "the line")
         self.assertTrue(go["flags"] & GFlag.NEEDTEXT and go["flags"] & GFlag.DISABLED)
         self.assertEqual(go.get("value"), gadget_of(w, Kind.TEXTBOX))
         carol = await self.signed_on("carol")
@@ -307,11 +311,16 @@ class KarmaTest(ChatBase):
 
 
 class BannedFromLobbyTest(ChatBase):
-    async def test_menu_says_why(self):
-        """Areas > Chat Rooms for someone banned from the Lobby: an alert, not silence."""
-        chat = self.server.screens.chat
+    async def test_list_says_why(self):
+        """Areas > Chat Rooms opens the room list; Go on the Lobby for someone banned from it
+        says why on the list's status line, not silence."""
+        chat, bob = self.server.screens.chat, self.bob
         chat.bans.setdefault("lobby", set()).add(self.server.db.user("bob")["id"])
-        self.bob.pick("Chat Rooms")
-        await self.bob.wait_for(lambda: ("Chat Rooms", "You are banned from Lobby.")
-                                in self.bob.alerts, "told")
-        self.assertNotIn(WIN_ROOM, self.bob.windows)
+        bob.pick("Chat Rooms")
+        w = await bob.wait_window("Chat Rooms")
+        self.assertNotIn(WIN_ROOM, bob.windows, "not straight into the Lobby")
+        await bob.wait_for(lambda: self.room_rows(bob), "rows")
+        bob.select(WIN_ROOMS, gadget_of(w, Kind.LISTBOX), 0)
+        bob.click_text(WIN_ROOMS, "Go")
+        await bob.wait_for(lambda: status_of(w) == "You are banned from Lobby.", "told")
+        self.assertNotIn(WIN_ROOM, bob.windows)

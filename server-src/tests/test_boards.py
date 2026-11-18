@@ -211,7 +211,11 @@ class GreyedOutTest(PagesBase):
         w = await alice.wait_window("Message Boards")
         for text in ("Open", "Rename", "Delete", "Lock", "Access..."):
             self.assertFalse(alice.enabled(WIN_BOARDS, text), text)
+        self.assertFalse(alice.enabled(WIN_BOARDS, "New"), "New waits for a forum name")
+        alice.value(WIN_BOARDS, gadget_of(w, Kind.TEXTBOX), "Sysops")
         self.assertTrue(alice.enabled(WIN_BOARDS, "New"))
+        alice.value(WIN_BOARDS, gadget_of(w, Kind.TEXTBOX), "")
+        self.assertFalse(alice.enabled(WIN_BOARDS, "New"), "greyed again when cleared")
         alice.click(WIN_BOARDS, w.find("Delete"))            # greyed: ignored
         alice.select(WIN_BOARDS, gadget_of(w, Kind.LISTBOX), 0)
         await alice.wait_for(lambda: alice.enabled(WIN_BOARDS, "Open"), "Open enabled")
@@ -231,8 +235,7 @@ class GreyedOutTest(PagesBase):
         await alice.wait_for(lambda: alice.enabled(WIN_USERS, "History"), "History enabled")
         # A chat room: Kick etc. need someone picked who may be acted on; Unban... a ban
         for c in (bob, alice):
-            c.pick("Chat Rooms")
-            await c.wait_window("Lobby")
+            await c.enter_room("Lobby")
         room = alice.windows[WIN_ROOM]
         self.assertFalse(alice.enabled(WIN_ROOM, "Kick"))
         self.assertFalse(alice.enabled(WIN_ROOM, "Unban..."))

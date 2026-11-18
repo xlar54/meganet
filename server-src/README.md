@@ -198,7 +198,7 @@ for a button or a MENU_PICK for an item it was never given.
 | `im.send` | Send instant messages | | x | x | x |
 | `chat.moderate` | Moderate chat | | | x | x |
 | `boards.moderate` | Moderate boards | | | x | x |
-| `news.post` | Post news | | | | x |
+| `news.post` | Post, edit and delete news bulletins (Areas > News) | | | | x |
 | `files.upload` | Upload files | | | | x |
 | `admin.users` | Assign users to roles | | | | x |
 | `admin.roles` | Edit roles and their permissions | | | | x |
@@ -433,6 +433,29 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
   - Delete asks first, and takes the poll's votes with it.
 - Tables: `polls`, `poll_choices`, `poll_votes`.
 
+## News
+
+**Areas > News** (`meganet/news.py`; `news.read`, everyone from New User up):
+- **The News window** (36) lists the bulletins, newest first: "*" if one was posted or edited
+  since your previous sign-on, then the day and the headline.
+- **Clicking one** opens it to read (window 40, modal): the headline and who posted it (and who
+  edited it last) centred at the top, then the text in a view exactly as wide as the
+  composer's text area, so every line reads as it was written; OK closes it. An open one
+  follows edits, and closes if the bulletin is deleted.
+- **Holders of `news.post`** (only the Sysop in a new database; give it to any role in
+  Admin > Roles) also get **New...**, **Edit...** and **Delete** along the bottom; Edit and
+  Delete act on the bulletin last clicked.
+  - New... and Edit... open the message composer (`compose.py`, window 37), with a Headline
+    box and the same text area as the boards and private messages. Edit starts with the
+    bulletin's headline and text, and the button says Save rather than Post.
+  - Delete asks first (window 38).
+  - Every open News window follows changes straight away.
+- **At sign-on**, if there are new bulletins, closing the welcome window brings up "There are
+  N new news bulletins. Would you like to read them now?" (window 39, modal): **Read Now**
+  opens News, **Later** closes it. It comes once per sign-on, and not after the Message of
+  the Day editor's Preview.
+- Table: `news` (headline, body, author, posted, edited, editor).
+
 ## Broadcast
 
 **Admin > Broadcast...** (`admin.broadcast`; window 31, a small dialog) sends one line to
@@ -445,16 +468,21 @@ everyone signed on. Send is greyed until something is typed.
 
 ## Desktop icons
 
-`meganet/desktop.py`: a column of icons down the left of the client's desktop, under the
+`meganet/desktop.py`: icons down the left and right edges of the client's desktop, under the
 windows. Each is a 32x16 picture (the client's pixels are twice as tall, so it looks square)
-with a label of one or two lines. There are four: **Chat**, **Message Boards**, **File
-Library** (Members and up, `files.download`; "Coming soon." for now) and **Games**.
+with a label of one or two lines.
+- **Left:** **Chat**, **Message Boards**, **File Library** (Members and up, `files.download`;
+  "Coming soon." for now) and **Games**.
+- **Right:** **Who's Online** (two people), **News** (a newspaper; `news.read`) and **Voting**
+  (a ballot going into a box; `polls.vote`).
 - **Server-driven:** `ICONS` are text pictures, one character a pixel (`PALETTE` maps them to
-  the GUI's colours 0-15, `.` is see-through). `DESKTOP` lists the icons with the permission
-  each needs and the action it runs. Only icons the user may use are sent, and the column
-  follows permission changes.
+  the GUI's colours 0-15, `.` is see-through). `DESKTOP` (left) and `DESKTOP_RIGHT` list the
+  icons with the permission each needs and the action it runs. Only icons the user may use
+  are sent, and each column follows permission changes.
 - **Messages:** `S.DESK_ICON` `$1F` (slot, two label lines, 512 bytes of pixels; an empty
-  line 1 removes the icon). A double click sends `C.DESK_OPEN` `$8C` (slot).
+  line 1 removes the icon). Slots 0-7 fill columns of 4 from the left edge, slots 8-11
+  (`DESK_LEFT` up) the column at the right edge; a client older than that ignores slots
+  8-11. A double click sends `C.DESK_OPEN` `$8C` (slot).
 - **At sign-on**, a **"One moment..."** window opens first: modal, with no close box and a
   progress bar. It stays while the icons arrive one at a time (`PACE` = 0.15 s between them),
   then it closes and the welcome window opens. For a new account, the "account set up"
@@ -541,8 +569,9 @@ a first sign-on everything is new), so it is the same for the whole session.
 
 ## Chat Rooms
 
-Areas > Chat Rooms (`meganet/chat.py`, `chat.use`) takes you back to your room, or into the
-Lobby. You are in one room at a time: joining another leaves the one you were in.
+Areas > Chat Rooms (`meganet/chat.py`, `chat.use`; also the Chat desktop icon) takes you
+back to your room, or else opens the Chat Rooms list to pick one from (not straight into the
+Lobby). You are in one room at a time: joining another leaves the one you were in.
 
 - **The room** (window 2, 600x160, titled with the room's name):
   - the topic, the conversation, and who is here (" (muted)" marks);
@@ -550,8 +579,9 @@ Lobby. You are in one room at a time: joining another leaves the one you were in
     the close box leaves. RETURN sends.
 - **Chat Rooms** (window 26, 400x160) lists the rooms and how many people are in each.
   - Go joins the room picked in the list.
-  - Room name, Private and Go to Room join a room by name, private ones included. If there's
-    no room by that name and you hold `chat.rooms` (Members and up), it makes one.
+  - Under a line and a bold **Create A Room** heading: Room name, Private and **Create
+    Room**. It makes a member room (`chat.rooms`, Members and up), or joins the room of that
+    name if there is one, private ones included (the way into a private room).
 - **Kinds of room:**
   - Permanent rooms are kept in `chat_rooms` (name, topic, private). A new database has the
     Lobby, and the Lobby can't be deleted.
