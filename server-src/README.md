@@ -150,8 +150,9 @@ the admins' envelope icons, as a Page Admin message does. Then the usual sign-on
 ## The menu bar
 
 After sign-on the server sends a `MENU` (the bar across the top of the screen, America Online /
-Windows 95 style) and the welcome window (the user's role, the message of the day, and OK to
-close it; see below). The client puts its own MegaNet menu first and its **Window** menu after
+Windows 95 style) and the welcome window (the user's role, the message of the day, the
+server's version centred under it, and OK to close it; see below). The version is
+`meganet.__version__`; Help > About MegaNet shows it too. The client puts its own MegaNet menu first and its **Window** menu after
 the server's titles; titles with ids $E0-$EF (`protocol.MENU_LATE`: Admin) go right of Window.
 The tree is `MENU_TREE` in `meganet/screens.py`:
 
@@ -205,6 +206,8 @@ for a button or a MENU_PICK for an item it was never given.
 | `admin.pages` | Answer pages from users (and read their messages) | | | x | x |
 | `admin.settings` | System Settings (Auto-Away, New Users' instant messages) | | | | x |
 | `admin.broadcast` | Broadcast a line to everyone signed on | | | | x |
+| `polls.vote` | Vote in polls (Areas > Voting) | x | x | x | x |
+| `polls.manage` | Set up and delete polls | | | x | x |
 | `mail.use` | Use private messages | x | x | x | x |
 
 These four roles are made the first time the server opens a database. After that they are
@@ -359,6 +362,11 @@ there after a click: the server removes it when it's done.
 | 3 | 5 (person) | "2 new users" | `admin.users` | the User Editor at the oldest new user |
 | 4 | 6 (speech bubble) | "2 new messages from bob" | anyone | the conversation with unread messages |
 
+**Sounds:** `S.SOUND` `$24` (u8 `Sound`; `session.sound()`) has the client play one of its
+own sounds on the SID, on both speakers (`client-src/sound.asm`). `Sound.CHIME` (1) is a
+two-note "ding-dong". Every admin who can answer gets it once when someone new starts paging,
+with the flashing icon. A hint changing ("3 users are paging") doesn't chime again.
+
 ## Page Admin
 
 Help > Page Admin (`meganet/pages.py`) asks for anyone whose role has `admin.pages`.
@@ -404,6 +412,26 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
 - `private_messages` (id, from_user, to_user, sent, subject, body, read, del_sender,
   del_recip): a message stays until both sides have deleted it. The recipient, if signed on,
   gets the slot 2 icon; otherwise at their next sign-on.
+
+## Voting
+
+**Areas > Voting** (`meganet/polls.py`; `polls.vote`, everyone from New User up):
+- **The Voting window** (32) lists the polls, newest first, each with its state: "open",
+  "until 11-30" (it has an end date), "voted" or "ended".
+  - Picking one shows its description (more background on the question) and its choices.
+  - Pick a choice and **Vote** (or double-click it). Everyone votes once in each poll: the
+    database keeps one vote per person per poll, and Vote is greyed once you have voted.
+    Your choice is marked "*".
+  - **Results** (or a double-click on the poll) opens a window with a bar for each choice,
+    its votes and its share, and the total. It follows new votes while it's open.
+- **After the end date** nobody can vote. The choices list shows each one's share and
+  Results shows the graph.
+- **Moderators and up** (`polls.manage`) also get **New Poll...** and **Delete**.
+  - New Poll... asks for a question (up to 60 characters), a description in a text area (up
+    to 600 characters), 2-6 choices (up to 30 characters) and an end date as YYYY-MM-DD,
+    blank for none. Voting stops at the end of that day.
+  - Delete asks first, and takes the poll's votes with it.
+- Tables: `polls`, `poll_choices`, `poll_votes`.
 
 ## Broadcast
 

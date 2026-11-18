@@ -42,6 +42,7 @@ S_SET_FLAGS     = $1d
 S_TOAST         = $1e
 S_DESK_ICON     = $1f
 S_BROADCAST     = $23
+S_SOUND         = $24
 C_HELLO         = $80
 C_CLICK         = $81
 C_VALUE         = $82
@@ -211,11 +212,12 @@ _go:    txa
         jmp (_jumps,x)
 _types: .byte S_HELLO, S_LOGIN_RESULT, S_WIN_OPEN, S_WIN_CLOSE, S_GADGET, S_SET_TEXT
         .byte S_SET_VALUE, S_FOCUS, S_ALERT, S_WIN_DONE, S_LIST_ROWS, S_APPEND, S_MENU
-        .byte S_NOTIFY, S_SET_FLAGS, S_TOAST, S_DESK_ICON, S_BROADCAST
+        .byte S_NOTIFY, S_SET_FLAGS, S_TOAST, S_DESK_ICON, S_BROADCAST, S_SOUND
 _n = * - _types
 _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_text
         .word pm_set_value, pm_focus, pm_alert, pm_win_done, pm_list_rows, pm_append
         .word pm_menu, pm_notify, pm_set_flags, pm_toast, pm_desk_icon, pm_broadcast
+        .word pm_sound
 
 ; u8 slot, u8 icon, str hint (the hint isn't shown yet). The server's slot n is the GUI's
 ; n + 1: the GUI's slot 0, rightmost, is the connectivity icon (link.asm)

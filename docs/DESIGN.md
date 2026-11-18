@@ -277,6 +277,9 @@ card's FAT32 would need the FAT32 reference code that the library README lists a
   - Instant messages arrive as a toast at the bottom right (`S.TOAST` `$1E`, drawn by the
     client over everything, taking no input) plus a speech-bubble icon, never a window that
     steals the keyboard.
+- **Voting** (`meganet/polls.py`): polls set up by moderators, one vote each, a bar graph
+  of the results (Progress gadgets), and an optional end date after which only the results
+  show.
 - **Chat rooms** (`meganet/chat.py`): one room at a time. There are permanent rooms
   (moderators) and member rooms (`chat.rooms`, gone when empty); either kind can be private.
   Moderators kick, mute, ban, unban, set the topic and give Karma +/-.

@@ -23,11 +23,15 @@ class MotdTest(RolesBase):
 
     async def test_welcome_is_centred_and_shows_the_motd(self):
         win = self.bob.windows[WIN_WELCOME]
-        self.assertEqual(win.size, (416, 134))
+        self.assertEqual(win.size, (416, 146))
         # x = (640 - (w + 8)) // 2, y = 11 + (189 - (h + 18)) // 2
-        self.assertEqual(win.pos, ((640 - (416 + 8)) // 2, 11 + (189 - (134 + 18)) // 2))
-        self.assertEqual(win.pos, (108, 29))
-        self.assertEqual(ui.centre(416, 134), (108, 29))
+        self.assertEqual(win.pos, ((640 - (416 + 8)) // 2, 11 + (189 - (146 + 18)) // 2))
+        self.assertEqual(win.pos, (108, 23))
+        self.assertEqual(ui.centre(416, 146), (108, 23))
+        # the server's version, centred under the message
+        from meganet import __version__
+        self.assertTrue(any(g["text"] == "MegaNet server %s (protocol 1)" % __version__
+                            for g in win.gadgets.values()))
         self.assertEqual(view_lines(self.bob), db.DEFAULT_MOTD)
         self.assertEqual(self.server.db.motd(), db.DEFAULT_MOTD)
         self.assertIsNotNone(self.server.db.setting(db.MOTD_KEY), "stored on a fresh database")

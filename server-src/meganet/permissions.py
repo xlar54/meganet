@@ -92,15 +92,17 @@ MAIL_USE = register("mail.use", "Use private messages", like="chat.use")
 CHAT_ROOMS = register("chat.rooms", "Make chat rooms", like="boards.post")
 ADMIN_SETTINGS = register("admin.settings", "Admin: system settings")
 ADMIN_BROADCAST = register("admin.broadcast", "Admin: broadcast")
+POLLS_VOTE = register("polls.vote", "Vote in polls", like="chat.use")
+POLLS_MANAGE = register("polls.manage", "Set up polls", like="boards.moderate")
 IM_SEND = "im.send"
 
 # The roles a fresh database starts with: (name, level, permission keys). A higher level sorts
 # lower in the lists. The last one gets every permission, admin ones included.
 NEW_USER = ["chat.use", "games.play", "boards.read", "news.read", "gallery.view",
-            "music.listen", MAIL_USE]
+            "music.listen", MAIL_USE, POLLS_VOTE]
 MEMBER = NEW_USER + ["boards.post", "files.download", "im.send", "gallery.upload",
                      CHAT_ROOMS]
-MODERATOR = MEMBER + ["chat.moderate", "boards.moderate", ADMIN_PAGES]
+MODERATOR = MEMBER + ["chat.moderate", "boards.moderate", ADMIN_PAGES, POLLS_MANAGE]
 DEFAULT_ROLES = [
     ("New User", 10, NEW_USER),
     ("Member", 20, MEMBER),

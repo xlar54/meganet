@@ -20,7 +20,7 @@ import time
 
 from . import permissions as perms
 from .compose import Composer, sent
-from .protocol import WFlag, GFlag, Icon, SLOT_PAGE, SLOT_ADMIN_MAIL
+from .protocol import WFlag, GFlag, Icon, SLOT_PAGE, SLOT_ADMIN_MAIL, Sound
 from .session import FIRST_DYNAMIC_WIN
 from .ui import add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView, centre
 
@@ -80,6 +80,8 @@ class Pages:
         session.log("paging the admins")
         self._show_paging(page)
         self.refresh_icons()
+        for admin in self.admins(exclude=session):          # a chime with the flashing icon
+            admin.sound(Sound.CHIME)
         return None
 
     def _show_paging(self, page):

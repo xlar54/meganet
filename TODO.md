@@ -107,12 +107,17 @@
       Online with statuses (Offline only for admins), instant messages with a toast and the
       speech-bubble icon
 - [x] System Settings: whether New Users can send and receive instant messages
-- [ ] IM: a sound for the toast; an "ignore" list; history after sign-off
+- [x] Page Admin: a chime (S.SOUND, the SID) with the flashing icon
+- [ ] IM: a sound for the toast (S.SOUND is there now); an "ignore" list; history after sign-off
 - [x] Desktop icons from the server (Chat, Message Boards), with a "One moment..." progress
       window while they arrive at sign-on
 - [x] Desktop icons for the File Library and Games; Admin > Broadcast... (the bottom row,
       yellow on red, for everyone)
 - [ ] Desktop icons: more of them (Private Messages, Who's Online); outlines that show
       on the black desktop; keyboard selection; dragging them
+- [x] Areas > Voting: polls with a question, a description, 2-6 choices and an end date;
+      one vote each; Results as a bar graph
+- [ ] Voting: a desktop icon; hiding results until you've voted (an option per poll);
+      editing a poll before anyone has voted
 - [ ] News, file library
 - [ ] Pace FILE_DATA by FILE_ACK

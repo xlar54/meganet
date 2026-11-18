@@ -135,6 +135,28 @@ CREATE TABLE IF NOT EXISTS posts (
     body     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS posts_topic ON posts (topic_id);
+CREATE TABLE IF NOT EXISTS polls (
+    id       INTEGER PRIMARY KEY,
+    question TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',   -- more background: lines joined with newlines
+    author   INTEGER REFERENCES users(id),
+    created  INTEGER NOT NULL,
+    ends     INTEGER                -- NULL: never; else the time voting stops
+);
+CREATE TABLE IF NOT EXISTS poll_choices (
+    id      INTEGER PRIMARY KEY,
+    poll_id INTEGER NOT NULL REFERENCES polls(id),
+    idx     INTEGER NOT NULL,
+    text    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS poll_choices_poll ON poll_choices (poll_id);
+CREATE TABLE IF NOT EXISTS poll_votes (
+    poll_id   INTEGER NOT NULL REFERENCES polls(id),
+    user_id   INTEGER NOT NULL REFERENCES users(id),
+    choice_id INTEGER NOT NULL REFERENCES poll_choices(id),
+    at        INTEGER NOT NULL,
+    PRIMARY KEY (poll_id, user_id)  -- one vote each
+);
 CREATE TABLE IF NOT EXISTS files (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -922,3 +944,63 @@ class Database:
     def set_chat_room_topic(self, room_id, topic):
         with self.conn:
             self.conn.execute("UPDATE chat_rooms SET topic = ? WHERE id = ?", (topic, room_id))
+
+    # ---- polls (Areas > Voting, polls.py) ----
+
+    _POLL_SQL = ("SELECT p.id, p.question, p.description, p.created, p.ends, u.name AS author_name, "
+                 "(SELECT COUNT(*) FROM poll_votes v WHERE v.poll_id = p.id) AS votes "
+                 "FROM polls p LEFT JOIN users u ON u.id = p.author ")
+
+    def polls(self):
+        """Every poll, newest first, with its vote count."""
+        return self.conn.execute(self._POLL_SQL + "ORDER BY p.created DESC, p.id DESC"
+                                 ).fetchall()
+
+    def poll(self, poll_id):
+        return self.conn.execute(self._POLL_SQL + "WHERE p.id = ?", (poll_id,)).fetchone()
+
+    def poll_choices(self, poll_id):
+        """A poll's choices in order: id, text, votes."""
+        return self.conn.execute(
+            "SELECT c.id, c.text, (SELECT COUNT(*) FROM poll_votes v WHERE v.choice_id = c.id) "
+            "AS votes FROM poll_choices c WHERE c.poll_id = ? ORDER BY c.idx",
+            (poll_id,)).fetchall()
+
+    def poll_vote_of(self, poll_id, user_id):
+        """The choice id `user_id` voted for, or None."""
+        row = self.conn.execute("SELECT choice_id FROM poll_votes WHERE poll_id = ? AND "
+                                "user_id = ?", (poll_id, user_id)).fetchone()
+        return row[0] if row else None
+
+    def create_poll(self, question, choices, ends, author, description=""):
+        """A new poll (ends: a time, or None for never). Returns its id."""
+        with self.conn:
+            cur = self.conn.execute("INSERT INTO polls (question, description, author, "
+                                    "created, ends) VALUES (?, ?, ?, ?, ?)",
+                                    (question, description, author, int(time.time()), ends))
+            for i, text in enumerate(choices):
+                self.conn.execute("INSERT INTO poll_choices (poll_id, idx, text) "
+                                  "VALUES (?, ?, ?)", (cur.lastrowid, i, text))
+        return cur.lastrowid
+
+    def vote(self, poll_id, user_id, choice_id):
+        """One vote. False if this user has already voted in the poll (or the choice isn't
+        the poll's)."""
+        ok = self.conn.execute("SELECT 1 FROM poll_choices WHERE id = ? AND poll_id = ?",
+                               (choice_id, poll_id)).fetchone()
+        if not ok:
+            return False
+        try:
+            with self.conn:
+                self.conn.execute("INSERT INTO poll_votes (poll_id, user_id, choice_id, at) "
+                                  "VALUES (?, ?, ?, ?)",
+                                  (poll_id, user_id, choice_id, int(time.time())))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def delete_poll(self, poll_id):
+        with self.conn:
+            self.conn.execute("DELETE FROM poll_votes WHERE poll_id = ?", (poll_id,))
+            self.conn.execute("DELETE FROM poll_choices WHERE poll_id = ?", (poll_id,))
+            self.conn.execute("DELETE FROM polls WHERE id = ?", (poll_id,))

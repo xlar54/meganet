@@ -45,6 +45,7 @@ class FakeClient:
         self.alerts = []         # (title, text)
         self.toasts = []         # (seconds, slot or None, text)
         self.broadcasts = []     # (seconds, text)
+        self.sounds = []         # S.SOUND numbers, in order
         self.login_results = []  # (ok, message)
         self.hello = None        # (version, session id)
         self.update = None       # (build, nfiles, message)
@@ -293,6 +294,8 @@ class FakeClient:
                 assert all(p < 16 or p == DESK_CLEAR for p in px), "icon colours 0-15"
                 self.desk[slot] = (one, two, px)
                 self.events.append(("icon", slot))
+        elif t == S.SOUND:
+            self.sounds.append(r.u8())
         elif t == S.BROADCAST:
             secs, text = r.u8(), r.str()
             assert len(text) <= BROADCAST_MAX, "broadcast too long for the row"

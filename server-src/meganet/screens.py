@@ -18,12 +18,14 @@ likes. Picks of ids that weren't in the menu sent to that session are ignored (u
 
 import time
 
+from . import __version__
 from . import permissions as perms
 from .account import Account, WIN_ACCOUNT
 from .admin import Admin
 from .boards import Boards
 from .chat import Chat
 from .desktop import Desktop
+from .polls import Polls
 from .im import IMs
 from .presence import Presence, STATUSES, LABELS
 from . import karma
@@ -48,6 +50,7 @@ M_AREAS, M_MEMBERS, M_HELP = 0x01, 0x02, 0x04
 M_ADMIN = MENU_LATE              # $E0: right of the client's Window menu
 M_BOARDS, M_CHAT, M_NEWS, M_FILES, M_GAMES = 0x10, 0x11, 0x12, 0x13, 0x14
 M_GALLERY, M_MUSIC, M_MAIL = 0x15, 0x16, 0x17
+M_VOTING = 0x18
 M_WHO, M_MEMBERS_SEP, M_SEARCH = 0x20, 0x21, 0x23     # $21: no longer used (was a separator)
 M_ACCOUNT = MENU_MY_ACCOUNT      # $22: sent by the client's own MegaNet > My Account
 M_ROLES, M_USERS, M_MOTD, M_ADMIN_MSGS = 0x30, 0x31, 0x32, 0x33
@@ -70,6 +73,7 @@ MENU_TREE = [
         (M_MUSIC, "SID Music", "music.listen", "coming_soon"),
         (M_FILES, "File Library", "files.download", "coming_soon"),
         (M_GAMES, "Games", "games.play", "open_games"),
+        (M_VOTING, "Voting", perms.POLLS_VOTE, "open_voting"),
     ]),
     (M_MEMBERS, "Members", [
         (M_WHO, "Who's Online", None, "open_who"),
@@ -112,6 +116,11 @@ def is_admin(session):
 TITLE_NEEDS = {M_ADMIN: is_admin}     # titles shown only when this says so
 
 
+def version_line():
+    """The welcome window's version line."""
+    return "MegaNet server %s (protocol %d)" % (__version__, VERSION)
+
+
 def who_row(viewer, s):
     """Who's Online: the name and (Status); admins see the role too."""
     status = "(%s)" % LABELS[s.status]
@@ -134,6 +143,7 @@ class Screens:
         self.presence = Presence(server)
         self.ims = IMs(server)
         self.desktop = Desktop(self)
+        self.polls = Polls(server)
 
     def signed_on(self, session, welcome=True, after=None):
         """Everything a session gets on signing on. The desktop icons come first, under a
@@ -270,6 +280,9 @@ class Screens:
     def open_boards(self, session, item=None):
         return self.boards.open(session)
 
+    def open_voting(self, session, item=None):
+        return self.polls.open(session)
+
     def open_mail(self, session, item):
         return self.mail.open_inbox(session)
 
@@ -300,8 +313,9 @@ class Screens:
         win.show(session)
 
     def about(self, session, item):
-        session.alert("About MegaNet", "MegaNet: a graphical BBS for the MEGA65. Server "
-                      "protocol version %d, %d signed on." % (VERSION, len(self.visible(session))))
+        session.alert("About MegaNet", "MegaNet: a graphical BBS for the MEGA65. Server %s, "
+                      "protocol version %d, %d signed on." % (__version__, VERSION,
+                                                              len(self.visible(session))))
 
     def open_who(self, session, item=None):
         win = Window("Who's Online", 632 - WIN_WHO_W - 8 - 2, 24, WIN_WHO_W, WIN_WHO_H,
@@ -376,8 +390,9 @@ class Screens:
 
     # ---- the welcome window ----
 
-    WELCOME_W, WELCOME_H = 416, 134          # client area; the window is centred
+    WELCOME_W, WELCOME_H = 416, 146          # client area; the window is centred
     MOTD_VIEW = (8, 14, 400, 98)             # the message of the day's TextView in it
+    VERSION_Y = 114                          # the server's version, centred under it
 
     @classmethod
     def motd_columns(cls):
@@ -394,6 +409,7 @@ class Screens:
                              minimize=False)
         win.add(Label(8, 2, 400, 10, "Message of the Day", GFlag.CENTRE))
         win.motd = win.add(TextView(*self.MOTD_VIEW, lines))
+        win.version = win.add(Label(8, self.VERSION_Y, 400, 10, version_line(), GFlag.CENTRE))
         add_buttons(win, [("OK", closer, GFlag.DEFAULT)], centre=True)
         win.show(session)
         return win
@@ -447,6 +463,7 @@ class Screens:
         self.pages.permissions_changed(session)
         self.mail.permissions_changed(session)
         self.boards.permissions_changed(session)
+        self.polls.permissions_changed(session)
         self.new_users_changed()
         self.im_rules_changed()
         self.desktop.refresh(session)
@@ -465,6 +482,7 @@ class Screens:
         self.admin.disconnected(session)
         self.mail.disconnected(session)
         self.boards.disconnected(session)
+        self.polls.disconnected(session)
         self.ims.disconnected(session)
         self.pages.disconnected(session)
         self.who.pop(session, None)

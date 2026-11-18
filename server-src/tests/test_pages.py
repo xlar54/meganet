@@ -6,7 +6,7 @@ import asyncio
 from meganet import permissions, ui
 from meganet.mail import WIN_COMPOSE
 from meganet.pages import WIN_PAGING, WIN_NO_ADMIN, WIN_TO_ADMINS, WIN_ADMIN_MSGS
-from meganet.protocol import Kind, Icon, SLOT_PAGE, SLOT_ADMIN_MAIL, SLOT_MAIL
+from meganet.protocol import Kind, Icon, SLOT_PAGE, SLOT_ADMIN_MAIL, SLOT_MAIL, Sound
 from meganet.screens import WIN_HELP, M_ADMIN_MSGS
 from meganet.session import FIRST_DYNAMIC_WIN
 from tests.test_roles import RolesBase, gadget_of, has_text, status_of
@@ -91,7 +91,9 @@ class PageOnlineTest(PagesBase):
         for admin in (alice, carol):
             await admin.wait_for(lambda a=admin: a.icon(SLOT_PAGE) == Icon.PAGE, "page icon")
             self.assertEqual(admin.hint(SLOT_PAGE), "bob is paging you")
+            await admin.wait_for(lambda a=admin: a.sounds == [Sound.CHIME], "and a chime, once")
         self.assertEqual(bob.icon(SLOT_PAGE), Icon.NONE, "users don't get the icon")
+        self.assertEqual(bob.sounds, [], "nor the chime")
 
         carol.notify_click(SLOT_PAGE)                     # the first click wins
         await bob.wait_for(lambda: self.chat_win(bob), "bob's chat")

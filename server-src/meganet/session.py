@@ -134,6 +134,10 @@ class Session:
         self.send(S.TOAST, Writer().u8(max(1, min(255, seconds)))
                   .u8(TOAST_NO_SLOT if slot is None else slot).str(clean_text(text)[:72]))
 
+    def sound(self, sound):
+        """Play one of the client's sounds (S.SOUND)."""
+        self.send(S.SOUND, Writer().u8(int(sound)))
+
     def set_notify(self, slot, icon, hint=""):
         """Show icon `icon` in menu-bar slot `slot` (S.NOTIFY), or remove it with Icon.NONE.
         Sent only when it changes. NOTIFY_CLICKs are accepted only for slots shown here."""

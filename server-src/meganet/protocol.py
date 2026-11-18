@@ -73,6 +73,11 @@ SLOT_IM = 4              # instant messages not read yet
 TOAST_NO_SLOT = 0xFF
 
 
+class Sound(IntEnum):
+    """S.SOUND sounds (the client's own, played on its SID)."""
+    CHIME = 1            # a two-note "ding-dong": someone is paging (with the flashing icon)
+
+
 class Icon(IntEnum):
     """S.NOTIFY icons."""
     NONE = 0             # remove the slot's icon
@@ -115,6 +120,7 @@ class S(IntEnum):
     BROADCAST = 0x23     # u8 seconds, str text  (a message to everyone: the whole bottom row of
                          # the screen, yellow on red, over everything but a toast, for that
                          # long or until clicked; it takes no input. BROADCAST_MAX characters)
+    SOUND = 0x24         # u8 sound (Sound): the client plays it on its SID
     FILE_BEGIN = 0x20    # u32 size, str name
     FILE_DATA = 0x21     # u32 offset, bytes...
     FILE_END = 0x22      # u32 crc32

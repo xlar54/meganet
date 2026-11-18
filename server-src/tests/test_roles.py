@@ -99,7 +99,7 @@ class RolesTest(RolesBase):
         # files.download is Member and up
         self.assertEqual(self.bob.menu_items("Areas"), ["News", "Message Boards", "Chat Rooms",
                                                         "Private Messages", "Art Gallery",
-                                                        "SID Music", "Games"])
+                                                        "SID Music", "Games", "Voting"])
         s = self.session("bob")
         self.assertTrue(s.can("chat.use") and s.can("games.play") and s.can("boards.read"))
         self.assertFalse(s.can("boards.post") or s.can(permissions.ADMIN_USERS))
@@ -166,7 +166,8 @@ class RolesTest(RolesBase):
         # bob, still connected: out of the lobby, and the menu no longer offers it.
         await self.bob.wait_for(lambda: WIN_LOBBY not in self.bob.windows, "bob kicked")
         await self.bob.wait_for(lambda: self.bob.menu_items("Areas") == [
-            "News", "Message Boards", "Private Messages", "Art Gallery", "SID Music", "Games"],
+            "News", "Message Boards", "Private Messages", "Art Gallery", "SID Music", "Games",
+            "Voting"],
             "menu without chat")
         self.assertFalse(self.session("bob").can("chat.use"))
         self.bob.pick_id(M_CHAT)                             # forged: no longer in his menu

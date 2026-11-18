@@ -54,6 +54,7 @@ HWRNG_READY             = $D7FE
 COLOUR_RAM              = $FF80000
 
 SID1                    = $D400
+SID2                    = $D420         ; (the other speaker)
 AUD_CTRL                = $D711         ; bit7 = audio DMA enable
 AUD_CH0                 = $D720         ; channel n at $D720 + n * 16
 AUD_RVOL                = $D71C         ; channel n volume on the other side: $D71C + n

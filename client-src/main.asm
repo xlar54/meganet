@@ -100,6 +100,7 @@ entry:
         jsr f640_init
         cli
         jsr gui_init
+        jsr sid_init                    ; (the page chime; sound.asm)
         jsr art_palette
         jsr login_open
         lda #1
@@ -112,6 +113,7 @@ main_loop:
         inc frames+1
 +       jsr busy_frame                  ; (the hourglass while waiting for the server)
         jsr link_frame                  ; (the connectivity icon; PING when it's quiet)
+        jsr sound_frame                 ; (the chime's notes)
         jsr gui_update
         bcc +
         jsr on_event
@@ -187,6 +189,7 @@ s_mockrx_end:
         .include "exit.asm"
         .include "net.asm"
         .include "proto.asm"
+        .include "sound.asm"
         .include "link.asm"
         .include "lib/kstream.asm"
         .include "lib/system.asm"
@@ -200,6 +203,7 @@ s_mockrx_end:
         .include "lib/keyboard.asm"
         .include "lib/mouse.asm"
         .include "lib/hwsprite.asm"
+        .include "lib/sid.asm"
         .include "lib/gui/gui.asm"
         .include "gen/manifest.asm"
         .include "gen/palette.asm"
