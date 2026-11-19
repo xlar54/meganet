@@ -38,7 +38,7 @@ import time
 import zlib
 
 from . import permissions as perms
-from .compose import refuse
+from .compose import refuse, MOD_ONLY
 from .protocol import (S, C, Writer, WFlag, GFlag, clean_text, Caps, Local, LocalStatus,
                        LOCAL_SD, LOCAL_DRIVES, LOCAL_MAX, FILE_CHUNK, FILE_WINDOW, UP_CHUNK)
 from .ui import (add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView,
@@ -54,6 +54,7 @@ ACCESS_ROLES = 6
 
 TITLE_MAX = 24                   # a library's title
 NAME_MAX = 16                    # a file's name: a CBM file name
+LOCAL_PATH_MAX = 127             # what the client takes in a path (storage.asm ST_PATH_MAX)
 DESC_LINES = 8                   # descriptions: lines of a text area
 TYPES = ["PRG", "SEQ", "USR", "D64", "D81"]
 DRIVE_TYPES = ("PRG", "SEQ", "USR")              # to drives 8-11
@@ -225,6 +226,10 @@ class FileLibrary:
             b.refresh()
 
     def permissions_changed(self, session):
+        st = getattr(session, "storage", None)
+        job = st.job if st is not None else None
+        if job is not None and not session.can(UPLOAD if isinstance(job, Upload) else SEE):
+            job.stop("Stopped: your account can't do that now.")
         b = self.browsers.get(session)
         if b is None:
             return
@@ -271,6 +276,15 @@ class Storage:
         return Caps(getattr(self.session, "caps", 0) & 0xFF)
 
     def start(self, request):
+        """Give `request` a number (1-255) and wait for its replies. Only one directory
+        listing is wanted at a time (one dialog shows one), so a new one drops any other;
+        and should 254 ever be pending, the oldest goes."""
+        if isinstance(request, DirRequest):
+            for req, other in list(self.pending.items()):
+                if isinstance(other, DirRequest):
+                    del self.pending[req]
+        while len(self.pending) >= 254:
+            del self.pending[next(iter(self.pending))]
         self.next_req = self.next_req % 255 + 1
         while self.next_req in self.pending:
             self.next_req = self.next_req % 255 + 1
@@ -430,7 +444,7 @@ class Browser:
             self.view = "libs"
             return self.show("That library is gone." if lib is None else
                              "You can't use that library now.")
-        if self.view == "files" and self.files.can_upload(self.session, lib) != self.up_shown:
+        if self.view == "files" and self._rights(lib) != self.buttons_shown:
             return self.show()
         keep = self.lib_id if self.view == "libs" else self.file_id
         self.list.set_rows(getattr(self, "_rows_" + self.view)(lib))
@@ -536,6 +550,10 @@ class Browser:
                                              size_text(f["size"]), when(f["added"]),
                                              f["downloads"]) for f in fs]
 
+    def _rights(self, lib):
+        """(Download..., Upload...) shown in the files view."""
+        return (self.files.can_download(self.session, lib), self.files.can_upload(self.session, lib))
+
     def _show_files(self, win, lib, status):
         rows = self._rows_files(lib)
         self.head = win.add(Label(8, 2, 544, 10, self._heading(lib)))
@@ -547,12 +565,12 @@ class Browser:
         self.about = win.add(TextView(8, 102, 400, 42, self._about()))
         self.need = []
         y = 14
-        if self.files.can_download(self.session, lib):
+        self.buttons_shown = self._rights(lib)          # (refresh: re-shown if they change)
+        if self.buttons_shown[0]:
             self.need.append(win.add(Button(416, y, 136, 16, "Download...", GFlag.DEFAULT,
                                             on_click=self._download)))
             y += 20
-        self.up_shown = self.files.can_upload(self.session, lib)
-        if self.up_shown:
+        if self.buttons_shown[1]:
             win.add(Button(416, y, 136, 16, "Upload...", on_click=self._upload))
             y += 20
         win.add(Button(416, y, 136, 16, "Back", on_click=self._back))
@@ -661,7 +679,7 @@ class Browser:
 
     def _mod_ok(self):
         if not self.session.can(MODERATE):
-            refuse(self.session, "Manage file libraries", MODERATE)
+            refuse(self.session, TITLE, MODERATE, MOD_ONLY)
             return False
         return self._ok()
 
@@ -1132,6 +1150,8 @@ class DownloadDialog:
             path = name
         if problem:
             return self.status.set_text(problem[:53])
+        if len(path) > LOCAL_PATH_MAX:
+            return self.status.set_text("That folder is too deep: pick one nearer the top.")
         real = b.files.file_path(lib, f["path"])
         try:
             with open(real, "rb") as fh:
@@ -1188,22 +1208,41 @@ class Transfer:
                 self.bar.set_percent(100)
             self.status.set_text(text[:43])
             self.button.set_text("Close")
+            self.button.enable(True)
         else:
             self.session.toast(("%s: %s" % (self.title, text))[:72])
 
     def _button(self, button):
         if not self.over:
+            if not self.cancellable():   # (greyed out on the client: a click that crossed)
+                return None
             self.st.cancel(self)
             self.end("Cancelled.", False)
             self.session.log("%s cancelled: %s" % (self.title.lower(), self.what))
         button.window.close()
 
     def _closed(self, window):
-        if not self.over:                # the close box: it stops too
-            self.st.cancel(self)
-            self.over = True
-            if self.st.job is self:
-                self.st.job = None
+        if self.over:
+            return
+        if not self.cancellable():       # the client is writing it: let it finish (the
+            return                       # result comes as a toast)
+        self.st.cancel(self)             # the close box: it stops too
+        self.over = True
+        if self.st.job is self:
+            self.st.job = None
+        self.session.log("%s cancelled: %s" % (self.title.lower(), self.what))
+
+    def cancellable(self):
+        """False once the client may be writing the file (it can't stop then)."""
+        return True
+
+    def stop(self, text):
+        """The server stops it (a permission went), if it still can."""
+        if self.over or not self.cancellable():
+            return
+        self.st.cancel(self)
+        self.end(text, False)
+        self.session.warn("%s stopped: %s" % (self.title.lower(), self.what))
 
 
 class Download(Transfer):
@@ -1241,9 +1280,15 @@ class Download(Transfer):
         if self.sent == len(self.data) and not self.end_sent:
             self.session.send(S.FILE_END, Writer().u32(zlib.crc32(self.data)))
             self.end_sent = True
+            self.button.enable(False)    # it may start writing now: no stopping it
         self.progress(self.acked, len(self.data))
         if self.acked == len(self.data):
             self.status.set_text("Writing it to %s..." % device_name(self.dev))
+
+    def cancellable(self):
+        """Until FILE_END: the client writes nothing before it has the whole file, and a
+        LOCAL_CANCEL sent before FILE_END reaches it before FILE_END does."""
+        return not self.end_sent
 
     def on_done(self, status, text):
         if self.over:
@@ -1254,7 +1299,7 @@ class Download(Transfer):
             self.end("Done: saved as %s." % self.path.split("/")[-1], True)
             self.b.files.changed()
         else:
-            self.session.log("download failed (%d %s): %s" % (status, text, self.what))
+            self.session.warn("download failed (%d %s): %s" % (status, text, self.what))
             self.end(status_text(status, text), False)
 
 
@@ -1409,6 +1454,8 @@ class UploadDialog:
             if problem:
                 return self.status.set_text(problem[:53])
             path = "/".join(self.sd_path + [src])
+            if len(path) > LOCAL_PATH_MAX:
+                return self.status.set_text("That folder is too deep for MegaNet.")
         else:
             path = src
         desc = "\n".join(tidy_lines(self.desc.lines))
@@ -1443,6 +1490,7 @@ class Upload(Transfer):
             return
         ftype = TYPE_OF.get(self.kind)
         problem = ("That's too big: up to %d KB." % (LOCAL_MAX // 1024) if size > LOCAL_MAX
+                   else "That file is empty." if size == 0
                    else check_image(ftype, size))
         if problem:
             return self.fail(problem)
@@ -1461,7 +1509,7 @@ class Upload(Transfer):
         if self.over:
             return
         if self.size is None or len(self.data) != self.size or zlib.crc32(self.data) != crc:
-            self.session.log("upload damaged: %s" % self.what)
+            self.session.warn("upload damaged: %s" % self.what)
             return self.end("It arrived damaged. Try again.", False)
         files, db = self.b.files, self.b.db
         lib = db.library(self.lib_id)
@@ -1474,7 +1522,7 @@ class Upload(Transfer):
             with open(os.path.join(files.folder_path(lib), rel), "xb") as fh:
                 fh.write(self.data)
         except OSError as e:
-            self.session.log("upload not saved: %s" % e)
+            self.session.warn("upload not saved: %s" % e)
             return self.end("The server couldn't save it.", False)
         approved = bool(lib["auto_approve"]) or files.moderator(self.session)
         db.add_library_file(lib["id"], self.name, ftype, self.desc, rel, len(self.data),
@@ -1491,5 +1539,5 @@ class Upload(Transfer):
 
     def on_done(self, status, text):
         if not self.over:
-            self.session.log("upload failed (%d %s): %s" % (status, text, self.what))
+            self.session.warn("upload failed (%d %s): %s" % (status, text, self.what))
             self.end(status_text(status, text), False)

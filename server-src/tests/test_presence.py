@@ -3,7 +3,7 @@ instant messages (toast + speech-bubble icon), and Admin > System Settings."""
 
 from meganet import im
 from meganet.admin import WIN_SETTINGS
-from meganet.protocol import Kind, Icon, SLOT_IM
+from meganet.protocol import Kind, Icon, SLOT_IM, SLOT_STATUS
 from meganet.screens import WIN_WHO, M_AVAILABLE, M_AWAY, M_OFFLINE
 from tests.test_pages import PagesBase
 from tests.test_roles import gadget_of, status_of
@@ -61,6 +61,30 @@ class StatusTest(PresenceBase):
         self.assertFalse(any(r.endswith(" *") for r in rows() if r.startswith(("alice", "bob"))))
         alice.pick_id(M_AVAILABLE)
         await bob.wait_for(lambda: "alice      (Available)" in self.who_rows(bob), "back")
+
+    async def test_status_dot(self):
+        bob, s = self.bob, self.session("bob")
+        dot = lambda: (bob.icon(SLOT_STATUS), bob.hint(SLOT_STATUS))
+        await bob.wait_for(lambda: dot() == (Icon.AVAILABLE, "Status: Available"), "green")
+        bob.notify_click(SLOT_STATUS)                    # click: Away
+        await bob.wait_for(lambda: dot() == (Icon.AWAY, "Status: Away"), "yellow")
+        self.assertEqual(bob.menu_items("Status")[1], "* Away")
+        bob.notify_click(SLOT_STATUS)                    # and back
+        await bob.wait_for(lambda: bob.icon(SLOT_STATUS) == Icon.AVAILABLE, "green again")
+        bob.pick_id(M_OFFLINE)                           # the menu moves it too
+        await bob.wait_for(lambda: bob.icon(SLOT_STATUS) == Icon.OFFLINE, "grey")
+        bob.notify_click(SLOT_STATUS)                    # Offline -> Available
+        await bob.wait_for(lambda: bob.icon(SLOT_STATUS) == Icon.AVAILABLE, "from offline")
+        # Auto-Away: the click itself isn't the activity that ends it, and goes to Available
+        presence = self.server.screens.presence
+        presence.set_away_minutes(1)
+        s.last_active -= 120
+        presence.check()
+        await bob.wait_for(lambda: bob.icon(SLOT_STATUS) == Icon.AWAY, "auto away")
+        bob.notify_click(SLOT_STATUS)
+        await bob.wait_for(lambda: bob.icon(SLOT_STATUS) == Icon.AVAILABLE, "auto ended")
+        await self.roundtrip(bob)
+        self.assertEqual((s.status, s.auto_away), ("available", False))
 
     async def test_auto_away(self):
         presence, bob = self.server.screens.presence, self.bob

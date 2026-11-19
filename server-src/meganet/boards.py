@@ -26,10 +26,10 @@ import time
 
 from . import db as dbmod
 from . import karma
-from .compose import Composer, refuse
+from .compose import Composer, refuse, MOD_ONLY
 from .protocol import WFlag, GFlag, clean_text
-from .ui import (add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView,
-                 CheckBox, Group)
+from .ui import (add_buttons, closer, confirm, Window, Button, Label, TextBox, ListBox,
+                 TextView, CheckBox, Group)
 
 READ, POST, MODERATE = "boards.read", "boards.post", "boards.moderate"
 
@@ -500,7 +500,7 @@ class Browser:
 
     def _mod_ok(self):
         if not self.session.can(MODERATE):
-            refuse(self.session, "Moderate boards", MODERATE)
+            refuse(self.session, TITLE, MODERATE, MOD_ONLY)
             return False
         return self._ok()
 
@@ -595,14 +595,29 @@ class Browser:
         return None
 
     def _delete_topic(self, button):
+        """Delete Topic: asks first (as every delete does), then deletes the topic picked
+        when it was clicked, whatever the list shows by then."""
         if not self._mod_ok() or self.view != "forum" or self._forum() is None:
             return None
         if self.topic_id not in self.ids:
             return self.say("Pick a topic first.")
         t = self.db.topic(self.topic_id)
-        self.db.delete_topic(self.topic_id)
+        n = len(self.db.posts(t["id"]))
+        confirm(self.session, "Delete Topic", ["Delete the topic %s" % t["subject"][:24],
+                                               "and its %s?" % plural(n, "post")],
+                lambda: self._really_delete_topic(t["id"]), WIN_DELETE)
+        return None
+
+    def _really_delete_topic(self, topic_id):
+        if not self._mod_ok():
+            return None
+        t = self.db.topic(topic_id)
+        if t is None:
+            return self.say("That topic is gone already.")
+        self.db.delete_topic(topic_id)
         self.session.log("deleted topic %d (%s)" % (t["id"], t["subject"]))
-        self.topic_id = None
+        if self.topic_id == topic_id:
+            self.topic_id = None
         self.boards.changed()
         return self.say("Deleted the topic %s." % t["subject"][:40])
 
@@ -612,6 +627,18 @@ class Browser:
         if self.post_id not in self.ids:
             return self.say("Pick a post first.")
         p = self.db.post(self.post_id)
+        confirm(self.session, "Delete Post", ["Delete the post by %s?" % p["author_name"],
+                                              "This can't be undone."],
+                lambda: self._really_delete_post(p["id"]), WIN_DELETE)
+        return None
+
+    def _really_delete_post(self, post_id):
+        if not self._mod_ok():
+            return None
+        p = self.db.post(post_id)
+        if p is None:
+            return self.say("That post is gone already.")
+        self.post_id = post_id
         topic_gone = self.db.delete_post(self.post_id)
         self.session.log("deleted post %d by %s" % (p["id"], p["author_name"]))
         self.post_id = None

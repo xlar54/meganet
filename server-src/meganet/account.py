@@ -255,7 +255,7 @@ class Account:
             return None
         if not good:
             win.tries += 1
-            session.log("wrong current password (%d)" % win.tries)
+            session.warn("wrong current password (%d)" % win.tries)
             if win.tries >= PW_TRIES:
                 session.pw_locked_until = time.time() + PW_LOCK_SECS
                 win.close()

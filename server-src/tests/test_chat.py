@@ -149,6 +149,10 @@ class RoomsTest(ChatBase):
         alice.select(WIN_ROOMS, gadget_of(alice.windows[WIN_ROOMS], Kind.LISTBOX),
                      next(i for i, r in enumerate(rows) if r.startswith("MEGA65 Talk")))
         alice.click_text(WIN_ROOMS, "Delete Room")
+        from meganet.chat import WIN_DELETE_ROOM
+        await alice.wait_for(lambda: has_text(alice, WIN_DELETE_ROOM, "Delete"), "asked")
+        self.assertIn(WIN_ROOM, self.bob.windows, "not before the answer")
+        alice.click_text(WIN_DELETE_ROOM, "Delete")
         await self.bob.wait_for(lambda: ("MEGA65 Talk", "alice closed this room.")
                                 in self.bob.alerts, "told")
         self.assertNotIn(WIN_ROOM, self.bob.windows)

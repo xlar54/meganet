@@ -31,20 +31,21 @@ from . import db as dbmod
 from . import karma
 from . import permissions as perms
 from .protocol import WFlag, GFlag, clean_text, CLIENT_MAX_H
-from .ui import (add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView,
-                 CheckBox, DropDown, Group)
+from .ui import (add_buttons, closer, confirm, Window, Button, Label, TextBox, ListBox,
+                 TextView, CheckBox, DropDown, Group)
 
 USE, MODERATE, ROOMS = "chat.use", "chat.moderate", perms.CHAT_ROOMS
 WIN_ROOM = 2
 WIN_ROOMS = 26
 WIN_UNBAN = 27
+WIN_DELETE_ROOM = 50             # "Delete the room X?" (ui.confirm)
 TITLE = "Chat Rooms"
 RATES_PER_DAY = 2                # Karma +/- one moderator may give one user a day
 
 
 def refuse(session, key):
     """An action the user's role doesn't allow (chat.use, or chat.moderate for moderators)."""
-    session.log("refused chat: no %s" % key)
+    session.warn("refused chat: no %s" % key)
     session.alert(TITLE, "Your account can't use the chat rooms." if key == USE
                   else "Only moderators can do that.")
 
@@ -134,7 +135,7 @@ class Chat:
             return refuse(session, USE)
         room = self.where.get(session)
         if room is not None:
-            return room.windows[session].show()
+            return room.windows[session].show(keep=True)     # (the conversation so far too)
         return self.open_list(session)
 
     def join(self, session, name, private=False, create=False):
@@ -157,7 +158,7 @@ class Chat:
             return "You are banned from %s." % room.name
         old = self.where.get(session)
         if old is room:
-            room.windows[session].show()
+            room.windows[session].show(keep=True)
             return None
         if old is not None:
             self.leave(session, closing=False)
@@ -653,6 +654,19 @@ class RoomList:
             return self.say("%s goes by itself when everyone leaves." % room.name)
         if room.key == room_key(dbmod.LOBBY):
             return self.say("The %s stays." % dbmod.LOBBY)
+        n = len(room.windows)
+        confirm(self.session, "Delete Room", [
+            "Delete the room %s?" % room.name,
+            "%d %s in it now." % (n, "person is" if n == 1 else "people are") if n
+            else "This can't be undone."], lambda: self._really_delete(room.key), WIN_DELETE_ROOM)
+        return None
+
+    def _really_delete(self, key):
+        if not self._ok(MODERATE):
+            return None
+        room = self.chat.rooms.get(key)
+        if room is None or not room.permanent:
+            return self.say("That room is gone already.")
         self.chat.db.delete_chat_room(room.room_id)
         for s in list(room.windows):
             self.chat.leave(s, quiet=True)

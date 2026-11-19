@@ -274,6 +274,34 @@ class FilesTest(FileLibraryBase):
         self.assertEqual(await self.transfer_over(bob), "Done: saved as BIG.")
         self.assertEqual(bob.storage.drives[8]["files"]["BIG"], (Local.SEQ, data))
 
+    async def test_no_cancel_once_it_is_writing(self):
+        """After FILE_END the client may be writing (it can't stop): Cancel is greyed out, and
+        the close box leaves it to finish; the result comes as a toast and is counted."""
+        bob, d = self.bob, self.server.db
+        data = os.urandom(3000)
+        lib_id = self.library("Games", files=[("SMALL", "PRG", "small.prg", data)])
+        f = d.library_files(lib_id)[0]
+        self.session("bob").caps = Caps.DRIVES
+        bob.storage.drives[8] = {"name": "WORK", "files": {}}
+        bob.storage.hold_end = True
+        await self.into(bob, "Games")
+        await self.pick_row(bob, WIN_FILES, "SMALL")
+        bob.click_text(WIN_FILES, "Download...")
+        await self.dialog(bob, WIN_DOWNLOAD)
+        bob.click_text(WIN_DOWNLOAD, "Download")
+        await bob.wait_for(lambda: bob.storage.held_end is not None, "FILE_END")
+        await bob.wait_for(lambda: WIN_TRANSFER in bob.windows and bob.windows[WIN_TRANSFER].done
+                           and not bob.enabled(WIN_TRANSFER, "Cancel"), "Cancel greyed out")
+        bob.click_text(WIN_TRANSFER, "Cancel")              # (a click that crossed: ignored)
+        bob.close_box(WIN_TRANSFER)
+        await self.roundtrip(bob)
+        self.assertEqual(bob.storage.cancelled, [], "no LOCAL_CANCEL once it's writing")
+        bob.storage.finish_end(bob)
+        await bob.wait_for(lambda: any("Done: saved as SMALL" in t for _, _, t in bob.toasts),
+                           "the result as a toast")
+        self.assertEqual(bob.storage.drives[8]["files"]["SMALL"], (Local.PRG, data))
+        self.assertEqual(d.library_file(f["id"])["downloads"], 1)
+
     async def test_download_an_image_to_the_sd_card(self):
         bob = self.bob
         image = bytes(range(256)) * 3200                           # 819,200: a D81

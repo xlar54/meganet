@@ -19,9 +19,14 @@ MAX_LINES = TextArea.CLIENT_LINES     # what the client's text area holds (32)
 LINE_MAX = TextBox.MAX_CHARS
 
 
-def refuse(session, title, key):
-    session.log("refused %s: no %s" % (title, key))
-    session.alert(title, "Your account can't use %s." % title)
+def refuse(session, title, key, text=None):
+    """Not allowed: logged, and an alert titled `title` (the area): "Your account can't use
+    <title>." unless `text` says something else (moderators' tools: MOD_ONLY)."""
+    session.warn("refused %s: no %s" % (title, key))
+    session.alert(title, text or "Your account can't use %s." % title)
+
+
+MOD_ONLY = "Only moderators can do that."
 
 
 def sent(session, text="Your message has been sent."):

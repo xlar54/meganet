@@ -9,7 +9,8 @@ from meganet.protocol import (Local, LocalStatus, LOCAL_SD, LOCAL_MAX, FILE_CHUN
                               DESK_CLEAR, GFlag, S, C, Kind, Writer, Deframer, LOGIN_NEW_USER, MENU_FIRST,
                               MENU_LAST, MENU_SEPARATOR, NOTIFY_SLOTS, NOTIFY_HINT_MAX, Icon,
                               window_fits, DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES,
-                              EDIT_COLS_MAX)
+                              EDIT_COLS_MAX, Caps, GRID_PARAMS, GRID_CELLS_MAX, RESOURCE_SLOTS,
+                              RESOURCE_CHUNK, RESOURCE_SIZE)
 
 TIMEOUT = 5.0
 ROW_MAX = 63             # list box / drop-down rows
@@ -50,6 +51,8 @@ class FakeStorage:
         self.sd = None           # None: no SD card
         self.save = None         # the download arriving: dict(req, dev, kind, size, path, data)
         self.hold_acks = False   # True: don't FILE_ACK data (the window test)
+        self.hold_end = False    # True: FILE_END waits for finish_end() (writing it)
+        self.held_end = None
         self.damage = False      # True: uploads arrive with a wrong CRC
         self.saves = []          # (dev, path) saved, in order
         self.cancelled = []      # reqs cancelled
@@ -127,15 +130,10 @@ class FakeStorage:
         if t == S.FILE_END:
             s, self.save = self.save, None
             crc = r.u32()
-            if crc != zlib.crc32(s["data"]) or len(s["data"]) != s["size"]:
-                return self.done(c, s["req"], LocalStatus.BAD_CRC)
-            if s["dev"] == LOCAL_SD:
-                parts = s["path"].split("/")
-                self.sd_folder(parts[:-1])[parts[-1]] = bytes(s["data"])
-            else:
-                self.drives[s["dev"]]["files"][s["path"]] = (s["kind"], bytes(s["data"]))
-            self.saves.append((s["dev"], s["path"]))
-            return self.done(c, s["req"], LocalStatus.OK)
+            if self.hold_end:                # "still writing": finish_end() replies
+                self.held_end = (s, crc)
+                return None
+            return self.end_save(c, s, crc)
         if t == S.LOAD_FILE:
             req, dev, kind, path = r.u8(), r.u8(), r.u8(), r.str()
             if dev == LOCAL_SD:
@@ -158,6 +156,24 @@ class FakeStorage:
             if self.save is not None and self.save["req"] == req:
                 self.save = None
         return None
+
+    def end_save(self, c, s, crc):
+        """FILE_END: check it, write it, answer (as the client: nothing before this)."""
+        if crc != zlib.crc32(s["data"]) or len(s["data"]) != s["size"]:
+            return self.done(c, s["req"], LocalStatus.BAD_CRC)
+        if s["dev"] == LOCAL_SD:
+            parts = s["path"].split("/")
+            self.sd_folder(parts[:-1])[parts[-1]] = bytes(s["data"])
+        else:
+            self.drives[s["dev"]]["files"][s["path"]] = (s["kind"], bytes(s["data"]))
+        self.saves.append((s["dev"], s["path"]))
+        return self.done(c, s["req"], LocalStatus.OK)
+
+    def finish_end(self, c):
+        """Answer the FILE_END held back by hold_end: write it now."""
+        s, crc = self.held_end
+        self.held_end = None
+        return self.end_save(c, s, crc)
 
     def ack_all(self, c):
         """Acknowledge what has arrived (after hold_acks)."""
@@ -186,6 +202,10 @@ class FakeClient:
         self.desk = {}           # desktop icons: slot -> (line 1, line 2, pixels)
         self.events = []         # ("open" / "close" / "icon", window title or slot), in order
         self.storage = FakeStorage()   # drives 8-11 and an SD card (the File Library)
+        self.caps = 0            # what send_hello said this client can do
+        self.resources = {}      # S.RESOURCE: slot -> 64 KB
+        self.resource_bytes = 0  # how many came
+        self.progress = []       # every progress bar value set, in order: (window title, %)
         self._changed = asyncio.Event()
 
     async def connect(self, port):
@@ -206,6 +226,7 @@ class FakeClient:
         self.writer.write((w or Writer()).frame(msg_type))
 
     def send_hello(self, build=100, caps=0):
+        self.caps = caps
         self.send(C.HELLO, Writer().u8(1).u16(build).u8(caps).str("fakeclient"))
 
     def send_login(self, name, password, new=False):
@@ -427,6 +448,16 @@ class FakeClient:
             self.windows[win].gadgets[gid] = dict(
                 kind=kind, text=text, value=DROPDOWN_NONE if kind == Kind.DROPDOWN else 0,
                 rows=[], lines=[], box=(x, y, w, h), flags=_flags)
+            if kind == Kind.GRID:
+                assert self.caps & Caps.GRID, "a GRID for a client without Caps.GRID"
+                p = [ord(c) for c in text]
+                assert len(p) == GRID_PARAMS and 0 not in p, "GRID parameters %r" % p
+                cols, rows, tw, th, slot = (v - 1 for v in p[:5])
+                assert cols * tw == w and rows * th == h, "GRID size doesn't match its tiles"
+                assert 0 < cols * rows <= GRID_CELLS_MAX and slot < RESOURCE_SLOTS
+                self.windows[win].gadgets[gid].update(
+                    cols=cols, grid_rows=rows, tile=(tw, th), slot=slot,
+                    cells=[0] * (cols * rows))
         elif t == S.DESK_ICON:
             slot, one, two = r.u8(), r.str(), r.str()
             assert 0 <= slot < DESK_SLOTS, "desktop slot %d" % slot
@@ -470,6 +501,8 @@ class FakeClient:
             win, gid = r.u8(), r.u8()
             g = self.windows[win].gadgets[gid]
             g["value"] = r.u16()
+            if g["kind"] == Kind.PROGRESS:
+                self.progress.append((self.windows[win].title, g["value"]))
             if g["kind"] == Kind.DROPDOWN:
                 assert g["value"] == DROPDOWN_NONE or g["value"] < len(g["rows"]),                     "drop-down %d:%d selection %d out of range" % (win, gid, g["value"])
         elif t == S.LIST_ROWS:
@@ -505,6 +538,22 @@ class FakeClient:
                 self.notify.pop(slot, None)
             else:
                 self.notify[slot] = (Icon(icon), hint)
+        elif t == S.CELLS:
+            win, gid, first, n = r.u8(), r.u8(), r.u8(), r.u8()
+            g = self.windows[win].gadgets[gid]
+            assert g["kind"] == Kind.GRID, "CELLS for a gadget that isn't a GRID"
+            values = r.rest()
+            assert len(values) == n and first + n <= len(g["cells"]), "CELLS out of range"
+            g["cells"][first:first + n] = list(values)
+        elif t == S.RESOURCE:
+            assert self.caps & Caps.GRID, "a RESOURCE for a client without Caps.GRID"
+            slot, offset = r.u8(), r.u16()
+            data = r.rest()
+            assert slot < RESOURCE_SLOTS and len(data) <= RESOURCE_CHUNK
+            assert offset + len(data) <= RESOURCE_SIZE, "RESOURCE past the slot's end"
+            buf = self.resources.setdefault(slot, bytearray(RESOURCE_SIZE))
+            buf[offset:offset + len(data)] = data
+            self.resource_bytes += len(data)
         elif t == S.UPDATE:
             self.update = (r.u16(), r.u8(), r.str())
         elif t in (S.LOCAL_DIR, S.SAVE_BEGIN, S.LOAD_FILE, S.LOCAL_CANCEL):

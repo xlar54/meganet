@@ -8,18 +8,26 @@
                 and instant messages treat them as not signed on; pages don't go to an offline
                 admin
 
-Activity is any message from the client except the connectivity check's PINGs.
+Activity is any message from the client except the connectivity check's PINGs and a click
+on the status dot.
+
+The menu bar shows the status as a dot just left of the connectivity icon (NOTIFY slot
+SLOT_STATUS): green Available, yellow Away, dark grey Offline. Clicking it switches between
+Available and Away (Offline goes back to Available); the Status menu has all three.
 """
 
 import asyncio
 import logging
 import time
 
+from .protocol import Icon, SLOT_STATUS
+
 log = logging.getLogger("meganet")
 
 AVAILABLE, AWAY, OFFLINE = "available", "away", "offline"
 STATUSES = (AVAILABLE, AWAY, OFFLINE)
 LABELS = {AVAILABLE: "Available", AWAY: "Away", OFFLINE: "Offline"}
+ICONS = {AVAILABLE: Icon.AVAILABLE, AWAY: Icon.AWAY, OFFLINE: Icon.OFFLINE}
 AWAY_KEY = "away_minutes"        # settings table
 DEFAULT_AWAY_MINUTES = 10
 AWAY_MINUTES_MAX = 999
@@ -54,6 +62,16 @@ class Presence:
         session.status = status
         session.log("status %s%s" % (status, " (no activity)" if auto else ""))
         self.server.screens.status_changed(session)
+
+    @staticmethod
+    def show_icon(session):
+        """The status dot on the menu bar (at sign-on and on every change)."""
+        session.set_notify(SLOT_STATUS, ICONS[session.status],
+                           "Status: %s" % LABELS[session.status])
+
+    def click(self, session):
+        """The status dot clicked: Available -> Away; Away or Offline -> Available."""
+        self.set(session, AWAY if session.status == AVAILABLE else AVAILABLE)
 
     def activity(self, session):
         session.last_active = time.time()

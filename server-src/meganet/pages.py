@@ -2,14 +2,14 @@
 
 With an admin signed on (other than the user):
     the user gets the "Page Admin" window ("Paging an admin...", Cancel); every admin gets the
-    page icon (NOTIFY slot 0, flashing). The first admin to click it takes the oldest waiting
+    page icon (NOTIFY slot SLOT_PAGE, flashing). The first admin to click it takes the oldest waiting
     page: the icon goes for all admins, the paging window closes, and both get a private chat
     window ("Chat with <other>"). Closing either side ends the chat; the other side can still
     read it. Cancel (or the close box) withdraws the page. If the last admin goes while a page
     waits, the user gets the no-admin dialog instead.
 With none:
     "No admin is available right now..." Yes / No. Yes opens "Message to the Admins"
-    (compose.py), stored in the admin_messages table. Admins get the mail icon (slot 1) while
+    (compose.py), stored in the admin_messages table. Admins get the mail icon (SLOT_ADMIN_MAIL) while
     unread ones are waiting; it opens Admin > Messages from users (window 16).
 
 Window ids: 13 = Page Admin (paging), 14 = no admin available, 15 = Message to the Admins,
@@ -130,7 +130,7 @@ class Pages:
 
     def notify_click(self, session, slot):
         if not session.can(perms.ADMIN_PAGES):
-            session.log("notify click %d refused: no %s" % (slot, perms.ADMIN_PAGES))
+            session.warn("notify click %d refused: no %s" % (slot, perms.ADMIN_PAGES))
             return self.refresh_icons([session])
         if slot == SLOT_PAGE:
             return self.take(session)
@@ -152,7 +152,7 @@ class Pages:
         return None
 
     def refresh_icons(self, sessions=None):
-        """Put the page icon (slot 0) and the admin-mail icon (slot 1) right on every signed-on
+        """Put the page icon (SLOT_PAGE) and the admin-mail icon (SLOT_ADMIN_MAIL) right on every signed-on
         session (or just `sessions`): admins see them, nobody else does."""
         unread = None
         for s in (self.online() if sessions is None else sessions):
@@ -162,7 +162,8 @@ class Pages:
                 s.set_notify(SLOT_PAGE, Icon.NONE)
                 s.set_notify(SLOT_ADMIN_MAIL, Icon.NONE)
                 continue
-            waiting = [p for p in self.queue if p.user is not s]
+            # (an Offline admin isn't paged: no page icon, but the messages icon stays)
+            waiting = [p for p in self.queue if p.user is not s] if s.status != "offline" else []
             if len(waiting) == 1:
                 s.set_notify(SLOT_PAGE, Icon.PAGE, "%s is paging you" % waiting[0].user.user)
             elif waiting:
@@ -192,7 +193,7 @@ class Pages:
 
     def open_messages(self, session):
         if not session.can(perms.ADMIN_PAGES):
-            session.log("refused admin messages: no %s" % perms.ADMIN_PAGES)
+            session.warn("refused admin messages: no %s" % perms.ADMIN_PAGES)
             return session.alert("Administration", "You don't have permission to do that.")
         ed = self.msg_windows.get(session) or AdminMessages(self, session)
         return ed.show()
@@ -372,7 +373,7 @@ class AdminMessages:
 
     def _allowed(self):
         if not self.session.can(perms.ADMIN_PAGES):
-            self.session.log("refused admin messages: no %s" % perms.ADMIN_PAGES)
+            self.session.warn("refused admin messages: no %s" % perms.ADMIN_PAGES)
             self.session.alert("Administration", "You don't have permission to do that.")
             return False
         return True

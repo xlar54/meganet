@@ -22,7 +22,8 @@ session has at most one, and showing another replaces it.
 
 from .protocol import (S, Kind, WFlag, GFlag, Writer, SELECT_DOUBLE, MENU_FIRST, MENU_LAST,
                        MENU_SEPARATOR, SCREEN_W, SCREEN_H, MENU_BAR_H, FRAME_W, FRAME_H,
-                       DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES, EDIT_COLS_MAX)
+                       DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES, EDIT_COLS_MAX,
+                       GRID_PARAMS, GRID_CELLS_MAX)
 
 CHAR_W = 8                  # the client's font is 8x8
 SCROLLBAR_W = 11            # list boxes and text views draw a scroll bar inside their right edge
@@ -68,6 +69,23 @@ def add_buttons(win, specs, y=None, centre=False):
 def closer(button):
     """on_click for a Cancel / OK that only closes its window."""
     button.window.close()
+
+
+def confirm(session, title, lines, action, win_id, command="Delete"):
+    """A modal "are you sure?" box: one or two lines (38 characters each), `command`, then
+    Cancel as the default (RETURN doesn't delete). `action()` runs after the box closes;
+    it should check again that it's still allowed and the thing is still there."""
+    def go(button):
+        button.window.close()
+        return action()
+    lines = [str(line)[:38] for line in lines][:2]
+    win = Window.centred(title, 320, 26 + 12 * len(lines),
+                         flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=win_id)
+    for i, line in enumerate(lines):
+        win.add(Label(MARGIN, 4 + 12 * i, 320 - 2 * MARGIN, 10, line))
+    add_buttons(win, [(command, go, 0), ("Cancel", closer, GFlag.DEFAULT)], centre=True)
+    win.show(session)
+    return win
 
 
 class Gadget:
@@ -416,6 +434,55 @@ class Progress(Gadget):
     def set_percent(self, percent):
         self.percent = max(0, min(100, int(percent)))
         self.set_value(self.percent)
+
+
+class Grid(Gadget):
+    """A board of picture tiles (Kind.GRID; clients with Caps.GRID): cols x rows cells of
+    tile_w x tile_h pixels, the tiles in resource slot `slot` (session.send_resource). Each
+    cell is a tile number (0-63), plus GRID_MARK1 / GRID_MARK2 for a frame in mark colour 1
+    / 2. set_cells() sends only what changed. A click on a cell calls
+    on_select(grid, cell, double)."""
+    kind = Kind.GRID
+
+    def __init__(self, x, y, cols, rows, tile_w, tile_h, slot, marks=(9, 12), cells=None,
+                 **kw):
+        if not 0 < cols * rows <= GRID_CELLS_MAX:
+            raise ValueError("a grid has 1-%d cells" % GRID_CELLS_MAX)
+        self.params = bytes(v + 1 for v in (cols, rows, tile_w, tile_h, slot) + tuple(marks))
+        assert len(self.params) == GRID_PARAMS
+        super().__init__(x, y, cols * tile_w, rows * tile_h, "", **kw)
+        self.cols, self.rows = cols, rows
+        self.cells = list(cells) if cells else [0] * (cols * rows)
+
+    def encode(self):
+        # (the parameters are bytes, not text: Writer.str would clean them)
+        return (Writer().u8(self.window.win_id).u8(self.gid).u8(self.kind)
+                .u16(self.x).u8(self.y).u16(self.w).u8(self.h).u8(int(self.wire_flags()))
+                .u8(len(self.params)).bytes(self.params))
+
+    def send_contents(self):
+        self._send_cells(0, self.cells)
+
+    def set_cells(self, cells):
+        cells = list(cells)
+        changed = [i for i, (a, b) in enumerate(zip(self.cells, cells)) if a != b]
+        self.cells = cells
+        if changed:
+            first, last = changed[0], changed[-1]
+            self._send_cells(first, cells[first:last + 1])
+
+    def _send_cells(self, first, values):
+        if not self.shown:
+            return
+        for i in range(0, len(values), 255):
+            part = values[i:i + 255]
+            self._send(S.CELLS, Writer().u8(self.window.win_id).u8(self.gid).u8(first + i)
+                       .u8(len(part)).bytes(part))
+
+    def handle_select(self, index, double):
+        if index >= len(self.cells):
+            return None
+        return super().handle_select(index, double)
 
 
 class Image(Gadget):

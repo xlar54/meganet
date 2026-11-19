@@ -20,16 +20,20 @@ import asyncio
 import inspect
 import logging
 import time
+import traceback
 
 from . import db as dbmod
 from . import karma
+from . import serverlog
 from .protocol import (TOAST_NO_SLOT, clean_text, S, C, Writer, Deframer, ProtocolError, VERSION, LOGIN_NEW_USER,
                        SELECT_DOUBLE, SERVER_WIN_FIRST, SERVER_WIN_LAST, NOTIFY_SLOTS,
-                       NOTIFY_HINT_MAX, Icon)
+                       NOTIFY_HINT_MAX, SLOT_STATUS, Icon, WFlag, RESOURCE_SLOTS, RESOURCE_SIZE,
+                       RESOURCE_CHUNK)
 
 log = logging.getLogger("meganet")
 
 FIRST_DYNAMIC_WIN = 0x40     # ids below this are the fixed screens in screens.py
+WIN_LOADING_RES = 55         # "Loading Chess": a resource coming (send_resource)
 
 # What the sign-up wizard's window may send before sign-on (each starts with u8 win)
 WIZARD_EVENTS = frozenset((C.CLICK, C.VALUE, C.SELECT, C.TEXT, C.WIN_CLOSED))
@@ -58,6 +62,7 @@ class Session:
         self.game = None             # games.base.Player while in a game
         self.notify = {}             # menu-bar icons shown: slot -> (icon, hint)
         self.desk = []               # desktop icons sent (desktop.py), slot order
+        self.resources = {}          # S.RESOURCE slot -> the key of what this client holds
         self.previous_login = None   # the sign-on before this one (My Account's Last Login)
         self.chat_lines = 0          # lines said in chat (karma: CHAT_LINES make a point)
         self.status = "available"    # Status menu: available / away / offline (presence.py)
@@ -66,11 +71,22 @@ class Session:
         self.suspicious = 0          # events for things never offered (karma.suspicious)
         self.pw_locked_until = 0     # Reset Password refused until then (wrong passwords)
         self.signup = None           # signup.Wizard while the New User wizard runs
+        self.conn = None             # the server log's connection number (its first row)
         self.closed = False
 
-    def log(self, msg):
-        who = "%d %s" % (self.id, self.user) if self.user else str(self.id)
-        log.info("[%s] %s", who, msg)
+    # ---- the server log (serverlog.py): console and database ----
+
+    def log(self, msg, level=serverlog.INFO, area=None):
+        """Log a line about this session. The area is the calling module's (filelib.py:
+        "files") unless given."""
+        self.server.serverlog.write(msg, level, area or serverlog.caller_area(), self)
+
+    def warn(self, msg, area=None):
+        """A refusal or a failure: shown with "Warnings, errors" in the Server Log."""
+        self.log(msg, serverlog.WARNING, area or serverlog.caller_area())
+
+    def error(self, msg, area=None):
+        self.log(msg, serverlog.ERROR, area or serverlog.caller_area())
 
     # ---- permissions ----
 
@@ -143,6 +159,37 @@ class Session:
         """Play one of the client's sounds (S.SOUND)."""
         self.send(S.SOUND, Writer().u8(int(sound)))
 
+    def send_resource(self, slot, key, data, title=None):
+        """Put `data` (at most RESOURCE_SIZE bytes: a grid's tiles, say) in the client's
+        resource slot `slot` (S.RESOURCE, RESOURCE_CHUNK at a time), unless this connection
+        already holds `key` there. The client keeps it in attic RAM until the slot is
+        overwritten; nothing goes to its disks. With `title` ("Chess"), a "Loading Chess"
+        window with a progress bar shows while it comes: its updates go between the chunks,
+        so the client moves the bar as the data arrives, and the window closes after the
+        last one."""
+        if not 0 <= slot < RESOURCE_SLOTS or len(data) > RESOURCE_SIZE:
+            raise ValueError("bad resource slot %r or size %d" % (slot, len(data)))
+        if self.resources.get(slot) == key:
+            return False
+        bar = win = None
+        if title:
+            from .ui import Window, Label, Progress, MARGIN
+            win = Window.centred("Loading %s" % title, 260, 40, win_id=WIN_LOADING_RES,
+                                 flags=WFlag.MODAL)
+            win.add(Label(MARGIN, 4, 260 - 2 * MARGIN, 10, "Loading the game's pictures..."))
+            bar = win.add(Progress(MARGIN, 20, 260 - 2 * MARGIN))
+            win.show(self)
+        for offset in range(0, len(data), RESOURCE_CHUNK):
+            self.send(S.RESOURCE, Writer().u8(slot).u16(offset)
+                      .bytes(data[offset:offset + RESOURCE_CHUNK]))
+            if bar is not None:
+                bar.set_percent(100 * min(len(data), offset + RESOURCE_CHUNK) // len(data))
+        if win is not None:
+            win.close()
+        self.resources[slot] = key
+        self.log("resource %r: %d bytes to slot %d" % (key, len(data), slot))
+        return True
+
     def set_notify(self, slot, icon, hint=""):
         """Show icon `icon` in menu-bar slot `slot` (S.NOTIFY), or remove it with Icon.NONE.
         Sent only when it changes. NOTIFY_CLICKs are accepted only for slots shown here."""
@@ -178,10 +225,12 @@ class Session:
                     except ProtocolError:
                         raise
                     except Exception:            # a bug in a screen or game: log it, go on
-                        log.exception("[%d] error handling message $%02X", self.id, msg_type)
+                        self.error("error handling message $%02X:\n%s"
+                                   % (msg_type, traceback.format_exc().rstrip()),
+                                   area=serverlog.error_area())
                 await self.writer.drain()
         except ProtocolError as e:
-            self.log("bad stream: %s" % e)
+            self.warn("bad stream: %s" % e, area="conn")
         except (ConnectionError, asyncio.IncompleteReadError):
             pass
         finally:
@@ -190,13 +239,16 @@ class Session:
 
     async def handle(self, msg_type, r):
         if msg_type == C.HELLO:
+            if self.build is not None:       # (once a connection: a second one could change
+                return self.warn("second HELLO ignored")    # caps or force an update)
             return self.on_hello(r)
         if msg_type == C.LOGIN:
             return await self.on_login(r)
         if msg_type == C.PING:
             return self.send(S.PONG)
-        if self.user is not None:            # (the client's own PINGs aren't the user)
-            self.server.screens.presence.activity(self)
+        if self.user is not None and not (   # (the client's own PINGs aren't the user, and
+                msg_type == C.NOTIFY_CLICK and r.peek_u8() == SLOT_STATUS):  # an auto-Away
+            self.server.screens.presence.activity(self)   # dot clicked goes to Available)
         if self.user is None and not (
                 msg_type in WIZARD_EVENTS and self.signup is not None
                 and self.signup.win is not None and r.peek_u8() == self.signup.win.win_id):
@@ -300,6 +352,7 @@ class Session:
         if ok:
             self.sign_on(name, message, new=bool(flags & LOGIN_NEW_USER))
         else:
+            self.warn("sign-on as %r refused: %s" % (name[:20], message), area="login")
             self.login_result(False, message)
 
     def sign_on(self, name, message, new=False, welcome=True, after=None):
@@ -310,7 +363,9 @@ class Session:
         self.user_id = self.server.db.user(name)["id"]
         self.previous_login = self.server.db.record_login(self.user_id)
         self.load_permissions()
-        self.log("signed on" + (" (new user)" if new else ""))
+        self.log("signed on as %s (%s, build %s)%s" % (self.user, self.role, self.build,
+                                                      " (new user)" if new else ""),
+                 area="login")
         self.server.screens.signed_on(self, welcome=welcome, after=after)
 
     def login_refused(self):

@@ -196,6 +196,19 @@ CREATE TABLE IF NOT EXISTS library_files (
     downloads   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS library_files_library ON library_files (library_id);
+CREATE TABLE IF NOT EXISTS log (                -- the server log (serverlog.py)
+    id       INTEGER PRIMARY KEY,
+    at       INTEGER NOT NULL,                  -- Unix time
+    level    INTEGER NOT NULL,                  -- 0 info, 1 warning, 2 error
+    area     TEXT NOT NULL,                     -- serverlog.AREAS
+    conn     INTEGER,                           -- the id of its connection's first row
+    session  INTEGER,                           -- the session number (restarts at 1)
+    user_id  INTEGER,                           -- (no REFERENCES: rows outlive accounts)
+    user     TEXT,                              -- the screen name then
+    text     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS log_at ON log (at);
+CREATE INDEX IF NOT EXISTS log_conn ON log (conn);
 """
 
 NAME_RE = re.compile(r"[A-Za-z0-9 ]{3,10}")     # (lists show 10)
@@ -432,6 +445,69 @@ class Database:
     def _set_setting(self, key, value):
         self.conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
                           (key, str(value)))
+
+    def set_setting(self, key, value):
+        with self.conn:
+            self._set_setting(key, value)
+
+    # ---- the server log (serverlog.py) ----
+
+    def add_log(self, at, level, area, conn, session, user_id, user, text):
+        """Add a row; returns its id. Committed at once, unless a transaction is already open
+        (then it goes in with that one)."""
+        busy = self.conn.in_transaction
+        cur = self.conn.execute(
+            "INSERT INTO log (at, level, area, conn, session, user_id, user, text) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (at, level, area, conn, session, user_id, user,
+                                                 text))
+        if not busy:
+            self.conn.commit()
+        return cur.lastrowid
+
+    def set_log_conn(self, row_id, conn):
+        busy = self.conn.in_transaction
+        self.conn.execute("UPDATE log SET conn = ? WHERE id = ?", (conn, row_id))
+        if not busy:
+            self.conn.commit()
+
+    def prune_log(self, before):
+        """Delete the rows from before Unix time `before`; returns how many went."""
+        with self.conn:
+            return self.conn.execute("DELETE FROM log WHERE at < ?", (before,)).rowcount
+
+    def last_log_id(self):
+        return self.conn.execute("SELECT COALESCE(MAX(id), 0) FROM log").fetchone()[0]
+
+    def log_entries(self, area=None, min_level=0, user="", text="", conn=None, top=None,
+                    limit=200, offset=0):
+        """(rows newest first, how many match). With `conn`, that connection's rows only and
+        the other filters are ignored; `user` and `text` match anywhere, in any case; `top`:
+        no rows newer than this id."""
+        where, args = [], []
+        if top is not None:
+            where.append("id <= ?")
+            args.append(top)
+        if conn is not None:
+            where.append("conn = ?")
+            args.append(conn)
+        else:
+            if area:
+                where.append("area = ?")
+                args.append(area)
+            if min_level:
+                where.append("level >= ?")
+                args.append(min_level)
+            if user:
+                where.append("user LIKE ? ESCAPE '!'")
+                args.append(_like_pattern(user))
+            if text:
+                where.append("text LIKE ? ESCAPE '!'")
+                args.append(_like_pattern(text))
+        cond = (" WHERE " + " AND ".join(where)) if where else ""
+        total = self.conn.execute("SELECT COUNT(*) FROM log" + cond, args).fetchone()[0]
+        rows = self.conn.execute("SELECT * FROM log" + cond + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                                 args + [limit, offset]).fetchall()
+        return rows, total
 
     def motd(self):
         """The message of the day, a list of lines (the default if the setting is unreadable)."""

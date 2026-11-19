@@ -63,13 +63,14 @@ MENU_MY_ACCOUNT = 0x22
 # icon. The hint (at most NOTIFY_HINT_MAX characters) is a short text the client may show.
 # C.NOTIFY_CLICK (u8 slot) says the user clicked that slot's icon; the client leaves the icon
 # there, and the server sends icon 0 when it's done with it. The server's slots:
-NOTIFY_SLOTS = 5
+NOTIFY_SLOTS = 6
 NOTIFY_HINT_MAX = 40
-SLOT_PAGE = 0            # a user is paging the admins (admins only)
-SLOT_ADMIN_MAIL = 1      # messages from users to the admins (admins only)
-SLOT_MAIL = 2            # unread private messages
-SLOT_NEW_USER = 3        # users still in the default role (admins with admin.users only)
-SLOT_IM = 4              # instant messages not read yet
+SLOT_STATUS = 0          # your status, always shown: a green / yellow / dark grey dot
+SLOT_PAGE = 1            # a user is paging the admins (admins only)
+SLOT_ADMIN_MAIL = 2      # messages from users to the admins (admins only)
+SLOT_MAIL = 3            # unread private messages
+SLOT_NEW_USER = 4        # users still in the default role (admins with admin.users only)
+SLOT_IM = 5              # instant messages not read yet
 TOAST_NO_SLOT = 0xFF
 
 
@@ -86,6 +87,9 @@ class Icon(IntEnum):
     PERSON = 5           # a person (a pawn): new users to look at
     BUBBLE = 6           # a speech bubble: instant messages
                          # (3 and 4 are the client's own Wi-Fi icons)
+    AVAILABLE = 7        # status dots (SLOT_STATUS): green
+    AWAY = 8             # yellow
+    OFFLINE = 9          # dark grey
 
 
 class S(IntEnum):
@@ -104,7 +108,7 @@ class S(IntEnum):
                          # replaces the whole server menu ("-" = separator; see MENU_FIRST)
     ALERT = 0x19         # u8 icon, str title, str text  (client draws a modal OK box)
     WIN_DONE = 0x1A      # u8 win  (all gadgets sent: the client may draw the window now)
-    NOTIFY = 0x1B        # u8 slot (0-3), u8 icon, str hint  (an icon button at the right end
+    NOTIFY = 0x1B        # u8 slot (0-5), u8 icon, str hint  (an icon button at the right end
                          # of the menu bar; see NOTIFY_SLOTS)
     PONG = 0x1C          # (nothing)  the answer to C.PING
     SET_FLAGS = 0x1D     # u8 win, u8 gid, u8 flags  (GFlag: e.g. DISABLED greys a button out
@@ -140,7 +144,13 @@ class S(IntEnum):
     LOAD_FILE = 0x27     # u8 req, u8 dev, u8 kind, str path  (send me that file): the client
                          # answers C.UP_BEGIN, C.UP_DATA..., C.UP_END, or C.LOCAL_DONE (trouble)
     LOCAL_CANCEL = 0x28  # u8 req  (stop that request; the client answers nothing)
-    RESOURCE = 0x30      # u16 id, u8 version, u8 kind, bytes...  (icons etc., cached in attic)
+    CELLS = 0x29         # u8 win, u8 gid, u8 first, u8 n, n x u8  (a GRID gadget's cells
+                         # first .. first+n-1: bits 0-5 the tile, bit 6 / bit 7 a frame in the
+                         # grid's mark colour 2 / 1; the client redraws the grid)
+    RESOURCE = 0x30      # u8 slot (0-15), u16 offset, bytes...  (at most RESOURCE_CHUNK):
+                         # stored in the client's resource slot (64 KB of attic each) at
+                         # offset. A GRID's tiles live in one: tile t at t * tile_w * tile_h,
+                         # row by row, a byte (palette index) a pixel
     UPDATE = 0x40        # u16 new build, u8 nfiles, str message  (forced: the client shows a
                          # progress window, receives nfiles x FILE_BEGIN/DATA/END, writes them,
                          # reboots)
@@ -202,8 +212,33 @@ class Kind(IntEnum):
     # SET_TEXT "" empties it. The client keeps at most EDIT_LINES lines and wraps typing at the
     # line width. It sends C.TEXT with the lines before any CLICK in the window.
     EDIT = 13
+    # A grid of picture tiles (board games). The GADGET text is 7 bytes, each value + 1 (so
+    # none is 0): cols, rows, tile w, tile h, resource slot, mark colour 1, mark colour 2; w and
+    # h are cols * tile w, rows * tile h. The cells (all 0 at first) come in S.CELLS; a click on
+    # cell n (row * cols + col) sends C.SELECT (win, gid, n). Clients with Caps.GRID only.
+    GRID = 14
 
 
+GRID_PARAMS = 7          # the GRID gadget text's bytes
+GRID_CELLS_MAX = 256     # cells in one grid at most (the client keeps 256 a grid)
+GRID_TILE_MASK = 0x3F    # S.CELLS: bits 0-5 the tile
+GRID_MARK1 = 0x80        # bit 7: a frame in mark colour 1
+GRID_MARK2 = 0x40        # bit 6: a frame in mark colour 2
+# The client's palette: entries 0-15 are the GUI's, 240-254 these fixed colours for game
+# art (tools/build_assets.py GAME_COLOURS must match). Tiles may use any of them.
+GAME_FIRST = 240
+GAME_COLOURS = [
+    (240, 217, 181), (181, 136, 99),             # 240 / 241: light and dark squares
+    (250, 248, 240), (190, 184, 172),            # 242 / 243: white pieces, their shade
+    (40, 36, 34), (120, 112, 104),               # 244 / 245: black pieces, their highlight
+    (205, 210, 106), (170, 162, 58),             # 246 / 247: last-move squares (light, dark)
+    (90, 100, 60), (118, 150, 86),               # 248: move dots; 249 green squares
+    (238, 238, 210), (200, 40, 40),              # 250 cream squares; 251 red
+    (60, 120, 200), (230, 190, 40), (20, 20, 20),    # 252 blue; 253 gold; 254 near black
+]
+RESOURCE_SLOTS = 16
+RESOURCE_SIZE = 0x10000  # bytes a slot
+RESOURCE_CHUNK = 1024    # S.RESOURCE bytes at most
 DROPDOWN_ROWS = 128      # a DROPDOWN holds at most this many rows
 DROPDOWN_NONE = 0xFFFF   # SET_VALUE / C.SELECT index for "no row selected"
 EDIT_LINES = 32          # an EDIT holds at most this many lines
@@ -248,6 +283,7 @@ class Caps(IntFlag):
     DRIVES = 1           # CBM drives 8-11: directories, saving and reading PRG / SEQ / USR
     SD_READ = 2          # the SD card: folders, and reading D64 / D81 images (uploads)
     SD_WRITE = 4         # writing D64 / D81 images to the SD card (downloads)
+    GRID = 8             # Kind.GRID gadgets, S.CELLS and S.RESOURCE (board games)
 
 
 class Local(IntEnum):

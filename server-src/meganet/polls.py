@@ -51,7 +51,12 @@ def parse_end(text, now=None):
         day = datetime.datetime.strptime(text, "%Y-%m-%d")
     except ValueError:
         raise ValueError("The end date is YYYY-MM-DD, or blank for none.")
-    ends = int(time.mktime((day + datetime.timedelta(days=1)).timetuple()))
+    if day.year > datetime.date.today().year + 10:
+        raise ValueError("The end date is more than ten years away.")
+    try:
+        ends = int(time.mktime((day + datetime.timedelta(days=1)).timetuple()))
+    except (OverflowError, ValueError):      # (Windows: before 1970)
+        raise ValueError("The end date has passed already.")
     if ends <= (now or time.time()):
         raise ValueError("The end date has passed already.")
     return ends

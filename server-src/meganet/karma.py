@@ -62,7 +62,8 @@ def change(server, user_id, delta, reason, by=None, ceiling=dbmod.KARMA_MAX):
     old, new = got
     user = db.user(user_id=user_id)
     who = ("by %s" % by.user) if by else "automatically"
-    log.info("karma: %s %+d -> %d (%s, %s)" % (user["name"], new - old, new, reason, who))
+    log.info("karma: %s %+d -> %d (%s, %s)" % (user["name"], new - old, new, reason, who),
+             extra={"user": user["name"]})          # (the Server Log files it under the user)
     if new <= ALERT_AT < old:
         db.add_admin_message(by.user_id if by else user_id, "Karma alert: %s" % user["name"], [
             "%s's Karma Points fell to %s." % (user["name"], describe(new)),
@@ -93,7 +94,7 @@ def lose(server, user_id, reason, by=None):
 def suspicious(session, what):
     """The client sent something the server never offered it. A few are races (a window closed
     as it was clicked); SUSPICIOUS_LIMIT in one session costs karma, once."""
-    session.log("suspicious: %s" % what)
+    session.warn("suspicious: %s" % what)
     if session.user_id is None:
         return
     session.suspicious += 1

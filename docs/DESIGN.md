@@ -164,16 +164,19 @@ ASCII. The authoritative list of messages is [`server-src/meganet/protocol.py`](
   - **`$22` is My Account, on the client's own MegaNet menu** (its first item). The client sends
     `MENU_PICK $22` for it. The server never sends `$22` in `MENU` but always accepts it from a
     signed-on session (`protocol.MENU_MY_ACCOUNT`).
-- **Menu-bar icons:** `NOTIFY` (`$1B`): `u8 slot` (0-3), `u8 icon`, `str hint`. The client draws a
+- **Menu-bar icons:** `NOTIFY` (`$1B`): `u8 slot` (0-5), `u8 icon`, `str hint`. The client draws a
   small icon button at the right end of its menu bar: slot 0 is the rightmost (just left of the
   client's own connectivity icon, which is always at the very end), slot 1 left of it, and so
   on; the icons shown are packed together with no gaps for empty slots. Icon 0 removes the slot's icon, 1 = page / alert (flashing, to get attention), 2 =
-  mail / messages waiting. The hint is a short text (at most 40 characters) the client may show;
+  mail / messages waiting, 5 = a person, 6 = a speech bubble, 7 / 8 / 9 = a green / yellow /
+  dark grey dot (3 and 4 are the client's own Wi-Fi icons). The hint is a short text (at most 40 characters) the client may show;
   the server always sends one.
   - `NOTIFY_CLICK` (`$8A`): `u8 slot`, the user clicked that slot's icon. The client doesn't
     remove the icon itself; the server sends `NOTIFY` icon 0 when it's done with it.
-  - The server's slots: 0 = a user is paging the admins (admins only), 1 = messages from users
-    to the admins (admins only), 2 = unread private messages. It ignores a `NOTIFY_CLICK` for a
+  - The server's slots: 0 = your status (always shown, so it sits right next to the
+    connectivity icon), 1 = a user is paging the admins (admins only), 2 = messages from users
+    to the admins (admins only), 3 = unread private messages, 4 = new users, 5 = instant
+    messages (`protocol.SLOT_*`). It ignores a `NOTIFY_CLICK` for a
     slot it hasn't given that session an icon in, and checks the permission again.
 - **WIN_OPEN's width and height are the client area**, the space for the gadgets. The client
   adds its own frame and title bar: `FRAME_W` = 8 more across and `FRAME_H` = 18 more down
@@ -224,8 +227,10 @@ The File Library (`server-src/meganet/filelib.py`) runs every window on the serv
   IO_ERROR (the drive's own message is the text), UNSUPPORTED, TOO_BIG, CANCELLED.
 - **The SD card** is read through HYPPO (`opendir`/`readdir`/`chdir`/`openfile`/`readfile`).
   HYPPO can't write files (`mkfile`, `writefile` and `rmfile` are documented as not
-  implemented), so writing images needs the client's own FAT32 code with raw sector writes,
-  which isn't written yet (caps bit 2 stays off until it is).
+  implemented), so images are written by the client's own FAT32 code with raw sector writes
+  (`client-src/sdwrite.asm`): new files only, in one contiguous run of clusters so HYPPO can
+  mount them, both FATs, an 8.3 entry, every metadata sector read back. Tested in Xemu
+  against the real HYPPO and a scratch card image, not yet on a real card.
 
 The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
 
@@ -285,18 +290,18 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   Save; open welcome windows aren't updated, users see the new message at their next sign-on.
 - **Page Admin** (Help menu, `meganet/pages.py`): with an admin (`admin.pages`, Moderator and
   Sysop by default) signed on, the user waits in a "Paging an admin..." window (Cancel withdraws
-  it) and every admin gets the flashing page icon (NOTIFY slot 0; "3 users are paging" when
+  it) and every admin gets the flashing page icon (NOTIFY slot 1; "3 users are paging" when
   several wait). The first admin to click it takes the oldest page; both get a private chat
   window (dynamic window ids). Closing either side ends the chat. With no admin on (or when the
   last one leaves), the user may leave a message instead (`admin_messages` table); admins get the
-  mail icon (slot 1) while unread ones wait, and read and delete them in Admin > Messages from
+  mail icon (slot 2) while unread ones wait, and read and delete them in Admin > Messages from
   users. Getting Around (Help) is a placeholder help text for now.
 - **Private messages** (Areas, `mail.use`, everyone by default; `meganet/mail.py`): an inbox and a
   Sent folder (list + TextView), New / Reply / Delete, and a composer: To, Subject, the body in an
   editable text area (Kind.EDIT), Send and Cancel. Send closes it and shows a "Message Sent"
   box (`meganet/compose.py`, shared with the message to the admins and meant for the message
   boards). Stored in `private_messages`,
-  kept until both sides delete it. Unread mail shows the envelope icon (slot 2), also at sign-on.
+  kept until both sides delete it. Unread mail shows the envelope icon (slot 3), also at sign-on.
 - **Message boards** (Areas, `boards.read`; `meganet/boards.py`): forums > topics > posts in
   one window with three views; "new" = since the previous sign-on. `boards.post` and the
   forum's per-role Read / Post access decide who writes. Moderators (`boards.moderate`) create,
@@ -305,6 +310,8 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
 - **Status and instant messages** (`meganet/presence.py`, `meganet/im.py`):
   - A Status menu (Available / Away / Offline) and Auto-Away after idle minutes (Admin >
     System Settings).
+  - A status dot on the menu bar, just left of the connectivity icon: green Available,
+    yellow Away, dark grey Offline. Clicking it toggles Available / Away.
   - Who's Online shows statuses; Offline users only show to admins.
   - Instant messages arrive as a toast at the bottom right (`S.TOAST` `$1E`, drawn by the
     client over everything, taking no input) plus a speech-bubble icon, never a window that
@@ -327,7 +334,7 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   - buttons are at least 72 wide; "..." marks a button that opens a dialog;
   - a button that can't act yet (nothing picked) is greyed out: `S.SET_FLAGS` (`$1D`: win,
     gid, flags) changes a gadget's flags after the window is open.
-- **New users** (admins with `admin.users`): a black pawn icon (slot 3, icon 5) while anyone is
+- **New users** (admins with `admin.users`): a black pawn icon (slot 4, icon 5) while anyone is
   still in the default role; a click opens Admin > User Editor at the oldest one.
 - **My Account** (the client's MegaNet menu, `MENU_PICK $22`; `meganet/account.py`): a centred
   form (388x171) with labels in one column and fields in another: Username (with "Role: ..."
@@ -378,7 +385,21 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   description, min/max players; hooks `start`, `on_click`, `on_select`, `on_key`, `on_leave`,
   optional `tick`) is found at start-up and listed in the Games window, which also matches
   waiting players. Tic-tac-toe, built only from buttons, is the example
-  (`meganet/games/README.md`).
+  (`meganet/games/README.md`). A game with `challenge = True` gets a lobby instead
+  (`games/challenge.py`): players wait there, pick an opponent and challenge them.
+- **Chess** (`games/chess.py`, rules in `chess_rules.py`): the lobby, then a window with the
+  board (a `GRID` gadget, 8 x 8 tiles of 32 x 16 pixels sent once a connection to resource
+  slot 1), ranks and files from your own side, two status lines, a chat with the moves in it,
+  Offer Draw / Resign / Rematch / Lobby. Every rule is enforced: castling, en passant,
+  promotion (a dialog), check, checkmate, stalemate, and the automatic draws (insufficient
+  material, fifty moves, threefold repetition). No clocks yet.
+- **Grids and resources** (`Caps.GRID` clients): `S.RESOURCE` (`$30`: `u8 slot, u16 offset,
+  bytes`, at most 1024) fills one of 16 attic slots of 64 KB; a `GRID` gadget (kind 14; its
+  text is 7 bytes, each + 1: cols, rows, tile w, tile h, slot, mark colours 1 and 2) shows
+  tiles from a slot; `S.CELLS` (`$29`: `u8 win, u8 gid, u8 first, u8 n, n bytes`) sets its
+  cells (bits 0-5 the tile, bit 7 / 6 a frame in mark colour 1 / 2). A click on a cell sends
+  `C.SELECT` with the cell number. Palette entries 240-254 are fixed game colours
+  (`protocol.GAME_COLOURS`) for the tiles.
 - `tests/` (`python -m unittest`) runs a real server on a random port with fake clients over
   TCP: sign-on, the menu bar, the lobby, a tic-tac-toe match, the forced update, roles and
   permissions, the message of the day, Page Admin, private messages, My Account, the New User

@@ -102,6 +102,17 @@ left corner).
   - A click selects one (its label on navy). The same one again within half a second gives
     `GE_DESK` with `ge_val` = the slot. A click elsewhere on the desktop clears the selection.
   - Line 1 empty removes the icon; `gui_desk_clear` removes them all.
+- **Grids** (`GK_GRID`, in `grid.asm`, included after `gui.asm`): a board of picture tiles
+  for board games.
+  - The gadget's text is 7 bytes, each value + 1: cols, rows, tile w, tile h, resource
+    slot, mark colours 1 and 2. Its cells (at most 256, all 0 at first) live in attic
+    (`GUI_GRID_MEM` + gadget slot * 256); `gui_grid_cells` sets some and redraws it.
+  - A cell is a tile number (bits 0-5), plus a frame in mark colour 2 (bit 6) and/or 1
+    (bit 7), drawn two pixels wide at the sides and one at the top and bottom.
+  - Tiles are read from a resource slot (`GUI_RES_MEM` + slot * 64 KB: tile t at
+    t * w * h, row by row, a palette index a pixel), filled by `gui_resource`. They're drawn
+    a pixel at a time, so the grid can be anywhere; clipped to the screen.
+  - A click on a cell gives `GE_SELECT` with `ge_val` = row * cols + col.
 - **Broadcast:** `gui_banner` (`txt_ptr` = text, up to 79 characters; A = seconds) puts a
   line across the whole bottom row, yellow on red, over everything. It takes no keys and
   goes after the given seconds or when clicked. A toast moves up a row while it's there.

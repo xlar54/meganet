@@ -38,7 +38,7 @@ C_LOCAL_DONE    = $8e
 C_UP_BEGIN      = $90
 C_UP_DATA       = $91
 C_UP_END        = $92
-CLIENT_CAPS     = 3                     ; protocol.Caps: DRIVES | SD_READ
+CLIENT_CAPS     = 15                    ; protocol.Caps: DRIVES | SD_READ | SD_WRITE | GRID
 
 ; protocol.Local
 LK_HEADER       = 0
@@ -90,7 +90,8 @@ st_n:           .word 0
 st_t0:          .byte 0
 st_t1:          .byte 0
 st_t2:          .byte 0
-st_path:        .fill 65
+ST_PATH_MAX     = 127                   ; (filelib.LOCAL_PATH_MAX)
+st_path:        .fill ST_PATH_MAX + 1
 
 ;---------------------------------------------------------------------------------------
 ; the requests
@@ -105,18 +106,52 @@ st_head:
         sta st_mode
         rts
 
-; the string just read (str_buf) -> st_path
+; the string just read (str_buf) -> st_path. Carry set if it's longer than ST_PATH_MAX
+; (refused: a path cut short would name somewhere else)
 st_copy_path:
         ldx #0
 -       lda str_buf,x
         sta st_path,x
         beq +
         inx
-        cpx #64
+        cpx #ST_PATH_MAX + 1
         bne -
         lda #0
-        sta st_path,x
-+       rts
+        sta st_path
+        sec
+        rts
++       clc
+        rts
+
+; st_path as a CBM drive's file name: 1-16 characters, none of * ? , : = " and not starting
+; with @ $ # (the DOS reads those as wildcards and commands: "*" would scratch every
+; file). The server checks this too (filelib.check_cbm_name). Carry set if not
+st_cbm_ok:
+        lda st_path
+        ldy #2
+-       cmp _first,y
+        beq _no
+        dey
+        bpl -
+        ldx #0
+_ch:    lda st_path,x
+        beq _end
+        ldy #5
+-       cmp _bad,y
+        beq _no
+        dey
+        bpl -
+        inx
+        cpx #17
+        bne _ch
+_no:    sec
+        rts
+_end:   txa
+        beq _no
+        clc
+        rts
+_first: .text "@$#"
+_bad:   .text "*?,:=", $22
 
 ; u8 req: stop it
 pm_local_cancel:
@@ -173,9 +208,9 @@ st_drive_said:
 st_unit:
         lda st_dev
         cmp #8
-        bcc +
+        bcc _none
         cmp #12
-        bcs +
+        bcs _none
         sta kst_dev
         jsr disk_begin
         jsr kst_status
@@ -184,6 +219,10 @@ st_unit:
         clc
         rts
 +       sec
+        rts
+_none:  lda #0                          ; (not a drive number: no drive text either)
+        sta KS_BUF
+        sec
         rts
 ; st_unit failed: C.LOCAL_DONE NO_DEVICE with what the drive said
 st_no_unit:
@@ -322,9 +361,12 @@ pm_local_dir:
         ldx #0
         jsr rd_str
         jsr st_copy_path
+        bcs _long
         lda st_dev
         bne dir_drive
         jmp dir_sd
+_long:  lda #LS_UNSUPPORTED
+        jmp st_done
 
 dir_drive:
         jsr st_unit
@@ -581,8 +623,12 @@ sd_entry:
         ldy #LK_D64
 _kind:  sty st_t0
         lda #0
-        sta ST_DIRENT+$3f               ; (the long name ends in the 64 bytes)
-        lda #C_LOCAL_ENTRY
+        sta ST_DIRENT+$3f               ; (the long name ends in the 64 bytes,
+        ldx ST_DIRENT+$40               ; and at its length, +$40: readdir needn't clear
+        cpx #$3f                        ; what's after it)
+        bcs +
+        sta ST_DIRENT,x
++       lda #C_LOCAL_ENTRY
         jsr tx_begin
         lda st_req
         jsr tx_u8
@@ -652,8 +698,16 @@ sd_walk:
         bcc _nodev
         lda #0
         sta sd_i
+        sta sd_long
+        sta sd_part                     ; (no stale name if the path is empty)
+        sta sd_dircl                    ; (the folder we end in: 0 = the root)
+        sta sd_dircl+1
+        sta sd_dircl+2
+        sta sd_dircl+3
 _part:  jsr sd_next_part
         bcs _done
+        lda sd_long                     ; a part longer than 8.3: nothing can match it
+        bne _long
         lda sd_leaf
         beq +
         ldx sd_i                        ; the last part: the file
@@ -664,6 +718,11 @@ _part:  jsr sd_next_part
         lda ST_DIRENT+$56
         and #$10
         beq _nf
+        ldx #3                          ; its first cluster, for sdwrite.asm
+-       lda ST_DIRENT+$4e,x
+        sta sd_dircl,x
+        dex
+        bpl -
         #HYPPO H_CHDIR
         php
         ldx sd_fd
@@ -690,6 +749,10 @@ _done:  clc
 _nodev: lda #LS_NO_DEVICE
         sec
         rts
+_long:  jsr sd_root
+        lda #LS_NOT_FOUND
+        sec
+        rts
 
 ; the next part of st_path (from sd_i, to a / or the end) -> sd_part, upper case. Carry
 ; set when there are none left
@@ -711,9 +774,12 @@ sd_next_part:
         bcs +
         and #$df
 +       cpy #12
-        bcs -
+        bcs _lng
         sta sd_part,y
         iny
+        bra -
+_lng:   lda #1                          ; too long for an 8.3 name: sd_walk refuses it
+        sta sd_long                     ; (it isn't cut short to something that matches)
         bra -
 _end:   stx sd_i
         lda #0
@@ -754,6 +820,109 @@ _nf:    ldx sd_fd
         rts
 
 sd_err:         .byte 0, 0                  ; HYPPO's last openfile / readfile A (tests)
+; st_path on the SD card: a D64 or D81, its folders there (sd_dircl = the last one's first
+; cluster), and no file of its name (sd_part). Carry set = no, A = the status; back at the
+; root either way
+sd_check_new:
+        lda st_kind
+        cmp #LK_D81
+        beq +
+        cmp #LK_D64
+        beq +
+        lda #LS_UNSUPPORTED
+        sec
+        rts
++       lda #1
+        sta sd_leaf
+        jsr sd_walk
+        bcs _out
+        jsr sd_valid_name               ; a real 8.3 name with the right extension (the
+        bcc +                           ; server checks it too: sdwrite.asm writes it as is)
+        jsr sd_root
+        lda #LS_UNSUPPORTED
+        sec
+        rts
++       jsr sd_find
+        bcs _nf
+        ldx sd_fd                       ; it's there
+        #HYPPO H_CLOSEDIR
+        jsr sd_root
+        lda #LS_EXISTS
+        sec
+        rts
+_nf:    pha
+        jsr sd_root
+        pla
+        cmp #LS_NOT_FOUND
+        beq +
+        sec
+        rts
++       clc
+_out:   rts
+
+; sd_part as a new image's name: 1-8 of A-Z 0-9 _ - ! # $ % & ( ) @ ^ { } ~ (the server's
+; SD_NAME_RE), then .D64 or .D81 as st_kind says. Carry set if not
+sd_valid_name:
+        ldx #0
+_n:     lda sd_part,x
+        cmp #'.'
+        beq _dot
+        jsr sd_char_ok
+        bcs _no
+        inx
+        cpx #9
+        bne _n
+_no:    sec
+        rts
+_dot:   txa
+        beq _no
+        lda sd_part+1,x
+        cmp #'D'
+        bne _no
+        lda st_kind
+        cmp #LK_D81
+        beq _81
+        lda sd_part+2,x
+        cmp #'6'
+        bne _no
+        lda sd_part+3,x
+        cmp #'4'
+        bne _no
+        bra _end
+_81:    lda sd_part+2,x
+        cmp #'8'
+        bne _no
+        lda sd_part+3,x
+        cmp #'1'
+        bne _no
+_end:   lda sd_part+4,x
+        bne _no
+        clc
+        rts
+
+; carry clear if A may be in an 8.3 name (sd_valid_name); X kept
+sd_char_ok:
+        cmp #'A'
+        bcc +
+        cmp #'Z'+1
+        bcc _ok
++       cmp #'0'
+        bcc +
+        cmp #'9'+1
+        bcc _ok
++       ldy #14 - 1                     ; (the 14 of _set)
+-       cmp _set,y
+        beq _ok
+        dey
+        bpl -
+        sec
+        rts
+_ok:    clc
+        rts
+_set:   .text "_-!#$%&()@^{}~"
+
+sd_dircl:       .dword 0                    ; sd_walk: the last folder's first cluster
+sd_long:        .byte 0                     ; sd_next_part: a part was too long
 sd_leaf:        .byte 0
 sd_i:           .byte 0
 sd_fd:          .byte 0
@@ -777,6 +946,7 @@ pm_save_begin:
         ldx #0
         jsr rd_str
         jsr st_copy_path
+        bcs _unsup
         lda st_size                     ; more than 1 MB: too big to stage
         sta st_pos
         lda st_size+1
@@ -789,9 +959,12 @@ pm_save_begin:
         bcs _big
         lda st_dev
         bne +
-        lda #LS_UNSUPPORTED             ; (writing to the SD card: not yet)
+        jsr sd_check_new                ; the SD card: its folders there, the name free
+        bcc _ready
         jmp st_done
 +       jsr st_kind_letter
+        bcs _unsup
+        jsr st_cbm_ok
         bcs _unsup
         jsr st_unit
         bcc +
@@ -928,8 +1101,17 @@ pm_file_end:
         bne -
         lda st_dev
         bne save_drive
-        lda #LS_UNSUPPORTED
-        jmp st_done
+        jsr sd_check_new                ; (again: it's been a while) then sdwrite.asm
+        bcs +
+        jsr sd_write_file
+        php
+        pha
+        jsr sd_root                     ; (HYPPO back at the root, past our writes)
+        pla
+        plp
+        bcs +
+        lda #LS_OK
++       jmp st_done
 _bad:   lda #LS_BAD_CRC
         jmp st_done
 _out:   rts
@@ -939,6 +1121,17 @@ save_drive:
         jsr st_unit
         bcc +
         jmp st_no_unit
++       lda #<st_path                   ; (again, as on the SD card: the disk may have been
+        ldx #>st_path                   ; changed since SAVE_BEGIN; saves never overwrite)
+        jsr kst_exists
+        bcs +
+        lda #LS_EXISTS
+        ldx #<KS_BUF
+        ldy #>KS_BUF
+        jmp st_done_text
++       cmp #62
+        beq +
+        jmp st_drive_said
 +       jsr st_kind_letter
         sta sv_suffix+1
         lda #<st_path
@@ -1010,13 +1203,16 @@ _blk:   lda sv_left
 _close: jsr kst_close
         jsr kst_status
         cmp #20
-        bcc +
-        jmp st_drive_said
-+       lda #LS_OK
+        bcs +                           ; (refused at the close: the part goes too)
+        lda #LS_OK
         jmp st_done
++       sta sv_err
+        bra _rm
 _werr:  jsr kst_close                   ; the drive stopped: why, then take the part away
         jsr kst_status
         sta sv_err
+_rm:    cmp #63                         ; (63: a file of that name was there first: it
+        beq _said                       ; isn't ours to scratch)
         ldx #0
 -       lda KS_BUF,x
         sta dd_text,x
@@ -1035,7 +1231,8 @@ _werr:  jsr kst_close                   ; the drive stopped: why, then take the 
         beq +
         inx
         bra -
-+       lda sv_err
++
+_said:  lda sv_err
         jmp st_drive_said
 sv_suffix:      .null ",P,W"
 sv_left:        .fill 3
@@ -1051,15 +1248,18 @@ pm_load_file:
         ldx #0
         jsr rd_str
         jsr st_copy_path
-        jsr st_start
+        bcc +
+_unsup: lda #LS_UNSUPPORTED
+        jmp st_done
++       jsr st_start
         lda st_dev
         bne +
         jmp load_sd
 +       jsr st_kind_letter
-        bcc +
-        lda #LS_UNSUPPORTED
-        jmp st_done
-+       sta ld_suffix+1
+        bcs _unsup
+        sta ld_suffix+1
+        jsr st_cbm_ok
+        bcs _unsup
         jsr st_unit
         bcc +
         jmp st_no_unit
@@ -1155,6 +1355,28 @@ load_sd:
         jsr sd_root
         lda #LS_NOT_FOUND
         jmp st_done
++       lda ST_DIRENT+$55               ; the size from its entry: read that much (HYPPO's
+        bne _big                        ; end-of-file answers differ: carry set with 0 bytes,
+        lda ST_DIRENT+$52               ; or carry clear with A = $FF or 0)
+        sta st_size
+        lda ST_DIRENT+$53
+        sta st_size+1
+        lda ST_DIRENT+$54
+        sta st_size+2
+        sta st_pos+2                    ; (st_too_far on the size)
+        lda st_size
+        ora st_size+1
+        sta st_pos
+        jsr st_too_far
+        lda #0
+        sta st_pos
+        sta st_pos+2
+        bcc +
+_big:   ldx sd_fd
+        #HYPPO H_CLOSEDIR
+        jsr sd_root
+        lda #LS_TOO_BIG
+        jmp st_done
 +       #HYPPO H_OPENFILE               ; (the folder stays open until it's read: closing
         bcs +                           ; it first leaves HYPPO with no current file, $89)
         sta sd_err
@@ -1164,12 +1386,12 @@ load_sd:
         lda #LS_IO_ERROR
         jmp st_done
 +       sta sd_ffd
-_sec:   ldx sd_ffd
+_sec:   jsr sd_at_size                  ; all of it?
+        bcs _eof
+        ldx sd_ffd
         #HYPPO H_READFILE
         bcs +
         sta sd_err+1
-        cmp #$ff                        ; the end (the book has it both ways: carry clear
-        beq _eof                        ; with A = $FF, or carry set with 0 bytes)
         jsr sd_close_both
         lda #LS_IO_ERROR
         jmp st_done
@@ -1205,7 +1427,27 @@ _sec:   ldx sd_ffd
         lda #LS_TOO_BIG
         jmp st_done
 _eof:   jsr sd_close_both
-        jmp up_start
+        jsr sd_at_size                  ; past the size? (the last sector came whole: a
+        bcc +                           ; D64's 174,848 bytes end half-way through one)
+        lda st_size
+        sta st_pos
+        lda st_size+1
+        sta st_pos+1
+        lda st_size+2
+        sta st_pos+2
++       jmp up_start
+
+; carry set when pos has reached st_size
+sd_at_size:
+        lda st_pos+2
+        cmp st_size+2
+        bne +
+        lda st_pos+1
+        cmp st_size+1
+        bne +
+        lda st_pos
+        cmp st_size
++       rts
 
 ; the file and its folder closed, back at the root
 sd_close_both:
@@ -1219,9 +1461,38 @@ sd_close_both:
 ; the upload going out: from the main loop, a few C.UP_DATA frames a pass
 ;---------------------------------------------------------------------------------------
 storage_frame:
+        .if BRIDGE_NET                  ; (a test: write what's staged to st_path on the SD
+        lda dbg_sdw                     ; card, as a download would: bridge_test.py
+        beq +                           ; filessdw)
+        lda #0
+        sta dbg_sdw
+        sta st_mode
+        lda #LK_D81
+        sta st_kind
+        jsr sd_check_new
+        bcs _dbg
+        jsr sd_write_file
+        php
+        pha
+        jsr sd_root
+        pla
+        plp
+        bcs _dbg
+        lda #LS_OK
+_dbg:   sta dbg_sdw+1
+        inc dbg_sdw+2
+        rts
++
+        .endif
         lda st_mode
         cmp #2
         beq +
+        rts
++       lda net_state                   ; the connection went: the upload with it (no
+        cmp #NS_ONLINE                  ; sending into a dead one, and nothing left over
+        beq +                           ; for the next)
+        lda #0
+        sta st_mode
         rts
 +       lda #UP_PER_FRAME
         sta sf_n
@@ -1293,5 +1564,8 @@ _end:   lda #C_UP_END
 _gone:  lda #0
         sta st_mode
         rts
+        .if BRIDGE_NET
+dbg_sdw:        .byte 0, 0, 0           ; poke 1: write; then the status, and a count
+        .endif
 sf_n:           .byte 0
 sf_left:        .word 0

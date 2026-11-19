@@ -84,7 +84,8 @@ Edit gadgets first, as the real client does).
 | `meganet/mail.py` | Areas > Private Messages: inbox, Sent folder, compose |
 | `meganet/compose.py` | The message composer (To, Subject, a text area, Send / Cancel) used by pages.py and mail.py |
 | `meganet/updates.py` | Forced client updates from `updates/manifest.json` |
-| `meganet/games/` | The games framework (`base.py`, `lobby.py`) and the games themselves (`tictactoe.py`) |
+| `meganet/serverlog.py` | The server log: every line kept in the database too, and Admin > Server Log to read it |
+| `meganet/games/` | The games framework (`base.py`, `lobby.py`, `challenge.py`: a game's lobby for picking an opponent) and the games themselves (`tictactoe.py`; `chess.py` with `chess_rules.py` and the piece art `chess_art.py`) |
 | `tests/` | unittest tests and the fake client |
 
 ## Sign-on
@@ -209,6 +210,7 @@ for a button or a MENU_PICK for an item it was never given.
 | `admin.pages` | Answer pages from users (and read their messages) | | | x | x |
 | `admin.settings` | System Settings (Auto-Away, New Users' instant messages) | | | | x |
 | `admin.broadcast` | Broadcast a line to everyone signed on | | | | x |
+| `admin.log` | Read the server log (Admin > Server Log) | | | | x |
 | `polls.vote` | Vote in polls (Areas > Voting) | x | x | x | x |
 | `polls.manage` | Set up and delete polls | | | x | x |
 | `mail.use` | Use private messages | x | x | x | x |
@@ -248,7 +250,7 @@ needs its own key):
   About Me as the user left them. *Set Password...* (window 4, modal) sets a new password, typed
   twice; the old one isn't needed.
 - **New users:** while any user is still in the default role (New User), every signed-on
-  holder of `admin.users` gets a person icon (`Icon.PERSON`, a black pawn) in notify slot 3
+  holder of `admin.users` gets a person icon (`Icon.PERSON`, a black pawn) in notify slot 4
   (`SLOT_NEW_USER`, left of the envelopes), hint "N new users". It is updated when someone
   signs up and whenever roles or users change (`Admin.changed` -> `Screens.new_users_changed`),
   and goes once nobody is left in the default role. A click opens the User Editor at the oldest
@@ -334,6 +336,11 @@ Every window and button follows the same rules (Windows 95 conventions; `ui.add_
   - The close box does what Cancel does.
 - **RETURN presses the command** (the button with the heavy border), except in a Delete
   confirmation, where it presses Cancel.
+- **Every delete asks first** ("Delete X?", Delete / Cancel): `ui.confirm()` makes the box,
+  and its action checks again that it's allowed and the thing is still there.
+- **Refusals** (a client asking for what its role can't do) say "Your account can't use
+  *area*." for an area, "Only moderators can do that." for moderators' tools, and "You don't
+  have permission to do that." in Admin windows; all are logged as warnings.
 - **Buttons are 16 high and at least 72 wide, 8 apart.**
 - **A button that can't do anything now is greyed out:**
   - Reply..., Delete, Open, Read, Rename, Lock, Access..., Kick, Save, Set Password... and
@@ -359,11 +366,14 @@ there after a click: the server removes it when it's done.
 
 | Slot | Icon | Hint | Who | Click |
 |---|---|---|---|---|
-| 0 | 1 (page, flashing) | "bob is paging you" / "3 users are paging" | `admin.pages` | take the oldest page |
-| 1 | 2 (mail) | "2 messages from users" | `admin.pages` | Admin > Messages from users |
-| 2 | 2 (mail) | "1 unread private message" | `mail.use` | the Private Messages inbox |
-| 3 | 5 (person) | "2 new users" | `admin.users` | the User Editor at the oldest new user |
-| 4 | 6 (speech bubble) | "2 new messages from bob" | anyone | the conversation with unread messages |
+| 0 | 7 / 8 / 9 (green / yellow / dark grey dot) | "Status: Away" | everyone, always | Available -> Away, otherwise -> Available |
+| 1 | 1 (page, flashing) | "bob is paging you" / "3 users are paging" | `admin.pages` | take the oldest page |
+| 2 | 2 (mail) | "2 messages from users" | `admin.pages` | Admin > Messages from users |
+| 3 | 2 (mail) | "1 unread private message" | `mail.use` | the Private Messages inbox |
+| 4 | 5 (person) | "2 new users" | `admin.users` | the User Editor at the oldest new user |
+| 5 | 6 (speech bubble) | "2 new messages from bob" | anyone | the conversation with unread messages |
+
+The slots are the `protocol.SLOT_*` constants; use those, not the numbers.
 
 **Sounds:** `S.SOUND` `$24` (u8 `Sound`; `session.sound()`) has the client play one of its
 own sounds on the SID, on both speakers (`client-src/sound.asm`). `Sound.CHIME` (1) is a
@@ -387,7 +397,7 @@ Help > Page Admin (`meganet/pages.py`) asks for anyone whose role has `admin.pag
   for the admins?" (window 14, 400x52) with Yes and No. Yes opens "Message to the Admins"
   (window 15, 544x152): a Subject box, the message in an editable text area, Send and Cancel
   (`compose.py`). Send closes it and shows a "Message Sent" box. It is stored in `admin_messages` (id, from_user, sent,
-  subject, text, read). Admins get the slot 1 icon while unread messages wait (at sign-on, and
+  subject, text, read). Admins get the slot 2 icon while unread messages wait (at sign-on, and
   when a new one comes).
 - **Admin > Messages from users...** (window 16, 600x152, `admin.pages`): a list ("*" = unread,
   from, date) and a TextView with the picked message (From, Date, Subject, the text); Reply,
@@ -405,7 +415,7 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
   Reply, Delete, Sent (switches to the Sent folder, where the button says Inbox and rows show the
   recipient) and Mark as Unread (inbox only); the close box closes it. Picking a message fills the reading pane in
   place (`TextView.set_lines`: SET_TEXT "" empties a text view, then APPENDs) and marks it read.
-  Mark as Unread puts the picked message's " *" back (and the envelope icon, slot 2); it stays
+  Mark as Unread puts the picked message's " *" back (and the envelope icon, slot 3); it stays
   in the reading pane. A new message updates an open inbox in place. Every member with
   `mail.use` gets the envelope while they have unread messages, admin or not.
 - **New Message** (window 18, 544x168): To (any case; it must be an existing user), Subject,
@@ -414,7 +424,7 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
   "Re: *subject*".
 - `private_messages` (id, from_user, to_user, sent, subject, body, read, del_sender,
   del_recip): a message stays until both sides have deleted it. The recipient, if signed on,
-  gets the slot 2 icon; otherwise at their next sign-on.
+  gets the slot 3 icon; otherwise at their next sign-on.
 
 ## Voting
 
@@ -499,6 +509,37 @@ everyone signed on. Send is greyed until something is typed.
 - It takes no input, and a toast arriving meanwhile goes one row up.
 - The server log records who sent what.
 
+## Server Log
+
+Everything the server logs goes to the console as before, and into the database's `log`
+table (`meganet/serverlog.py`), so admins can read it without the console.
+
+- **What's in it:**
+  - Every `session.log()` line: connections (with the address), sign-ons, failed sign-ons,
+    and what people do in each area (posts, uploads, downloads, moderators' and admins'
+    changes). Chat lines and message texts aren't logged, only that something was sent.
+  - `session.warn()`: refusals (no permission), suspicious client messages (karma),
+    failed transfers.
+  - Errors: a crash in a message handler is logged with its traceback, under the area
+    whose code crashed; so is a crashed background task (asyncio) and anything else on the
+    `meganet` logger.
+- **Each row has** the time, the level (info, warning, error), the area (`serverlog.AREAS`:
+  by default the module that logged it, so `filelib.py` is `files`), the session number,
+  the screen name then, and the text. Rows from one connection share a connection number
+  (the id of its "connected from" row), so the sign-on before the name is known can be
+  found too.
+- **Admin > Server Log...** (`admin.log`, window 49):
+  - Filters: Area, Show (Everything / Warnings, errors / Errors only), User (part of a
+    screen name) and Find (part of the text). Search runs them; the list shows the newest
+    200 matches, Older and Newer page through the rest (they count back from the newest
+    row when Search ran, so new rows don't shift the pages).
+  - A row's mark after the time: `!` a warning, `#` an error. Picking a row shows all of it
+    below, tracebacks included.
+  - **Session** (or a double click) shows every row of that row's connection, whatever the
+    filters say; the button reads **All** then, and goes back to them.
+- **How long:** rows older than System Settings' "Keep log" days (default 90, at most
+  3650) are deleted at start-up and once an hour.
+
 ## Desktop icons
 
 `meganet/desktop.py`: icons down the left and right edges of the client's desktop, under the
@@ -527,9 +568,13 @@ with a label of one or two lines.
 
 **Status** (the menu right before Window; `meganet/presence.py`):
 - Available (the default at sign-on), Away or Offline. The current one is marked "*".
+- **The status dot:** the menu bar shows it as a dot just left of the connectivity icon
+  (`SLOT_STATUS`): green Available, yellow Away, dark grey Offline. Clicking it switches
+  Available to Away, and Away or Offline to Available.
 - **Auto-Away:** after a number of minutes without activity an Available user becomes Away,
   and back with their next activity. Activity is any message except the client's own
-  connectivity PINGs.
+  connectivity PINGs and a click on the status dot (so clicking the dot while auto-Away
+  goes to Available, not back to Away).
   - Admins set the minutes in **Admin > System Settings...** (window 29, `admin.settings`;
     the `away_minutes` setting, default 10, 0 = never). The same window has **New users can
     send instant messages** (off by default: it gives or takes `im.send` from the role new
@@ -554,7 +599,7 @@ receives unless System Settings stops New Users receiving):
   Online's top line, and once in the IM window ("New users can't send messages.").
 - "IM: *name*" (a dynamic window id, 360x120): the conversation, a line to type, Send.
 - **Arriving, they don't interrupt.** If your window for that person isn't open, you get a
-  **toast** and the **speech-bubble icon** (slot 4) until you read them.
+  **toast** and the **speech-bubble icon** (slot 5) until you read them.
   - The toast (`S.TOAST` `$1E`) is a short yellow line at the bottom right of the screen for
     8 seconds. It isn't a window: nothing takes the keyboard or the mouse from what you're
     doing.
@@ -592,6 +637,7 @@ a first sign-on everything is new), so it is the same for the whole session.
   - A role's row is stored only when it differs from the default, which is read and post as
     far as the role's own permissions allow (`forum_access`).
   - In a forum: Delete Topic. In a topic: Delete Post; the topic goes with its last post.
+    Both ask first (window 25).
   - Every handler checks `boards.moderate` (or read/post) again.
 - **Tables:**
   - `forums` (id, name, locked, created);
@@ -627,7 +673,8 @@ Lobby). You are in one room at a time: joining another leaves the one you were i
   - In the room: Kick, Mute / Unmute, Ban, Unban... (window 27), Karma + / Karma - (for the
     person picked; picking someone shows their Karma Points), and Topic (sets the line typed
     as the topic; typing nothing clears it).
-  - In Chat Rooms: New Room (permanent) and Delete Room (everyone in it is told and put out).
+  - In Chat Rooms: New Room (permanent) and Delete Room (asks first, window 50, saying how
+    many are in it; then everyone in it is told and put out).
   - Kick: out of the room. Mute: no talking there until unmuted or they leave. Ban: out, and
     kept out until unbanned or the server restarts (a member room's bans go with it).
   - Moderators can't act on other moderators, unless they are an admin (`admin.users`) acting
@@ -722,6 +769,25 @@ session picks a free id from `$40` up. Keep windows below the menu bar: `y >= 11
 
 Drop a Python file into `meganet/games/` with a `Game` subclass and restart the server. See
 [meganet/games/README.md](meganet/games/README.md).
+
+**Chess** (`games/chess.py`) is the first game with a lobby and a picture board:
+- Areas > Games > Chess > Join opens the **Chess Lobby** (window 51): everyone waiting, and
+  the games being played. Pick someone and Challenge... (or double-click them); they get
+  "X challenges you to a game of Chess." with Accept / Decline (window 52, and a chime). One
+  challenge out at a time (Cancel withdraws it); challenging someone who has challenged you
+  starts the game. Leaving the lobby, or starting a game, calls off every challenge to and
+  from you, and the others get a toast.
+- The game window (a dynamic id, 624x156): the board from your side, the status ("Your move
+  (White)", "Check!", "bob offers a draw."), a chat with the moves in it ("12. Nf3"), and
+  Offer Draw (it becomes Accept Draw for the other player; the offer lapses when they move),
+  Resign (asks first, window 53), Rematch (both click it: colours swap) and Lobby. Closing the
+  window or signing off during a game loses it.
+- Click a piece of yours: red frame; its moves show as dots, captures with a red frame. Click
+  one to move; promotion asks for the piece (window 54). The last move's squares have a gold
+  frame. Moves out of turn, illegal moves and clicks on the other side's pieces do nothing.
+- The tiles (28 of 32 x 16 bytes, 14 KB) go to resource slot 1 once a connection
+  (`session.send_resource`), under a "Loading Chess" window (55, modal) whose progress bar
+  moves as they arrive; clients without `Caps.GRID` are refused at the lobby.
 
 ## Publishing a client update
 

@@ -88,7 +88,8 @@ class RolesTest(RolesBase):
                                                           "Message of the Day...",
                                                           "Messages from users...",
                                                           "System Settings...",
-                                                          "Broadcast..."])
+                                                          "Broadcast...",
+                                                          "Server Log..."])
         self.assertTrue(self.session("alice").can(permissions.ADMIN_ROLES))
         for key in permissions.keys():
             self.assertTrue(self.session("alice").can(key), key)
@@ -293,8 +294,8 @@ class MenuTest(RolesBase):
         await self.bob.wait_for(lambda: win.gadgets[listbox]["rows"], "search results")
         rows = win.gadgets[listbox]["rows"]
         self.assertEqual(len(rows), 1, rows)
-        self.assertTrue(rows[0].startswith("alice") and "Sysop" in rows[0] and rows[0].endswith(" *"),
-                        rows)
+        self.assertTrue(rows[0].startswith("alice") and rows[0].endswith(" *"), rows)
+        self.assertNotIn("Sysop", rows[0], "roles: admins only (as in Who's Online)")
         self.bob.value(WIN_SEARCH, gadget_of(win, Kind.TEXTBOX), "zz")
         self.bob.click_text(WIN_SEARCH, "Search")
         await self.bob.wait_for(lambda: win.gadgets[listbox]["rows"] == [], "no results")
@@ -491,7 +492,11 @@ class NewUserIconTest(RolesBase):
 
 class RolesPagingTest(RolesBase):
     async def test_more_permissions_than_fit(self):
-        extra = [permissions.register("test.extra%d" % i, "Extra thing %d" % i) for i in range(6)]
+        from meganet.admin import PER_PAGE          # exactly two pages, however many keys
+        n = 2 * PER_PAGE - len(permissions.keys())  # the core has (needs at least 2 extra)
+        self.assertGreaterEqual(n, 2, "the core alone fills two pages: change this test")
+        extra = [permissions.register("test.extra%d" % i, "Extra thing %d" % i) for i in range(n)]
+        last, before = "Extra thing %d" % (n - 1), "test.extra%d" % (n - 2)
         try:
             self.server.db.sync_permissions()
             roles = await self.edit_role(self.alice, "Sysop")
@@ -499,14 +504,14 @@ class RolesPagingTest(RolesBase):
             self.alice.click_text(WIN_ROLES, "Next >")
             await self.alice.wait_for(lambda: has_text(self.alice, WIN_ROLES, "Page 2/2"), "p2")
             roles = self.alice.windows[WIN_ROLES]
-            box = roles.find("Extra thing 5")
+            box = roles.find(last)
             self.assertEqual(roles.gadgets[box]["value"], 1, "Sysop got the new key")
             self.alice.select(WIN_ROLES, box, 0)
             self.alice.click_text(WIN_ROLES, "Save")
             await self.alice.wait_for(lambda: status_of(roles) == "Saved Sysop.", "saved")
             keys = self.server.db.role_permissions(self.server.db.role_by_name("Sysop")["id"])
-            self.assertNotIn("test.extra5", keys)
-            self.assertIn("test.extra4", keys)
+            self.assertNotIn("test.extra%d" % (n - 1), keys)
+            self.assertIn(before, keys)
             self.assertIn("chat.use", keys, "boxes on the other page kept")
         finally:
             for key in extra:

@@ -9,11 +9,15 @@ import asyncio
 import logging
 import os
 import socket
+import time
+import traceback
 
+from . import __version__
 from . import games
 from .db import Database, read_motd_file
 from .games.lobby import GameLobby
 from .screens import Screens
+from .serverlog import ServerLog
 from .session import Session
 from .updates import Updates
 
@@ -33,14 +37,14 @@ class Server:
         `filelibs_dir`: where the file libraries keep their files (default filelibs/; with a
         :memory: database, as the tests use, a folder inside updates_dir instead)."""
         self.db = Database(db_path)
+        self.serverlog = ServerLog(self)     # (from here on the log is kept in the database)
         if filelibs_dir is None:
             filelibs_dir = (os.path.join(updates_dir, "filelibs") if db_path == ":memory:"
                             else DEFAULT_FILELIBS)
         self.filelibs_dir = filelibs_dir
         if motd_file:
             lines = self.db.set_motd(read_motd_file(motd_file))
-            logging.getLogger("meganet").info("message of the day: %d lines from %s",
-                                              len(lines), motd_file)
+            self.serverlog.write("message of the day: %d lines from %s" % (len(lines), motd_file))
         self.updates = Updates(updates_dir)
         self.screens = Screens(self)
         self.games = GameLobby(games.discover())
@@ -67,6 +71,7 @@ class Server:
         if self._server:
             self._server.close()
             await self._server.wait_closed()
+        self.serverlog.close()
         self.db.close()
 
     async def _connected(self, reader, writer):
@@ -76,14 +81,24 @@ class Server:
         session = Session(self, reader, writer, self._next_id)
         self._next_id = self._next_id % 0xFFFF + 1
         self.sessions.add(session)
-        session.log("connected from %s" % (writer.get_extra_info("peername"),))
+        peer = writer.get_extra_info("peername")
+        session.log("connected from %s" % (("%s port %d" % peer[:2]) if peer else "?"),
+                    area="conn")
+        started = time.time()
         try:
             await session.run()
         finally:
             self.sessions.discard(session)
-            self.screens.disconnected(session)
-            self.games.disconnected(session)
-            session.log("disconnected")
+            try:
+                self.screens.disconnected(session)
+                self.games.disconnected(session)
+            except Exception:
+                session.error("error while disconnecting:\n%s" % traceback.format_exc(),
+                              area="conn")
+            mins = int(time.time() - started) // 60
+            session.log("disconnected after %d:%02d" % (mins // 60, mins % 60)
+                        + (" (signed on as %s)" % session.user if session.user else ""),
+                        area="conn")
 
     def permissions_changed(self, role_id=None, user_id=None):
         """An admin changed a role's permissions (role_id) or moved a user to another role
@@ -123,8 +138,8 @@ def main(argv=None):
     async def run():
         server = Server(args.db, args.updates, args.motd, args.filelibs)
         port = await server.start(args.host, args.port)
-        logging.getLogger("meganet").info("MegaNet server listening on port %d (%d games)",
-                                          port, len(server.games.classes))
+        server.serverlog.write("MegaNet server %s listening on port %d (%d games)"
+                               % (__version__, port, len(server.games.classes)))
         await server.serve_forever()
 
     try:

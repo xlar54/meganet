@@ -53,8 +53,8 @@
 - [ ] Check the welcome (416x134) and Message of the Day editor (544x158) layouts on the real
       client, with its scroll bars; centre the other dialogs too (`Window.centred`)
 - [ ] Check the Roles and Users window layouts on the real client and adjust sizes
-- [x] NOTIFY / NOTIFY_CLICK menu-bar icons (`session.set_notify`; slots 0 pages, 1 admin
-      messages, 2 private mail; clicks only for slots shown, permission re-checked)
+- [x] NOTIFY / NOTIFY_CLICK menu-bar icons (`session.set_notify`; now slots 1 pages, 2 admin
+      messages, 3 private mail; clicks only for slots shown, permission re-checked)
 - [x] Help > Getting Around (placeholder text) and Page Admin: `admin.pages`, page icon to every
       admin, first click takes the oldest page, private chat (dynamic window ids), Cancel, queue,
       fall back to "leave a message" when no admin is on; `admin_messages`, Admin > Messages
@@ -81,6 +81,17 @@
       layouts on the real client
 - [ ] Screen-wide handlers; FOCUS after windows open
 - [ ] More games for meganet/games/ (and a real-time one using RAWKEYS + tick())
+- [x] Chess (2026-11-19): a lobby to pick an opponent (games/challenge.py, any 2-player
+      game can use it), a GRID board with tiles in an attic resource slot (client
+      lib/gui/grid.asm, S.RESOURCE, S.CELLS, Caps.GRID), every rule enforced (perft-checked),
+      chat, promotion, draw offers, resign, rematch. Played in Xemu against a fake client:
+      the board, moves both ways, move dots and frames, chat
+- [ ] Chess: clocks (a time control picked in the challenge); a move list to scroll back;
+      Tic-Tac-Toe could use the lobby too; spectators; saving finished games (PGN)
+- [ ] Chess: not tried in Xemu yet: a capture, castling, the promotion dialog, Offer
+      Draw / Resign / Rematch / Lobby (all covered by the server tests with fake clients)
+- [ ] Resources: the client could say in HELLO which slots it still holds (attic survives
+      a reset), so a reconnect skips the 14 KB of chess tiles
 - [x] Areas menu: News, Message Boards, Chat Rooms, Art Gallery, SID Music, File Library,
       Games; Members > User Search (name contains, any case; * = signed on now)
 - [ ] **Art Gallery** (`gallery.view`, `gallery.upload`): a list of pictures with title and
@@ -107,6 +118,9 @@
 - [x] Status menu (Available / Away / Offline), Auto-Away (Admin > System Settings), Who's
       Online with statuses (Offline only for admins), instant messages with a toast and the
       speech-bubble icon
+- [x] Status dot on the menu bar, left of the Wi-Fi icon (green / yellow / dark grey; a click
+      toggles Available / Away). Notify slots renumbered: status 0, pages 1 ... IMs 5. The
+      dark grey dot hasn't been looked at in Xemu yet (same drawing code as the other two)
 - [x] System Settings: whether New Users can send and receive instant messages
 - [x] Page Admin: a chime (S.SOUND, the SID) with the flashing icon
 - [ ] IM: a sound for the toast (S.SOUND is there now); an "ignore" list; history after sign-off
@@ -131,13 +145,54 @@
 - [x] Client storage (`storage.asm`): drive 8-11 directories, saving PRG / SEQ / USR, reading
       them for uploads; SD card folders and reading D64 / D81 images (HYPPO) - tested in Xemu
       over the bridge (drive 8 download and upload; SD listing; an 800 KB D81 read into attic)
-- [ ] **Write D64 / D81 images to the SD card**: a FAT32 writer with raw sector writes
-      (port and harden `megapc/src/fat_writer.asm`: contiguous clusters so HYPPO can mount
-      the image, new files only, every FAT sector read back); test on a scratch SD image in
-      Xemu (`-sdimg`), checked from the PC, before any real card. Then Caps bit 2
-- [ ] File Library: bulk add of files copied into a library's folder; the client has about
-      2 KB left below the bridge rings (frame buffers already moved to `$E000`), so the FAT32
-      writer may need the GUI tables moved too, or an overlay
+- [x] **Write D64 / D81 images to the SD card** (`sdwrite.asm`): raw sector writes, a
+      contiguous run of clusters, both FATs, the 8.3 entry, FSInfo marked unknown, metadata
+      read back. Tested in Xemu with the real HYPPO (`-skipconfigfile -sdimg`) on scratch
+      cards made by `private/tools/fat32img.py`: a D81 written byte-identical, the card
+      checks clean, HYPPO lists it at once
+- [ ] **Try SD card writing on a real MEGA65, with a backed-up or spare card first.** Also: a
+      card with more than one FAT32 partition (the writer takes the one HYPPO's default drive
+      is); 32 KB clusters (tested: 512 bytes and 4 KB, in a folder and in the root, and a
+      name that's taken being refused); a folder whose clusters are full (refused, not
+      grown); mounting a downloaded image (`d81attach`)
+- [ ] File Library: bulk add of files copied into a library's folder
+- [x] Client memory: frame buffers and the GUI's gadget texts moved under the KERNAL
+      (`$E000-$FEFF`); about 5 KB free again
 - [ ] File Library on real hardware: drives 9-11 (real IEC drives), the SD card, the ROM swap
       around disk calls (`disk_begin`), a whole D81 upload (the bridge is too slow: ~500 B/s)
 - [ ] File Library: a CBM drive's subdirectories (CBM partitions) aren't listed or entered
+- [x] Server Log (`serverlog.py`, `admin.log`): every log line kept in the database too, with
+      area, level, connection and user; Admin > Server Log... with filters, pages, details and
+      a whole session; errors with tracebacks; kept for System Settings' "Keep log" days
+- [ ] Server Log: check the window (632x168) with long lists and a traceback on real hardware;
+      export to a file? a live view that follows new rows?
+
+## From the review (2026-11-18)
+- [x] Fixed: request numbers could pile up until the server hung (forged Upload... clicks);
+      Cancel after FILE_END said "Cancelled" while the client wrote the file (now greyed);
+      Chat Rooms / the Chat icon emptied the room's conversation; poll end dates crashed on
+      far-off years; non-ASCII digits crashed System Settings and karma; Offline admins were
+      still paged; User Search showed roles to everyone; a second HELLO was taken;
+      Settings / Broadcast / Karma History stayed open after the right went; Make Default
+      didn't refresh IM rules; the file views didn't follow Download access changes;
+      transfers went on after the right went; empty uploads; refusal wording;
+      Delete Topic / Post / Room now ask first
+- [x] Fixed (client): SD uploads of D64s were a part-sector too long (the server refused
+      them); 8.3 names not checked before writing (a long or empty name could make a bad
+      entry); paths over 64 characters were cut short (now 127, refused beyond); a drive
+      save could scratch an existing file on an error, and a failed close left a splat
+      file; drive names weren't checked (`*` would scratch the disk); FAT32 boot sector
+      checks (FAT32 really, mirrored FATs, sizes, the root, chain ranges); a 2-3 s SD busy
+      timeout; the upload stopped (and `st_mode` reset) when the connection goes; `net_send`
+      fails at once with no connection; `tx_str` can't overrun a frame; long names ended at
+      their length byte
+- [ ] Library and forum Access windows list only 6 roles, and a role made later can see
+      every limited library or forum (no row = allowed): page the dialog, and give new
+      roles a row
+- [ ] The quick new-user LOGIN (a name with LOGIN_NEW_USER: tests and old clients) skips the
+      sign-up wizard's admin message; the person icon still shows the new user
+- [ ] A deleted library's folder stays on disk, and a new library with that folder name
+      takes its old files; descriptions' line lengths differ between areas
+- [ ] Private Messages and Messages from users still delete without asking (each side's
+      copy only); decide whether they should ask too
+- [ ] SD writes: data sectors aren't read back (the bookkeeping sectors are)

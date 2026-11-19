@@ -95,6 +95,7 @@ ADMIN_BROADCAST = register("admin.broadcast", "Admin: broadcast")
 POLLS_VOTE = register("polls.vote", "Vote in polls", like="chat.use")
 POLLS_MANAGE = register("polls.manage", "Set up polls", like="boards.moderate")
 FILES_MODERATE = register("files.moderate", "Manage file libraries", like="boards.moderate")
+ADMIN_LOG = register("admin.log", "Admin: read the log")
 FILES_DOWNLOAD, FILES_UPLOAD = "files.download", "files.upload"
 IM_SEND = "im.send"
 NEWS_READ, NEWS_POST = "news.read", "news.post"     # (Sysop only at first: Roles gives it out)

@@ -160,10 +160,16 @@ net_install:
         rts
 
 ; A = error: NS_FAILED (the state it failed in kept in net_was)
-net_fail:
-        sta net_err
+net_fail:                               ; A = the error (the first one stays: a send that
+        pha                             ; fails after the connection is lost isn't E_SEND)
         lda net_state
-        sta net_was
+        cmp #NS_FAILED
+        bne +
+        pla
+        rts
++       sta net_was
+        pla
+        sta net_err
         lda #NS_FAILED
         sta net_state
         rts
@@ -393,7 +399,12 @@ _lost:  #NET_A MIP_FORCE_CLOSE
 ; A = byte to send; the queue can refuse it while it drains. Carry set = failed
 net_send:
         sta net_sb
-        lda #<250
+        lda net_state                   ; no connection: fail now, not after 5 s
+        cmp #NS_ONLINE
+        beq +
+        sec
+        rts
++       lda #<250
         ldx #>250
         jsr net_timer_set
 _again: lda net_sb
@@ -519,7 +530,12 @@ _lost:  lda #0
 ; A = a byte for the server; waits while the ring is full (the bridge empties it)
 net_send:
         sta net_sb
-        lda #<250                       ; 5 s
+        lda net_state                   ; no connection: fail now, not after 5 s
+        cmp #NS_ONLINE
+        beq +
+        sec
+        rts
++       lda #<250                       ; 5 s
         ldx #>250
         jsr net_timer_set
 -       lda BR_CTL+2

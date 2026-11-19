@@ -47,7 +47,7 @@ NEW_ROLE = "New Role"
 
 
 def refuse(session, what, key):
-    session.log("refused %s: no %s" % (what, key))
+    session.warn("refused %s: no %s" % (what, key))
     session.alert("Administration", "You don't have permission to do that.")
 
 
@@ -112,7 +112,7 @@ class Admin:
         if not session.can(perms.ADMIN_SETTINGS):
             return refuse(session, "open_settings", perms.ADMIN_SETTINGS)
         presence, db = self.server.screens.presence, self.server.db
-        win = Window.centred("System Settings", 360, 90,
+        win = Window.centred("System Settings", 360, 106,
                              flags=WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_SETTINGS,
                              minimize=False)
         win.add(Label(8, 6, 88, 10, "Auto-Away:"))
@@ -123,7 +123,10 @@ class Admin:
         win.im_receive = win.add(CheckBox(8, 36, 344, 12,
                                           "New users can receive instant messages",
                                           checked=im.new_users_receive(db)))
-        win.status = win.add(Label(8, 54, 344, 10, ""))
+        win.add(Label(8, 54, 88, 10, "Keep log:"))
+        win.log_days = win.add(TextBox(96, 52, 40, 12, str(self.server.serverlog.days())))
+        win.add(Label(144, 54, 208, 10, "days (Server Log)"))
+        win.status = win.add(Label(8, 70, 344, 10, ""))
         add_buttons(win, [("OK", self._settings_ok, GFlag.DEFAULT), ("Cancel", closer, 0)])
         win.show(session)
         return win
@@ -159,9 +162,13 @@ class Admin:
         win, session = button.window, button.session
         text = win.away.value.strip()
         from .presence import AWAY_MINUTES_MAX
-        if not text.isdigit() or int(text) > AWAY_MINUTES_MAX:
+        if not (text.isascii() and text.isdigit()) or int(text) > AWAY_MINUTES_MAX:
             return win.status.set_text("Auto-Away: a number of minutes, 0 to %d."
                                        % AWAY_MINUTES_MAX)
+        from .serverlog import LOG_DAYS_MAX
+        days = win.log_days.value.strip()
+        if not (days.isascii() and days.isdigit()) or not 1 <= int(days) <= LOG_DAYS_MAX:
+            return win.status.set_text("Keep log: a number of days, 1 to %d." % LOG_DAYS_MAX)
         db = self.server.db
         send, receive = win.im_send.checked, win.im_receive.checked
         if send != im.new_users_send(db):
@@ -172,8 +179,11 @@ class Admin:
         im.set_new_users_receive(db, receive)
         self.server.screens.presence.set_away_minutes(int(text))
         self.server.screens.im_rules_changed()
-        session.log("admin: auto-away after %s minutes; new users IM send %s, receive %s"
-                    % (text, "on" if send else "off", "on" if receive else "off"))
+        if int(days) != self.server.serverlog.days():
+            self.server.serverlog.set_days(int(days))
+        session.log("admin: auto-away after %s minutes; new users IM send %s, receive %s; "
+                    "log kept %s days" % (text, "on" if send else "off",
+                                          "on" if receive else "off", days))
         return win.close()
 
     # ---- keeping things in step ----
@@ -192,6 +202,12 @@ class Admin:
             self.users_eds[session].close()
         if not session.can(perms.ADMIN_MOTD) and session in self.motd_eds:
             self.motd_eds[session].close()
+        for win_id, key in ((WIN_SETTINGS, perms.ADMIN_SETTINGS),
+                            (WIN_BROADCAST, perms.ADMIN_BROADCAST),
+                            (WIN_KARMA, perms.ADMIN_USERS)):
+            win = session.windows.get(win_id)
+            if win is not None and not session.can(key):
+                win.close()
 
     def disconnected(self, session):
         self.roles_eds.pop(session, None)
@@ -408,6 +424,7 @@ class RolesEditor:
         role = self.db.role(self.role_id)
         self.session.log("admin: default role %s" % role["name"])
         self.admin.changed()
+        self.admin.server.screens.im_rules_changed()    # (who counts as a new user moved)
         self.say("New users now get %s." % role["name"])
 
     @guarded(perms.ADMIN_ROLES)
@@ -705,7 +722,7 @@ class UsersEditor:
                    or dbmod.check_email(email) or length_problem(email, location))
         new_karma = self.karma.value.strip()
         if new_karma != str(user["karma"]):
-            if not new_karma.isdigit() or not 0 <= int(new_karma) <= dbmod.KARMA_MAX:
+            if not (new_karma.isascii() and new_karma.isdigit()) or not 0 <= int(new_karma) <= dbmod.KARMA_MAX:
                 problem = problem or "Karma Points are 0 to %d." % dbmod.KARMA_MAX
         if problem:
             return self.say(problem)

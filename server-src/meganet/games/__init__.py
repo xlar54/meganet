@@ -8,7 +8,7 @@ import pkgutil
 from .base import Game, Player
 
 log = logging.getLogger("meganet")
-FRAMEWORK_MODULES = {"base", "lobby"}
+FRAMEWORK_MODULES = {"base", "lobby", "challenge", "chess_rules", "chess_art"}
 
 
 def discover():

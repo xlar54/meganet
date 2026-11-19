@@ -183,7 +183,11 @@ class BoardsTest(PagesBase):
         await self.open_boards(alice)
         await self.open_forum(alice, "General")
         await self.pick(alice, "One")
+        alice.windows.pop(WIN_DELETE, None)
         alice.click_text(WIN_BOARDS, "Delete Topic")
+        await alice.wait_for(lambda: has_text(alice, WIN_DELETE, "Delete the topic One"), "asked")
+        self.assertIsNotNone(d.topic(t1), "not before the answer")
+        alice.click_text(WIN_DELETE, "Delete")
         await alice.wait_for(lambda: status_of(self.win(alice)) == "Deleted the topic One.",
                              "deleted")
         self.assertIsNone(d.topic(t1))
@@ -191,8 +195,11 @@ class BoardsTest(PagesBase):
         alice.windows[WIN_BOARDS].done = False
         alice.click_text(WIN_BOARDS, "Read")
         await self.shown(alice, "Delete Post")
-        alice.windows[WIN_BOARDS].done = False
+        alice.windows.pop(WIN_DELETE, None)
         alice.click_text(WIN_BOARDS, "Delete Post")
+        await alice.wait_for(lambda: has_text(alice, WIN_DELETE, "Delete"), "asked")
+        alice.windows[WIN_BOARDS].done = False
+        alice.click_text(WIN_DELETE, "Delete")
         await self.shown(alice, "Deleted the post, and the topic with it.")
         self.assertIsNone(d.topic(t2))
 

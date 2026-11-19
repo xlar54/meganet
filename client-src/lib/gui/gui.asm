@@ -40,7 +40,7 @@
 ;                   Y = line): A = how many / txt_ptr = that line
 ;   gui_busy        A = 1: the pointer becomes an hourglass and clicks and keys are ignored
 ;                   (the pointer still moves); A = 0: back to normal
-;   gui_notify      A = slot 0-3, X = icon (0 none, 1 alert (flashes), 2 envelope): an
+;   gui_notify      A = slot 0-6, X = icon (0 none, 1 alert (flashes), 2 envelope, ...): an
 ;                   icon at the right end of the menu bar; a click on it gives GE_NOTIFY
 ;   gui_menu_clear / gui_menu_add   the menu bar (gui_menubar = 1 shows it): gp_gid = id,
 ;                   gp_win = parent (0 = a title), gp_text = label ("-" = a line).
@@ -134,6 +134,7 @@ GK_IMAGE        = 10
 GK_GROUP        = 11
 GK_DROP         = 12                    ; drop-down list (combo box)
 GK_EDIT         = 13                    ; editable text area
+GK_GRID         = 14                    ; a board of picture tiles (grid.asm)
 
 GWF_CLOSE       = 1                     ; window flags
 GWF_MODAL       = 2
@@ -346,11 +347,19 @@ md_x0:          .word 0
 md_x1:          .word 0
 md_y1:          .byte 0
 
+        .weak
+GUI_TBUF        = 0                     ; nonzero: the gadget texts live there instead
+        .endweak                        ; (GUI_MAXGAD * GUI_TEXTMAX bytes, bank 0)
         .section bss
 l_gui_mbuf:     .fill GUI_MAXMENU * GUI_MENULEN
+        .if GUI_TBUF == 0
 l_gui_tbuf:     .fill GUI_MAXGAD * GUI_TEXTMAX
+        .endif
 l_gui_wbuf:     .fill GUI_MAXWIN * GUI_TITLEMAX
         .send
+        .if GUI_TBUF != 0
+l_gui_tbuf      = GUI_TBUF
+        .endif
 
 ; ---- working state ----
 gr_x0:          .word 0                 ; the rectangle being drawn / tested (same
@@ -2229,7 +2238,11 @@ _slot:  jsr l_gg_release                 ; (a replaced gadget's block goes back)
         lda #0
         sta gg_val,x
         jsr l_gg_copy
-        lda gg_kind,x                   ; a list, view, text area or drop-down: a block
+        lda gg_kind,x                   ; a grid: its cells all 0
+        cmp #GK_GRID
+        bne +
+        jsr l_gr_clear
++       lda gg_kind,x                   ; a list, view, text area or drop-down: a block
         cmp #GK_LIST
         beq +
         cmp #GK_EDIT
@@ -2519,8 +2532,10 @@ l_gui_draw_gad0:
         cmp #GK_DROP
         bne +
         jmp l_gd_drop
-+
-        cmp #GK_GROUP
++       cmp #GK_GRID
+        bne +
+        jmp l_gd_grid
++       cmp #GK_GROUP
         bne +
         jmp l_gd_group
 +       cmp #GK_PROGRESS
@@ -3236,6 +3251,10 @@ _client:
         jsr l_gui_draw_gad
         clc
         rts
++       cmp #GK_GRID
+        bne +
+        jsr l_gg_rect
+        jmp l_gu_grid
 +       cmp #GK_TEXT
         beq _text
         cmp #GK_PASSWORD
@@ -5491,10 +5510,11 @@ l_ts_buf:       .fill GUI_TOAST_MAX + 1
 ; notification icons at the right end of the menu bar, packed from the right: the shown
 ; icon with the lowest slot is rightmost, and empty slots leave no gap. Icon 1 = an alert
 ; (flashes), 2 = an envelope, 3 = a Wi-Fi fan (connected), 4 = the fan greyed with a red X
-; (not connected), 5 = a person (a black board-game pawn), 6 = a speech bubble. A click gives
-; GE_NOTIFY, ge_val = the slot
+; (not connected), 5 = a person (a black board-game pawn), 6 = a speech bubble, 7 / 8 / 9 =
+; a green / yellow / dark grey dot with a black edge (a status). A click gives GE_NOTIFY,
+; ge_val = the slot
 ;---------------------------------------------------------------------------------------
-GUI_NSLOTS      = 6
+GUI_NSLOTS      = 7
 GUI_NICON_W     = 22                    ; an icon's width
 GUI_NSPACE      = 26                    ; and the step from one slot to the next
 
@@ -5559,7 +5579,7 @@ l_nt_draw:
         rts                             ; none (l_nt_all clears the row first)
 +       cmp #3
         bcc +
-        jmp l_nt_wifi                   ; 3, 4, 5
+        jmp l_nt_wifi                   ; 3-9
 +       cmp #1
         bne _env
         jsr l_gd_raised                 ; 1: an alert button
@@ -5632,8 +5652,9 @@ _alert: ldx #GC_BLACK                   ; 1: "!" - red on the flash, grey betwee
         jmp gui_text
 s_nt_bang:      .null "!"
 
-; icon 3 (A = 3), 4 or 5 in gr: a 21x9 bitmap, black: the fan (l_nw_bm), for 4 grey with
-; a red X; 5 the pawn (l_np_bm)
+; icon 3 (A = 3) to 9 in gr: a 21x9 bitmap, "#" in the icon's colour (black; 4 grey; the
+; dots theirs), "+" black: the fan (l_nw_bm), for 4 with a red X; 5 the pawn (l_np_bm);
+; 6 the bubble (l_nb_bm); 7-9 the dot (l_nd_bm)
 l_nt_wifi:
         sta l_nw_i
         lda #<l_nw_bm
@@ -5647,16 +5668,17 @@ l_nt_wifi:
         bne +
         lda #<l_nb_bm
         ldx #>l_nb_bm
++       cpy #7
+        bcc +
+        lda #<l_nd_bm
+        ldx #>l_nd_bm
 +       sta _px+1
         stx _px+2
         lda #GC_FACE
         jsr l_gd_fill
-        lda #GC_BLACK
         ldx l_nw_i
-        cpx #4
-        bne +
-        lda #GC_SHADOW
-+       sta d6_col
+        lda l_nw_cols-3,x
+        sta l_nw_k
         lda #0
         sta d6_y+1
         sta l_nw_c
@@ -5664,8 +5686,13 @@ l_nt_wifi:
         sta l_nw_r
         ldx #0
 _px:    lda l_nw_bm,x
+        ldy l_nw_k
         cmp #"#"
+        beq _pl
+        ldy #GC_BLACK
+        cmp #"+"
         bne _nx
+_pl:    sty d6_col
         phx
         clc
         lda gr_x0
@@ -5782,7 +5809,20 @@ l_nb_bm:                                ; 6: a speech bubble (instant messages)
         .text "...####.##########..."
         .text ".......#.#..........."
         .text ".......##............"
+l_nd_bm:                                ; 7-9: a dot (twice as wide as tall, as pixels are)
+        .text "....................."
+        .text ".......+++++++......."
+        .text ".....++#######++....."
+        .text "....+###########+...."
+        .text "...+#############+..."
+        .text "....+###########+...."
+        .text ".....++#######++....."
+        .text ".......+++++++......."
+        .text "....................."
+l_nw_cols:      .byte GC_BLACK, GC_SHADOW, GC_BLACK, GC_BLACK      ; icons 3-6's "#"
+                .byte GC_GREEN, GC_YELLOW, GC_DKGREY               ; 7-9
 l_nw_i:         .byte 0
+l_nw_k:         .byte 0
 l_nw_c:         .byte 0
 l_nw_r:         .byte 0
 

@@ -14,6 +14,7 @@ import logging
 from ..session import call
 from ..ui import Window, Button, Label, ListBox
 from .base import Player
+from .challenge import ChallengeLobby
 
 log = logging.getLogger("meganet")
 WIN_GAMES = 3
@@ -25,6 +26,8 @@ class GameLobby:
         self.queues = {cls: [] for cls in self.classes}   # game class -> waiting sessions
         self.windows = {}                                  # session -> its Games window
         self.running = []                                  # Game objects in progress
+        self.challenges = {cls: ChallengeLobby(self, cls)  # games with a lobby (challenge.py)
+                           for cls in self.classes if getattr(cls, "challenge", False)}
 
     # ---- the Games window ----
 
@@ -53,8 +56,9 @@ class GameLobby:
         for cls in classes:
             players = ("%d" % cls.min_players if cls.min_players == cls.max_players
                        else "%d-%d" % (cls.min_players, cls.max_players))
-            rows.append("%s (%s players), %d waiting" % (cls.name, players,
-                                                         len(self.queues[cls])))
+            waiting = (len(self.challenges[cls].seats) if cls in self.challenges
+                       else len(self.queues[cls]))
+            rows.append("%s (%s players), %d waiting" % (cls.name, players, waiting))
         return rows
 
     def refresh(self):
@@ -66,6 +70,8 @@ class GameLobby:
         cls = self.waiting_for(session)
         if cls and not self.may_play(session, cls):
             self._dequeue(session)
+        for lobby in self.challenges.values():
+            lobby.permissions_changed(session)
         win = self.windows.get(session)
         if win is None:
             return
@@ -109,6 +115,8 @@ class GameLobby:
         cls = win.classes[win.list.selected]
         if not self.may_play(session, cls):
             return session.alert("Games", "Your account can't play %s." % cls.name)
+        if cls in self.challenges:             # a game with a lobby: pick an opponent there
+            return self.open_lobby(session, cls)
         if self.waiting_for(session) is cls:
             return None
         self._dequeue(session)
@@ -138,9 +146,23 @@ class GameLobby:
         self._dequeue(gadget.session)
         gadget.window.status.set_text("")
 
-    async def start(self, cls, sessions):
+    def open_lobby(self, session, cls):
+        """The lobby of a game with `challenge = True` (challenge.py), in place of the Games
+        window; out of any queue and any other game's lobby."""
+        self._dequeue(session)
+        for other_cls, lobby in self.challenges.items():
+            if other_cls is not cls:
+                lobby.leave(session)
+        win = self.windows.pop(session, None)
+        if win:
+            win.on_close = None
+            win.close()
+        return self.challenges[cls].open(session)
+
+    async def start(self, cls, sessions, queued=True):
         for s in sessions:
-            self.queues[cls].remove(s)
+            if queued:
+                self.queues[cls].remove(s)
             win = self.windows.pop(s, None)
             if win:
                 win.close()
@@ -170,9 +192,14 @@ class GameLobby:
     def game_ended(self, game):
         if game in self.running:
             self.running.remove(game)
+        lobby = self.challenges.get(type(game))
+        if lobby:
+            lobby.refresh()                    # (its "playing" row goes)
 
     def disconnected(self, session):
         self.windows.pop(session, None)
         self._dequeue(session)
+        for lobby in self.challenges.values():
+            lobby.disconnected(session)
         if session.game:
             session.game.game.leave(session.game)

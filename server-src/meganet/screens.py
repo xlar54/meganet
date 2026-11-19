@@ -8,7 +8,8 @@ Fixed window ids (all below session.FIRST_DYNAMIC_WIN):
     13-16 = Page Admin and the messages to the admins (pages.py),
     17-18 = Private Messages (mail.py), 19 = Reset Password (account.py),
     22-25 = Message Boards (boards.py), 32-35 = Voting (polls.py), 36-40 = News (news.py),
-    41-48 = File Library (filelib.py),
+    41-48 = File Library (filelib.py), 49 = Admin > Server Log (serverlog.py),
+    50 = chat's Delete Room confirmation,
     20 = the New User sign-up wizard (signup.py, before sign-on);
     private chats with an admin take dynamic ids
 
@@ -29,13 +30,14 @@ from .desktop import Desktop
 from .polls import Polls
 from .news import News
 from .filelib import FileLibrary
+from .serverlog import LogWindows
 from .im import IMs
 from .presence import Presence, STATUSES, LABELS
 from . import karma
 from .mail import Mail
 from .pages import Pages
 from .signup import Signup
-from .protocol import (WFlag, GFlag, MENU_SEPARATOR, VERSION, SLOT_PAGE, SLOT_ADMIN_MAIL,
+from .protocol import (WFlag, GFlag, MENU_SEPARATOR, VERSION, SLOT_STATUS, SLOT_PAGE, SLOT_ADMIN_MAIL,
                        SLOT_MAIL, SLOT_NEW_USER, SLOT_IM, MENU_MY_ACCOUNT, MENU_LATE, Icon,
                        S, Writer, clean_text, BROADCAST_MAX, BROADCAST_SECS)
 from .ui import Window, Button, Label, TextBox, ListBox, TextView, Menu, add_buttons, closer
@@ -62,6 +64,7 @@ M_STATUS = 0x05                  # the last title before the client's Window men
 M_AVAILABLE, M_AWAY, M_OFFLINE = 0x50, 0x51, 0x52
 M_SETTINGS = 0x34
 M_BROADCAST = 0x35
+M_LOG = 0x36
 STATUS_ITEMS = dict(zip((M_AVAILABLE, M_AWAY, M_OFFLINE), STATUSES))
 WIN_WHO_W, WIN_WHO_H = 300, 136
 
@@ -102,12 +105,13 @@ MENU_TREE = [
         (M_ADMIN_MSGS, "Messages from users...", perms.ADMIN_PAGES, "open_admin_messages"),
         (M_SETTINGS, "System Settings...", perms.ADMIN_SETTINGS, "open_settings"),
         (M_BROADCAST, "Broadcast...", perms.ADMIN_BROADCAST, "open_broadcast"),
+        (M_LOG, "Server Log...", perms.ADMIN_LOG, "open_log"),
     ]),
 ]
 
 DENIED = "Your account can't use %s."
 ADMIN_KEYS = (perms.ADMIN_USERS, perms.ADMIN_ROLES, perms.ADMIN_MOTD, perms.ADMIN_SETTINGS,
-              perms.ADMIN_BROADCAST)
+              perms.ADMIN_BROADCAST, perms.ADMIN_LOG)
 
 
 def is_admin(session):
@@ -149,12 +153,14 @@ class Screens:
         self.polls = Polls(server)
         self.news = News(server)
         self.files = FileLibrary(server)
+        self.logs = LogWindows(server)
 
     def signed_on(self, session, welcome=True, after=None):
         """Everything a session gets on signing on. The desktop icons come first, under a
         "One moment..." window; then the welcome window, or (`welcome` False) `after()`: the
         sign-up wizard's "account set up" window, which shows the welcome after it."""
         self.send_menu(session)
+        self.presence.show_icon(session)
         then = (lambda: self.welcome(session)) if welcome else after
         self.desktop.start(session, then)
         self.pages.signed_on(session)
@@ -165,6 +171,8 @@ class Screens:
 
     def notify_click(self, session, slot):
         """C.NOTIFY_CLICK for a slot whose icon this session was sent (session.py checks)."""
+        if slot == SLOT_STATUS:
+            return self.presence.click(session)
         if slot in (SLOT_PAGE, SLOT_ADMIN_MAIL):
             return self.pages.notify_click(session, slot)
         if slot == SLOT_MAIL:
@@ -228,7 +236,7 @@ class Screens:
             session = item.session
             if key is not None and not session.can(key):
                 name = item.label.rstrip(".")
-                session.log("refused menu %s: no %s" % (name, key))
+                session.warn("refused menu %s: no %s" % (name, key))
                 return session.alert(name, DENIED % name)
             return action(session, item)
         return pick
@@ -255,11 +263,16 @@ class Screens:
     def open_files(self, session, item=None):
         return self.files.open(session)
 
+    def open_log(self, session, item=None):
+        return self.logs.open(session)
+
     def status_changed(self, session):
-        """Someone's status changed: their Status menu, and everyone's Who's Online."""
+        """Someone's status changed: their Status menu and dot, and everyone's Who's Online."""
         self.send_menu(session)
+        self.presence.show_icon(session)
         self.refresh_who()
-        self.pages.refresh_icons()                # (an offline admin isn't paged)
+        self.pages.refresh_icons()                # (an offline admin isn't paged:
+        self.pages.check_waiting()                # the last one going Offline drops pages)
 
     def coming_soon(self, session, item):
         session.alert(item.label, "Coming soon.")
@@ -385,9 +398,11 @@ class Screens:
         online = {s.user.lower() for s in self.visible(button.session)}
         found = self.server.db.users(find)
         rows = []
+        admin = is_admin(button.session)     # (roles: admins only, as in Who's Online)
         for u in found[:SEARCH_MAX]:
             since = time.strftime("%Y-%m-%d", time.localtime(u["created"]))
-            rows.append("%-17s%-11s%s%s" % (u["name"], (u["role"] or "-")[:10], since,
+            role = (u["role"] or "-")[:10] if admin else ""
+            rows.append("%-17s%-11s%s%s" % (u["name"], role, since,
                                             " *" if u["name"].lower() in online else ""))
         if not found:
             win.count.set_text("Nobody matches \"%s\"." % find[:20])
@@ -481,6 +496,7 @@ class Screens:
         self.polls.permissions_changed(session)
         self.news.permissions_changed(session)
         self.files.permissions_changed(session)
+        self.logs.permissions_changed(session)
         self.new_users_changed()
         self.im_rules_changed()
         self.desktop.refresh(session)
@@ -502,6 +518,7 @@ class Screens:
         self.polls.disconnected(session)
         self.news.disconnected(session)
         self.files.disconnected(session)
+        self.logs.disconnected(session)
         self.ims.disconnected(session)
         self.pages.disconnected(session)
         self.who.pop(session, None)

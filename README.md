@@ -16,7 +16,7 @@ in [docs/MEGA65_NOTES.md](docs/MEGA65_NOTES.md). Remaining work is in [TODO.md](
 
 Status: early.
 - **Server:** signs users on (accounts and roles in SQLite), then sends a menu bar (Areas,
-  Members, Admin, Help), chat rooms (a Lobby, moderators' and members' rooms, private rooms), a two-player tic-tac-toe game, and admin windows for
+  Members, Admin, Help), chat rooms (a Lobby, moderators' and members' rooms, private rooms), a two-player tic-tac-toe game, chess (a lobby to pick an opponent, a picture board, every rule enforced, chat beside the board), and admin windows for
   roles and users. Tested with fake clients.
 - **Client:** has its Windows 95-style GUI library (`client-src/lib/gui/`), the sign-on
   screen, the menu bar (its own **MegaNet** menu first, with Exit back to BASIC), and the
@@ -25,8 +25,14 @@ Status: early.
 - **File Library:** libraries of files that the client downloads to drive 8-11 (PRG, SEQ,
   USR) and uploads from them or from the SD card (D64, D81 images). The client works with
   its disks through the KERNAL and HYPPO (`client-src/storage.asm`), putting the ROM back
-  for each KERNAL disk call, because the framebuffer lives where the ROM was. Writing images
-  to the SD card isn't done yet (it needs a FAT32 writer).
+  for each KERNAL disk call, because the framebuffer lives where the ROM was. Images go onto
+  the SD card through the client's own FAT32 writer (`client-src/sdwrite.asm`: new files
+  only, contiguous). It is tested in Xemu on scratch card images, **not yet on a real card:
+  back your card up before trying it.**
+- **Server Log:** everything the server logs (connections, sign-ons and failed ones, what
+  people do in each area, refusals, crashes with their tracebacks) is kept in the database
+  as well, for admins to read in Admin > Server Log... with filters by area, level, user and
+  text, and a whole session at a time. System Settings says how many days it's kept.
 - **The real Ethernet path hasn't been tried on a MEGA65 yet.**
 
 Build and run

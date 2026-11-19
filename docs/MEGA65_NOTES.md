@@ -507,23 +507,53 @@ The multiplier's output is live: `MULTOUT` changes as soon as an input does. To 
 
 ### SD card files through HYPPO (`client-src/storage.asm`)
 
+- **Xemu's default config fakes these calls.** `mega65-default.cfg` has `hdosvirt = true`:
+  Xemu then answers HYPPO's file calls (`opendir`, `readdir`, `readfile`...) itself, from its
+  `hdos/` folder on the PC, and never touches the SD card image. To test against the real
+  HYPPO and a card, start Xemu with `-skipconfigfile` (it must be the first option) and
+  `-sdimg card.img`. `private/tools/fat32img.py` makes a small FAT32 card image, puts files
+  on it, lists it and checks it (both FATs equal, chains, lost clusters, FSInfo). Xemu warns
+  that the card has no Xemu signature and carries on. [Xemu]
+- **The end of a file (the real HYPPO):** after the last sector, `readfile` answered carry
+  clear with A = 0 (the book says A = `$FF`, or carry set with no bytes; Xemu's imitation
+  did those). Read the size from the directory entry and stop there. [Xemu, real HYPPO]
+
 - **Listing a folder:** `cdrootdir` (`$3C`, X = `getdefaultdrive` `$02`), then per folder
   `opendir` (`$12`), `readdir` (`$14`, X = descriptor, Y = a page below `$7E00`) until the
   wanted entry, `chdir` (`$0C`) while the folder is still open, then `closedir` (`$16`). The
   entry has the long name (asciiz) at `+$00`, the 8.3 name (space-padded, no dot) at `+$41`,
-  the size at `+$52` and the attributes at `+$56` (bit 4 folder, bit 3 volume label).
+  the size at `+$52` and the attributes at `+$56` (bit 4 folder, bit 3 volume label). The
+  long name's length is at `+$40`: end the string there rather than trusting the zero.
+  [Compendium, Appendix N]
   Matching on the 8.3 name finds files whatever case their long name is in; `findfile` only
   finds upper-case long names. [Xemu]
 - **Reading a file:** `readdir` to it, `openfile` (`$18`), then `readfile` (`$1A`) a sector at a
-  time (Y:X bytes). **Keep the folder's descriptor open until the file is read:** closing it
-  right after `openfile` leaves no current file, and `readfile` fails with `$89`. [Xemu]
+  time (Y:X bytes). The last sector comes whole, so stop at the directory entry's size: a
+  D64 (174,848 bytes) ends half-way through its last sector, and counting what `readfile`
+  gave makes it 175,104. **Keep the folder's descriptor open until the file is read:** closing it
+  right after `openfile` leaves no current file, and `readfile` fails with `$89`. [Xemu's
+  hdosvirt imitation; with the real HYPPO the same code (folder kept open) works too]
 - **The sector buffer at `$FFD6E00` is two buffers.** `$D689` bit 7 (BUFSEL) picks which one
   that address shows: 0 (as it was after `readfile`) the floppy controller's, 1 the SD card's.
   Set it for the DMA copy out of the buffer, and put it back. With it clear, every "sector"
-  read the same 512 bytes. [Xemu]
+  read the same 512 bytes. [Xemu's hdosvirt imitation; set it with the real HYPPO too]
 - HYPPO can't write files: `mkfile`, `writefile`, `rmfile`, `rename`, `seekfile` and `mkdir`
   are all documented as not implemented. Writing needs raw sector writes and your own FAT32
-  code (`megapc/src/fat_writer.asm`).
+  code: `client-src/sdwrite.asm` (new files only; a contiguous run of clusters, so HYPPO can
+  mount an image; both FATs; the 8.3 entry; FSInfo's free count marked unknown; every
+  metadata sector read back and compared). The folder's first cluster comes from the
+  `readdir` entry walked through (`+$4E`).
+- **Raw sectors:** the sector number in `$D681-$D684`, then `$D680`: `$02` reads into the
+  buffer; `$57` (the write gate) followed at once by `$03` writes it. Wait while `$D680` bits
+  0-1 are set; bit 6 is an error. The buffer is `$FFD6E00` with BUFSEL set. A D81 written
+  this way in Xemu was byte-identical, and HYPPO listed it straight away in the same
+  session (no stale directory). [Xemu, real HYPPO]
+- **Before writing a FAT32 card yourself, check the boot sector:** FATSz16 (offset 22) is 0
+  on FAT32; ExtFlags (offset 40) bit 7 set means the FATs aren't mirrored and only the one
+  in bits 0-3 is live (free clusters read from FAT 1 would then be wrong); the FAT has room
+  for every cluster (128 entries a sector); and the root and every chain's clusters are
+  below the last cluster. `client-src/sdwrite.asm` refuses the card otherwise. Allow the
+  card a couple of seconds' busy time on a write: SDXC cards can take half a second.
 
 ### Reading and writing files
 
@@ -539,6 +569,10 @@ The multiplier's output is live: `MULTOUT` changes as soon as an input does. To 
 - **Is a drive there?** LISTEN + SECOND with `$FF`, check status bit 7, UNLISTEN, opening nothing (Todd Elliott, "Providing Multiple Drive Support via Machine Language"). Worth doing first: if CHKIN fails, CHRIN reads the keyboard and waits forever. The same article identifies drives with `M-R` of ROM addresses.
 - Internal floppy and managed D81s can be unit 8 or 10, and the second managed drive 9 or 11 (book, chapter 6), so a unit number doesn't say what kind of drive it is.
 - Refuse `* ? , : =` and quotes in names: the DOS reads them as patterns or commands.
+- **Room under the KERNAL:** with `$01 = $35`, bank 0's `$E000-$FFF9` is RAM the program can
+  use while it calls the KERNAL through a trampoline (the KERNAL runs with its ROM mapped
+  there and leaves the RAM alone). MegaNet keeps its frame buffers (`$E000-$EAFF`) and the
+  GUI's gadget texts (`$EB00-$FEFF`, `GUI_TBUF`) there: about 8 KB out of the program. [Xemu]
 - **A framebuffer in the ROM area breaks every disk call.** The DOS (`$20000`), the interface
   ROM (`$2C000`), BASIC and the KERNAL (`$3E000`) live in `$20000-$3FFFF`. A program that
   unprotects it and draws there (MegaNet's 640x200 FCM screen) must put the ROM image back

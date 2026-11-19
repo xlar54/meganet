@@ -13,8 +13,8 @@
 ;                   boxes, then CLICK; WIN_CLOSED for the close box; KEY for RAWKEYS gadgets
 ;
 ; Server messages handled so far: HELLO, LOGIN_RESULT, WIN_OPEN, WIN_CLOSE, GADGET,
-; SET_TEXT, SET_VALUE, FOCUS, ALERT, WIN_DONE, LIST_ROWS, APPEND, MENU. Files, resources
-; and UPDATE are dropped for now (see TODO.md).
+; SET_TEXT, SET_VALUE, FOCUS, ALERT, WIN_DONE, LIST_ROWS, APPEND, MENU, the File Library's,
+; CELLS and RESOURCE (lib/gui/grid.asm). UPDATE is dropped for now (see TODO.md).
 ;=======================================================================================
 
         .weak
@@ -43,6 +43,8 @@ S_TOAST         = $1e
 S_DESK_ICON     = $1f
 S_BROADCAST     = $23
 S_SOUND         = $24
+S_CELLS         = $29
+S_RESOURCE      = $30
 C_HELLO         = $80
 C_CLICK         = $81
 C_VALUE         = $82
@@ -84,6 +86,7 @@ proto_reset:
         sta proto_txn
         sta proto_txn+1
         sta proto_login_ok
+        sta st_mode                     ; (storage.asm: no transfer left from before)
         rts
 
 ;=======================================================================================
@@ -219,6 +222,7 @@ _types: .byte S_HELLO, S_LOGIN_RESULT, S_WIN_OPEN, S_WIN_CLOSE, S_GADGET, S_SET_
         .byte S_SET_VALUE, S_FOCUS, S_ALERT, S_WIN_DONE, S_LIST_ROWS, S_APPEND, S_MENU
         .byte S_NOTIFY, S_SET_FLAGS, S_TOAST, S_DESK_ICON, S_BROADCAST, S_SOUND
         .byte S_LOCAL_DIR, S_SAVE_BEGIN, S_FILE_DATA, S_FILE_END, S_LOAD_FILE, S_LOCAL_CANCEL
+        .byte S_CELLS, S_RESOURCE
 _n = * - _types
 _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_text
         .word pm_set_value, pm_focus, pm_alert, pm_win_done, pm_list_rows, pm_append
@@ -226,6 +230,48 @@ _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_t
         .word pm_sound
         .word pm_local_dir, pm_save_begin, pm_file_data, pm_file_end, pm_load_file
         .word pm_local_cancel
+        .word pm_cells, pm_resource
+        .cerror (_jumps - _types) != _n, "a message without its handler"
+
+; u8 win, u8 gid, u8 first, u8 n, n bytes: a grid's cells (lib/gui/grid.asm)
+pm_cells:
+        jsr rd_u8
+        pha
+        jsr rd_u8
+        pha
+        jsr rd_u8
+        sta gp_x
+        jsr rd_u8
+        sta gp_w
+        lda pr_ptr
+        sta tmp6
+        lda pr_ptr+1
+        sta tmp6+1
+        plx
+        pla
+        jmp gui_grid_cells
+
+; u8 slot, u16 offset, the rest bytes: into a resource slot (a grid's tiles)
+pm_resource:
+        jsr rd_u8
+        sta gui_res_slot
+        jsr rd_u16
+        sta gui_res_off
+        stx gui_res_off+1
+        lda pr_ptr
+        sta tmp6
+        lda pr_ptr+1
+        sta tmp6+1
+        sec                             ; the bytes: the frame's length - 4 (type, slot,
+        lda pf_len                      ; offset)
+        sbc #4
+        sta tmp5
+        lda pf_len+1
+        sbc #0
+        sta tmp5+1
+        bcc +
+        jmp gui_resource
++       rts
 
 ; u8 slot, u8 icon, str hint (the hint isn't shown yet). The server's slot n is the GUI's
 ; n + 1: the GUI's slot 0, rightmost, is the connectivity icon (link.asm)
@@ -751,15 +797,22 @@ tx_u16:                                 ; A = low, X = high
         jsr tx_u8
         pla
         jmp tx_u8
-tx_str:                                 ; A/X = a zero-terminated string (at most 255)
-        sta tmp6
+tx_str:                                 ; A/X = a zero-terminated string: as much of it
+        sta tmp6                        ; as fits in the frame (tx_buf: 255 bytes)
         stx tmp6+1
+        sec
+        lda #254                        ; room left after its length byte
+        sbc tx_n
+        bcs +
+        lda #0
++       sta tx_sm
         ldy #0
--       lda (tmp6),y
+-       cpy tx_sm
+        beq +
+        lda (tmp6),y
         beq +
         iny
-        cpy #255
-        bne -
+        bra -
 +       sty tx_sn
         tya
         jsr tx_u8
@@ -772,6 +825,7 @@ tx_str:                                 ; A/X = a zero-terminated string (at mos
         bra -
 +       rts
 tx_sn:  .byte 0
+tx_sm:  .byte 0
 
 ; send the frame built in tx_buf. Carry set = failed
 tx_end:

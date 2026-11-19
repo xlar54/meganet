@@ -6,7 +6,7 @@
     18 = New Message: To, Subject, and the body in a text area (compose.py)
 
 The private_messages table keeps each message until both the sender and the recipient have
-deleted it. A signed-on recipient gets the envelope icon (NOTIFY slot 2) while they have unread
+deleted it. A signed-on recipient gets the envelope icon (NOTIFY slot SLOT_MAIL) while they have unread
 messages, and at sign-on; clicking it opens the inbox. Every handler checks mail.use again.
 """
 
@@ -119,7 +119,7 @@ class Mail:
     def notify_click(self, session, slot):
         if slot == SLOT_MAIL:
             if not session.can(perms.MAIL_USE):
-                session.log("notify click %d refused: no %s" % (slot, perms.MAIL_USE))
+                session.warn("notify click %d refused: no %s" % (slot, perms.MAIL_USE))
                 return self.refresh_icon(session)
             return self.open_inbox(session)
         return None

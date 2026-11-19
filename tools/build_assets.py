@@ -4,7 +4,8 @@ runs it.
 It reads:
   client-src/assets/logo.png   the sign-on logo; width and height multiples of 8.
                                Colours equal to a GUI colour (GUI_COLOURS) use that entry;
-                               the rest are quantised into entries 16-254.
+                               the rest are quantised into entries 16-239.
+                               Entries 240-254 are GAME_COLOURS (the server's game art).
 and writes:
   client-src/gen/palette.asm   palette_rgb: 3 x 256 bytes (r, g, b), entries 16+ the art's
   client-src/gen/logo.asm      LOGO_CW / LOGO_CH (cells), LOGO_ATTIC
@@ -29,7 +30,19 @@ GUI_COLOURS = [
     (0, 0, 255), (8, 8, 24), (255, 255, 0), (0, 255, 255),
 ]
 ART_FIRST = 16
-ART_COUNT = 255 - ART_FIRST        # entry 255 shows the colour-RAM colour: never used
+GAME_FIRST = 240                   # entries 240-254: fixed colours for the server's game art
+# (board squares, pieces): must match server-src/meganet/protocol.py GAME_COLOURS
+GAME_COLOURS = [
+    (240, 217, 181), (181, 136, 99),             # 240 / 241: light and dark squares
+    (250, 248, 240), (190, 184, 172),            # 242 / 243: white pieces, their shade
+    (40, 36, 34), (120, 112, 104),               # 244 / 245: black pieces, their highlight
+    (205, 210, 106), (170, 162, 58),             # 246 / 247: last-move squares (light, dark)
+    (90, 100, 60), (118, 150, 86),               # 248: move dots; 249 green squares
+    (238, 238, 210), (200, 40, 40),              # 250 cream squares; 251 red
+    (60, 120, 200), (230, 190, 40), (20, 20, 20),    # 252 blue; 253 gold; 254 near black
+]
+ART_COUNT = GAME_FIRST - ART_FIRST      # entry 255 shows the colour-RAM colour: never used
+assert len(GAME_COLOURS) == 255 - GAME_FIRST
 LOGO_ATTIC = 0x8000000
 
 
@@ -53,7 +66,8 @@ def build():
     colours, idx = m.quantize([pixels], ART_COUNT, fixed=GUI_COLOURS)
     lookup = {c: ART_FIRST + i for c, i in idx.items()}
     lookup.update({c: i for i, c in enumerate(GUI_COLOURS)})
-    m.write_palette(GUI_COLOURS + colours)
+    m.write_palette(GUI_COLOURS + colours + [(0, 0, 0)] * (ART_COUNT - len(colours))
+                    + GAME_COLOURS)
     data = cells(img, lookup)
     m.write_gen('logo.asm', ['LOGO_CW = %d' % (w // 8), 'LOGO_CH = %d' % (h // 8),
                              'LOGO_ATTIC = $%07x' % LOGO_ATTIC], 'sign-on logo size')

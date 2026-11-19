@@ -12,6 +12,8 @@
 ;   $8000000     the logo (attic)
 ;   $8300000     File Library downloads and uploads, staged (storage.asm, 1 MB)
 ;   $8200000     GUI list / view rows (16 x 8 KB); $8240000 desktop icon pictures (12 x 512)
+;   $8250000     grid cells (256 a gadget slot); $8400000 resource slots, 16 x 64 KB: a
+;                grid's tiles, sent by the server (lib/gui/grid.asm)
 ;   $CD00-$CF05  the bridge build's rings (Xemu only)
 ;=======================================================================================
         .cpu "45gs02"
@@ -29,6 +31,9 @@ MOUSE_MAX_X     = 639
 GUI_MAXWIN      = 12                    ; windows open at once
 GUI_MAXGAD      = 80                    ; gadgets in all of them (< 128: some loops use bpl)
 GUI_MAXBIG      = 16                    ; lists, views, text areas, drop-downs (attic, 8 KB each)
+GUI_TBUF        = $eb00                 ; the gadget texts (80 x 64): under the KERNAL ROM,
+                                        ; after proto.asm's frame buffers ($E000-$EAFF)
+        .cerror GUI_TBUF + GUI_MAXGAD * 64 > $fffa, "the gadget texts run into the vectors"
         .weak
 MOCK_NET        = 0                     ; -D MOCK_NET=1 (build.bat mock FILE): replay build
 BRIDGE_NET      = 0                     ; -D BRIDGE_NET=1 (build.bat bridge): Xemu + bridge
@@ -194,6 +199,7 @@ s_mockrx_end:
         .include "sound.asm"
         .include "link.asm"
         .include "storage.asm"
+        .include "sdwrite.asm"
         .include "lib/kstream.asm"
         .include "lib/system.asm"
         .include "lib/dma.asm"
@@ -208,6 +214,7 @@ s_mockrx_end:
         .include "lib/hwsprite.asm"
         .include "lib/sid.asm"
         .include "lib/gui/gui.asm"
+        .include "lib/gui/grid.asm"
         .include "gen/manifest.asm"
         .include "gen/palette.asm"
 

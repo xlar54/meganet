@@ -43,11 +43,11 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         await c.wait_for(lambda: len(c.login_results) > n, "LOGIN_RESULT")
         return c.login_results[-1]
 
-    async def signed_on(self, name, password="secret", build=100):
+    async def signed_on(self, name, password="secret", build=100, caps=0):
         """A client that has said HELLO, created an account and has the menu bar and the
         welcome window."""
         c = await self.client(name)
-        c.send_hello(build)
+        c.send_hello(build, caps)
         await c.wait_for(lambda: c.hello, "HELLO")
         ok, msg = await self.login(c, name, password, new=True)
         self.assertTrue(ok, msg)
