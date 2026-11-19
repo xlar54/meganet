@@ -66,7 +66,5 @@ class DesktopTest(PagesBase):
         self.assertEqual(alice.desk_labels(), ["Chat", "Message Boards", "File Library", "Games",
                                                "Who's Online", "News", "Voting"])
         self.assertEqual(alice.desk[2][:2], ("File", "Library"))
-        alice.alerts.clear()
         alice.desk_open("File Library")
-        await alice.wait_for(lambda: alice.alerts, "coming soon")
-        self.assertEqual(alice.alerts[-1], ("File Library", "Coming soon."))
+        await alice.wait_window("File Library")

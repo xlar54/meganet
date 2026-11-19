@@ -33,6 +33,9 @@ FIRST_DYNAMIC_WIN = 0x40     # ids below this are the fixed screens in screens.p
 
 # What the sign-up wizard's window may send before sign-on (each starts with u8 win)
 WIZARD_EVENTS = frozenset((C.CLICK, C.VALUE, C.SELECT, C.TEXT, C.WIN_CLOSED))
+# The client's answers to S.LOCAL_DIR / SAVE_BEGIN / LOAD_FILE (filelib.py)
+LOCAL_REPLIES = frozenset((C.FILE_ACK, C.LOCAL_ENTRY, C.LOCAL_DONE, C.UP_BEGIN, C.UP_DATA,
+                           C.UP_END))
 
 
 class Session:
@@ -47,6 +50,8 @@ class Session:
         self.role = None             # the role's name
         self.perms = frozenset()     # the role's permission keys, cached: see can()
         self.build = None            # client build from HELLO
+        self.caps = 0                # and what it can do (protocol.Caps)
+        self.storage = None          # filelib.Storage: requests to the client's disks
         self.updating = False        # True after a forced update was sent
         self.windows = {}            # win id -> ui.Window
         self.menu = None             # the ui.Menu last sent (MENU_PICKs are checked against it)
@@ -254,8 +259,9 @@ class Session:
                 karma.suspicious(self, "desk open %d: no icon there" % slot)
             else:
                 await call(self.server.screens.desktop.open(self, slot))
-        elif msg_type == C.FILE_ACK:
-            r.u32()          # TODO: pace FILE_DATA by FILE_ACK
+        elif msg_type in LOCAL_REPLIES:      # the client's storage (filelib.Storage)
+            from .filelib import Storage
+            Storage.of(self).handle(msg_type, r)
         else:
             self.log("unknown message $%02X" % msg_type)
 
@@ -269,8 +275,8 @@ class Session:
     # ---- sign-on ----
 
     def on_hello(self, r):
-        version, self.build, _caps, name = r.u8(), r.u16(), r.u8(), r.str()
-        self.log("hello v%d build %d %s" % (version, self.build, name))
+        version, self.build, self.caps, name = r.u8(), r.u16(), r.u8(), r.str()
+        self.log("hello v%d build %d caps $%02X %s" % (version, self.build, self.caps, name))
         self.send(S.HELLO, Writer().u8(VERSION).u16(self.id))
         updates = self.server.updates
         if updates.needs(self.build):

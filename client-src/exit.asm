@@ -135,7 +135,7 @@ rc_ptrs:
         adc rc_bank
         tax
         clc
-        lda #$10                        ; attic side: $8100000 + bank * $10000
+        lda rc_attic                    ; attic side: $8100000 + bank * $10000
         adc rc_bank
         tay
         lda rc_dir
@@ -156,6 +156,49 @@ _back:  sty ptr1+2
         rts
 rc_dir:         .byte 0
 rc_bank:        .byte 0
+rc_attic:       .byte $10               ; attic bits 16-23: $10 the ROM image, $12 the
+                                        ; framebuffer while the ROM is back (disk_begin)
+
+; The framebuffer is where the ROMs were ($20000-$3F3FF): the DOS ($20000), the interface
+; ROM ($2C000), BASIC and the KERNAL. A KERNAL disk call needs them, so for disk work
+; (storage.asm) the display is blanked, the framebuffer saved to attic and the ROM image put
+; back; disk_end undoes it. About 384 KB of DMA: a few milliseconds.
+FB_ATTIC_HI     = $12                   ; $8120000: 128 KB
+disk_begin:
+        lda disk_on
+        bne _out
+        inc disk_on
+        lda VIC_CTRL1                   ; display off (bit 7: see MEGA65_NOTES)
+        and #%01101111
+        ora #(>IRQ_LINE) << 7
+        sta VIC_CTRL1
+        lda #FB_ATTIC_HI                ; the framebuffer to attic
+        sta rc_attic
+        lda #0
+        jsr rom_copy
+        lda #$10                        ; the ROM back
+        sta rc_attic
+        lda #1
+        jsr rom_copy
+_out:   rts
+disk_end:
+        lda disk_on
+        beq _out
+        lda #0
+        sta disk_on
+        lda #FB_ATTIC_HI                ; the framebuffer back
+        sta rc_attic
+        lda #1
+        jsr rom_copy
+        lda #$10
+        sta rc_attic
+        lda VIC_CTRL1                   ; display on
+        and #%01111111
+        ora #%00010000
+        ora #(>IRQ_LINE) << 7
+        sta VIC_CTRL1
+_out:   rts
+disk_on:        .byte 0
 
 s_xm_title:     .null "MegaNet"
 s_xm_exit:      .null "Exit"

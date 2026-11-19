@@ -2,8 +2,10 @@
 of the windows the server has opened, the way the MEGA65 client will."""
 
 import asyncio
+import zlib
 
-from meganet.protocol import (BROADCAST_MAX, DESK_SLOTS, DESK_ICON_W, DESK_ICON_H, DESK_LABEL_MAX,
+from meganet.protocol import (Local, LocalStatus, LOCAL_SD, LOCAL_MAX, FILE_CHUNK, UP_CHUNK,
+                              BROADCAST_MAX, DESK_SLOTS, DESK_ICON_W, DESK_ICON_H, DESK_LABEL_MAX,
                               DESK_CLEAR, GFlag, S, C, Kind, Writer, Deframer, LOGIN_NEW_USER, MENU_FIRST,
                               MENU_LAST, MENU_SEPARATOR, NOTIFY_SLOTS, NOTIFY_HINT_MAX, Icon,
                               window_fits, DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES,
@@ -38,6 +40,133 @@ class FakeWindow:
         return self.gadgets[gid]["text"]
 
 
+class FakeStorage:
+    """The client's disks, as S.LOCAL_DIR / SAVE_BEGIN / LOAD_FILE see them:
+    drives = {unit: {"name": disk name, "files": {name: (Local kind, bytes)}}} and sd = nested
+    dicts of folders, with bytes for files ("GAMES": {"ELITE.D81": b"..."})."""
+
+    def __init__(self):
+        self.drives = {}
+        self.sd = None           # None: no SD card
+        self.save = None         # the download arriving: dict(req, dev, kind, size, path, data)
+        self.hold_acks = False   # True: don't FILE_ACK data (the window test)
+        self.damage = False      # True: uploads arrive with a wrong CRC
+        self.saves = []          # (dev, path) saved, in order
+        self.cancelled = []      # reqs cancelled
+        self.max_ahead = 0       # the most bytes of FILE_DATA ever unacknowledged
+
+    def sd_folder(self, parts):
+        node = self.sd
+        for p in parts:
+            node = node.get(p) if isinstance(node, dict) else None
+            if not isinstance(node, dict):
+                return None
+        return node
+
+    def done(self, c, req, status, text=""):
+        c.send(C.LOCAL_DONE, Writer().u8(req).u8(status).str(text))
+
+    def handle(self, c, t, r):
+        if t == S.LOCAL_DIR:
+            req, dev, path = r.u8(), r.u8(), r.str()
+            if dev == LOCAL_SD:
+                node = self.sd_folder([p for p in path.split("/") if p]) if self.sd is not None \
+                    else None
+                if node is None:
+                    return self.done(c, req, LocalStatus.NO_DEVICE if self.sd is None
+                                     else LocalStatus.NOT_FOUND)
+                for name, v in node.items():
+                    kind = (Local.DIR if isinstance(v, dict) else Local.D81 if
+                            name.endswith(".D81") else Local.D64 if name.endswith(".D64")
+                            else Local.FILE)
+                    c.send(C.LOCAL_ENTRY, Writer().u8(req).u8(kind)
+                           .u32(0 if isinstance(v, dict) else len(v)).str(name).str(name))
+                return self.done(c, req, LocalStatus.OK)
+            d = self.drives.get(dev)
+            if d is None:
+                return self.done(c, req, LocalStatus.NO_DEVICE, "74,DRIVE NOT READY,00,00")
+            c.send(C.LOCAL_ENTRY, Writer().u8(req).u8(Local.HEADER).u32(0).str(d["name"]))
+            for name, (kind, data) in d["files"].items():
+                c.send(C.LOCAL_ENTRY, Writer().u8(req).u8(kind).u32((len(data) + 253) // 254)
+                       .str(name))
+            c.send(C.LOCAL_ENTRY, Writer().u8(req).u8(Local.FREE).u32(3000).str("BLOCKS FREE."))
+            return self.done(c, req, LocalStatus.OK)
+        if t == S.SAVE_BEGIN:
+            req, dev, kind, size, path = r.u8(), r.u8(), r.u8(), r.u32(), r.str()
+            assert size <= LOCAL_MAX, "SAVE_BEGIN of %d bytes" % size
+            if dev == LOCAL_SD:
+                parts = path.split("/")
+                node = self.sd_folder(parts[:-1]) if self.sd is not None else None
+                if node is None:
+                    return self.done(c, req, LocalStatus.NO_DEVICE if self.sd is None
+                                     else LocalStatus.NOT_FOUND)
+                if parts[-1] in node:
+                    return self.done(c, req, LocalStatus.EXISTS)
+            else:
+                d = self.drives.get(dev)
+                if d is None:
+                    return self.done(c, req, LocalStatus.NO_DEVICE, "74,DRIVE NOT READY,00,00")
+                if path in d["files"]:
+                    return self.done(c, req, LocalStatus.EXISTS, "63,FILE EXISTS,00,00")
+            self.save = dict(req=req, dev=dev, kind=kind, size=size, path=path,
+                             data=bytearray())
+            return c.send(C.FILE_ACK, Writer().u32(0))
+        if t == S.FILE_DATA:
+            s = self.save
+            offset = r.u32()
+            assert offset == len(s["data"]), "FILE_DATA out of order"
+            part = r.rest()
+            assert len(part) <= FILE_CHUNK, "FILE_DATA of %d bytes" % len(part)
+            s["data"] += part
+            s["acked"] = s.get("acked", 0)
+            self.max_ahead = max(self.max_ahead, len(s["data"]) - s["acked"])
+            if not self.hold_acks:
+                s["acked"] = len(s["data"])
+                c.send(C.FILE_ACK, Writer().u32(len(s["data"])))
+            return None
+        if t == S.FILE_END:
+            s, self.save = self.save, None
+            crc = r.u32()
+            if crc != zlib.crc32(s["data"]) or len(s["data"]) != s["size"]:
+                return self.done(c, s["req"], LocalStatus.BAD_CRC)
+            if s["dev"] == LOCAL_SD:
+                parts = s["path"].split("/")
+                self.sd_folder(parts[:-1])[parts[-1]] = bytes(s["data"])
+            else:
+                self.drives[s["dev"]]["files"][s["path"]] = (s["kind"], bytes(s["data"]))
+            self.saves.append((s["dev"], s["path"]))
+            return self.done(c, s["req"], LocalStatus.OK)
+        if t == S.LOAD_FILE:
+            req, dev, kind, path = r.u8(), r.u8(), r.u8(), r.str()
+            if dev == LOCAL_SD:
+                parts = path.split("/")
+                node = self.sd_folder(parts[:-1]) if self.sd is not None else None
+                data = node.get(parts[-1]) if node is not None else None
+            else:
+                d = self.drives.get(dev)
+                data = d["files"].get(path, (None, None))[1] if d else None
+            if data is None or isinstance(data, dict):
+                return self.done(c, req, LocalStatus.NOT_FOUND, "62,FILE NOT FOUND,00,00")
+            c.send(C.UP_BEGIN, Writer().u8(req).u32(len(data)))
+            for i in range(0, len(data), UP_CHUNK):
+                c.send(C.UP_DATA, Writer().u8(req).bytes(data[i:i + UP_CHUNK]))
+            return c.send(C.UP_END, Writer().u8(req).u32(zlib.crc32(data) ^ (1 if self.damage
+                                                                             else 0)))
+        if t == S.LOCAL_CANCEL:
+            req = r.u8()
+            self.cancelled.append(req)
+            if self.save is not None and self.save["req"] == req:
+                self.save = None
+        return None
+
+    def ack_all(self, c):
+        """Acknowledge what has arrived (after hold_acks)."""
+        s = self.save
+        if s is not None:
+            s["acked"] = len(s["data"])
+            c.send(C.FILE_ACK, Writer().u32(len(s["data"])))
+
+
 class FakeClient:
     def __init__(self, name="fake"):
         self.name = name
@@ -56,6 +185,7 @@ class FakeClient:
         self.notify = {}         # menu-bar icons: slot -> (icon, hint)  (icon 0 removes one)
         self.desk = {}           # desktop icons: slot -> (line 1, line 2, pixels)
         self.events = []         # ("open" / "close" / "icon", window title or slot), in order
+        self.storage = FakeStorage()   # drives 8-11 and an SD card (the File Library)
         self._changed = asyncio.Event()
 
     async def connect(self, port):
@@ -75,8 +205,8 @@ class FakeClient:
     def send(self, msg_type, w=None):
         self.writer.write((w or Writer()).frame(msg_type))
 
-    def send_hello(self, build=100):
-        self.send(C.HELLO, Writer().u8(1).u16(build).u8(0).str("fakeclient"))
+    def send_hello(self, build=100, caps=0):
+        self.send(C.HELLO, Writer().u8(1).u16(build).u8(caps).str("fakeclient"))
 
     def send_login(self, name, password, new=False):
         self.send(C.LOGIN, Writer().u8(LOGIN_NEW_USER if new else 0).str(name).str(password))
@@ -377,6 +507,10 @@ class FakeClient:
                 self.notify[slot] = (Icon(icon), hint)
         elif t == S.UPDATE:
             self.update = (r.u16(), r.u8(), r.str())
+        elif t in (S.LOCAL_DIR, S.SAVE_BEGIN, S.LOAD_FILE, S.LOCAL_CANCEL):
+            self.storage.handle(self, t, r)
+        elif t in (S.FILE_DATA, S.FILE_END) and self.storage.save is not None:
+            self.storage.handle(self, t, r)
         elif t == S.FILE_BEGIN:
             size = r.u32()
             self.files.append([r.str(), size, bytearray(), None])

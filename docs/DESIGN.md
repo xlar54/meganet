@@ -189,13 +189,45 @@ ASCII. The authoritative list of messages is [`server-src/meganet/protocol.py`](
     most 128, 63 characters each) sent at once and a selection in range; an Edit has room for
     a line, gets only lines that fit its width (at most 32), and `SET_TEXT` on it is always "".
 
-## File downloads
+## File transfers and local storage
 
 Raw binary over the same TCP stream, in `FILE_DATA` chunks of up to 1 KB, with a CRC-32 at the
-end. No XMODEM: TCP already makes the stream reliable. The client stages incoming data in attic
-and writes it to disk with `lib/kfile.asm` (KERNAL save through the trampoline) once the file
-is complete. Writing to the D81 limits files to about 780 KB. Writing straight to the SD
-card's FAT32 would need the FAT32 reference code that the library README lists as not ported.
+end. No XMODEM: TCP already makes the stream reliable.
+
+The File Library (`server-src/meganet/filelib.py`) runs every window on the server. The client
+(`client-src/storage.asm`) only does what needs its own disks, when the server asks:
+
+- **What the client can do** comes in `HELLO`'s caps byte (`protocol.Caps`): bit 0 drives 8-11
+  (PRG, SEQ, USR through the KERNAL), bit 1 reading the SD card (folders, D64 / D81 images),
+  bit 2 writing images to the SD card. The server only offers what the caps allow.
+- **Devices:** `dev` 8-11 is a CBM drive unit; `dev` 0 is the SD card. An SD path is folder
+  names from the root joined by `/`, with the file's 8.3 name last (`GAMES/ELITE.D81`). The
+  client matches each part against the 8.3 names HYPPO's `readdir` gives, so long names in
+  any case work.
+- **Requests** carry a `u8 req`; every reply carries it back, and the server drops replies to
+  requests it has given up on. `LOCAL_CANCEL (req)` stops one.
+- **A directory:** `LOCAL_DIR (req, dev, path)` -> a `LOCAL_ENTRY (req, kind, u32 size, str
+  name[, str long name])` per entry, then `LOCAL_DONE (req, status, str text)`. On a drive,
+  the size is in blocks, and the disk name (`HEADER`) and the blocks free (`FREE`) come as
+  entries too. On the SD card, the size is in bytes and the long file name follows.
+- **A download:** `SAVE_BEGIN (req, dev, kind, u32 size, path)`. The client checks the device
+  answers and that no file of that name is there (**saves never overwrite**), then answers
+  `FILE_ACK 0`, or `LOCAL_DONE` with the problem. The server then sends `FILE_DATA`, keeping
+  at most `FILE_WINDOW` (4 KB) beyond the client's last `FILE_ACK`, and `FILE_END (crc)`. The
+  client stages it in attic (`$8300000`, at most `LOCAL_MAX` = 1 MB), keeps the CRC as it
+  comes, checks it, writes the file and answers `LOCAL_DONE`.
+- **An upload:** `LOAD_FILE (req, dev, kind, path)`. The client reads the file into attic and
+  sends `UP_BEGIN (req, u32 size)`, then `UP_DATA (req, bytes)` of at most 240 bytes, a few
+  frames each main-loop pass so the GUI keeps going, then `UP_END (req, crc)`. If it can't, it
+  answers `LOCAL_DONE` instead.
+- **Statuses** (`protocol.LocalStatus`): OK, NO_DEVICE, NOT_FOUND, EXISTS, DISK_FULL, BAD_CRC,
+  IO_ERROR (the drive's own message is the text), UNSUPPORTED, TOO_BIG, CANCELLED.
+- **The SD card** is read through HYPPO (`opendir`/`readdir`/`chdir`/`openfile`/`readfile`).
+  HYPPO can't write files (`mkfile`, `writefile` and `rmfile` are documented as not
+  implemented), so writing images needs the client's own FAT32 code with raw sector writes,
+  which isn't written yet (caps bit 2 stays off until it is).
+
+The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
 
 ## Forced auto-update
 

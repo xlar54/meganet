@@ -121,9 +121,25 @@ class S(IntEnum):
                          # the screen, yellow on red, over everything but a toast, for that
                          # long or until clicked; it takes no input. BROADCAST_MAX characters)
     SOUND = 0x24         # u8 sound (Sound): the client plays it on its SID
-    FILE_BEGIN = 0x20    # u32 size, str name
-    FILE_DATA = 0x21     # u32 offset, bytes...
-    FILE_END = 0x22      # u32 crc32
+    FILE_BEGIN = 0x20    # u32 size, str name  (an update's file; see UPDATE)
+    FILE_DATA = 0x21     # u32 offset, bytes...  (at most FILE_CHUNK; after FILE_BEGIN or
+                         # SAVE_BEGIN)
+    FILE_END = 0x22      # u32 crc32 (zlib.crc32 of the whole file)
+    # The client's local storage (the File Library; see "Local storage" in docs/DESIGN.md).
+    # dev 8-11 = a CBM drive unit (through the KERNAL), dev 0 = the SD card (LOCAL_SD). An SD
+    # path is folder names from the card's root joined by "/" ("" = the root), and for a file
+    # its 8.3 name last ("GAMES/ELITE.D81"). req numbers a request: replies carry it, and the
+    # server ignores replies to a request it has given up on.
+    LOCAL_DIR = 0x25     # u8 req, u8 dev, str path  (a drive's directory, or an SD folder):
+                         # the client answers C.LOCAL_ENTRY per entry, then C.LOCAL_DONE
+    SAVE_BEGIN = 0x26    # u8 req, u8 dev, u8 kind (Local), u32 size, str path  (a drive file's
+                         # name, or an SD path): the client checks it can (the device answers,
+                         # no file of that name) and answers C.FILE_ACK 0, or C.LOCAL_DONE with
+                         # the trouble. Then FILE_DATA..., FILE_END; the client stages it all,
+                         # checks the CRC, writes it, and answers C.LOCAL_DONE
+    LOAD_FILE = 0x27     # u8 req, u8 dev, u8 kind, str path  (send me that file): the client
+                         # answers C.UP_BEGIN, C.UP_DATA..., C.UP_END, or C.LOCAL_DONE (trouble)
+    LOCAL_CANCEL = 0x28  # u8 req  (stop that request; the client answers nothing)
     RESOURCE = 0x30      # u16 id, u8 version, u8 kind, bytes...  (icons etc., cached in attic)
     UPDATE = 0x40        # u16 new build, u8 nfiles, str message  (forced: the client shows a
                          # progress window, receives nfiles x FILE_BEGIN/DATA/END, writes them,
@@ -140,16 +156,25 @@ class C(IntEnum):
     MENU_PICK = 0x85     # u8 id  (an item of the last S.MENU; never a title or separator)
     WIN_CLOSED = 0x86    # u8 win  (the user clicked the close box)
     KEY = 0x87           # u8 win, u8 gid, u8 ascii  (only for gadgets with the RAWKEYS flag)
-    FILE_ACK = 0x88      # u32 offset received
+    FILE_ACK = 0x88      # u32 bytes received so far (the server keeps at most FILE_WINDOW
+                         # bytes unacknowledged); 0 after S.SAVE_BEGIN = ready
     LOGIN = 0x89         # u8 flags (bit 0 = new user), str screen name, str password
     NOTIFY_CLICK = 0x8A  # u8 slot  (the user clicked the S.NOTIFY icon in that slot)
     TEXT = 0x8B          # u8 win, u8 gid, u8 n, n x str  (an EDIT gadget's lines, trailing
                          # empty lines dropped; sent for every EDIT of the window before a
                          # CLICK, as VALUE is for text boxes)
     DESK_OPEN = 0x8C     # u8 slot  (the S.DESK_ICON in that slot was double-clicked)
+    LOCAL_ENTRY = 0x8D   # u8 req, u8 kind (Local), u32 size, str name  (S.LOCAL_DIR's answer,
+                         # one per entry: size in bytes on the SD card, in blocks on a drive;
+                         # Local.HEADER = the disk's name, Local.FREE = blocks free)
+    LOCAL_DONE = 0x8E    # u8 req, u8 status (LocalStatus), str text  (a request is over; text
+                         # = the drive's own message, or "")
     PING = 0x8F          # (nothing)  "are you there?": the server answers S.PONG. The client
                          # sends it after 30 s with nothing from the server, and shows its
                          # connectivity icon with an X if no answer comes in 10 s
+    UP_BEGIN = 0x90      # u8 req, u32 size  (S.LOAD_FILE's file follows)
+    UP_DATA = 0x91       # u8 req, bytes...  (at most UP_CHUNK, in order)
+    UP_END = 0x92        # u8 req, u32 crc32
 
 
 class Kind(IntEnum):
@@ -216,6 +241,50 @@ DESK_LEFT = 8            # bottom; 8-11 down the right edge (older clients ignor
 DESK_ICON_W, DESK_ICON_H = 32, 16   # (640x200 pixels are twice as tall: it looks square)
 DESK_LABEL_MAX = 10      # characters a label line
 DESK_CLEAR = 0xFF        # a transparent pixel
+
+class Caps(IntFlag):
+    """C.HELLO's caps byte: what the client can do."""
+    NONE = 0
+    DRIVES = 1           # CBM drives 8-11: directories, saving and reading PRG / SEQ / USR
+    SD_READ = 2          # the SD card: folders, and reading D64 / D81 images (uploads)
+    SD_WRITE = 4         # writing D64 / D81 images to the SD card (downloads)
+
+
+class Local(IntEnum):
+    """Local storage kinds: C.LOCAL_ENTRY's kind, and S.SAVE_BEGIN's / S.LOAD_FILE's."""
+    HEADER = 0           # a drive's disk name (the directory's first line)
+    DIR = 1              # an SD folder
+    PRG = 2
+    SEQ = 3
+    USR = 4
+    REL = 5
+    DEL = 6
+    D81 = 7
+    D64 = 8
+    FILE = 9             # any other SD file
+    FREE = 15            # a drive's "blocks free" (size = the blocks)
+
+
+class LocalStatus(IntEnum):
+    """C.LOCAL_DONE's status."""
+    OK = 0
+    NO_DEVICE = 1        # nothing answers at that unit, or no SD card
+    NOT_FOUND = 2        # no such file or folder
+    EXISTS = 3           # a file of that name is already there (saves never overwrite)
+    DISK_FULL = 4        # no room (on an SD card: no free run long enough for an image)
+    BAD_CRC = 5          # what arrived doesn't match FILE_END's CRC (nothing was written)
+    IO_ERROR = 6         # the drive or card said something else (the text has it)
+    UNSUPPORTED = 7      # this client can't do that
+    TOO_BIG = 8          # more than the client can stage (LOCAL_MAX)
+    CANCELLED = 9
+
+
+LOCAL_SD = 0             # S.LOCAL_DIR / SAVE_BEGIN / LOAD_FILE dev: the SD card
+LOCAL_DRIVES = (8, 9, 10, 11)
+LOCAL_MAX = 1 << 20      # the biggest file the client stages in attic (a D81 is 819,200)
+FILE_CHUNK = 1024        # S.FILE_DATA bytes at most
+FILE_WINDOW = 4096       # bytes sent ahead of the client's last FILE_ACK
+UP_CHUNK = 240           # C.UP_DATA bytes at most (the client's frames are under 256 bytes)
 
 LOGIN_NEW_USER = 0x01    # C.LOGIN flags bit 0
 SELECT_DOUBLE = 0x8000   # C.SELECT index bit 15 = double-click

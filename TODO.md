@@ -32,7 +32,7 @@
 - [ ] Overlay layout once the program nears $C800 (resident core + GUI/file/updater overlays)
 - [ ] Stub loader `MEGANET` -> `CLIENT` + overlays; build number stamped by build.bat
 - [ ] Updater: stage in attic, check CRCs, write under temp names, scratch, rename, restart
-- [ ] File download to disk via kfile
+- [x] File download to disk (storage.asm, through kstream rather than kfile)
 - [ ] Copy lib/gui into the project template (see private/CLAUDE.md) once it settles
 
 ## Server (server-src/, Python)
@@ -40,8 +40,9 @@
       tic-tac-toe demo; unittest tests with fake clients over TCP
 - [x] User roles with admin-editable permissions (`permissions.py`, `admin.py`): first user is
       Sysop, Roles and Users windows, `session.can()` enforced on the menu, lobby and games
-- [ ] Check the role permissions in the boards, news, files and IM areas as they're written
-      (`boards.post`, `boards.moderate`, `chat.moderate`, `news.post`, `files.upload`, `im.send`)
+- [x] Check the role permissions in the boards, news, files and IM areas as they're written
+      (`boards.post`, `boards.moderate`, `chat.moderate`, `news.post`, `files.upload`,
+      `files.moderate`, `im.send`)
 - [x] Menu bar (MENU / MENU_PICK) instead of the main-menu window: Areas, Members (Who's
       Online, My Account), Admin, Help; filtered per role, re-sent on role changes, picks
       re-checked; windows kept below the 11-row bar (client area at most 632x171)
@@ -123,5 +124,20 @@
 - [x] Areas > News: bulletins; news.post writes, edits and deletes them in the composer;
       "new news, read it now?" after the welcome window
 - [ ] News: a notify icon when a bulletin is posted while you're on
-- [ ] File library
-- [ ] Pace FILE_DATA by FILE_ACK
+- [x] File Library (`filelib.py`): libraries with their own `filelibs/<title>` folders, a
+      title and description, per-role See / Download / Upload, an approve-uploads setting;
+      moderators' file entries (Filename, Type, Description, Server Path); downloads and
+      uploads with a progress bar; FILE_DATA paced by FILE_ACK (4 KB window)
+- [x] Client storage (`storage.asm`): drive 8-11 directories, saving PRG / SEQ / USR, reading
+      them for uploads; SD card folders and reading D64 / D81 images (HYPPO) - tested in Xemu
+      over the bridge (drive 8 download and upload; SD listing; an 800 KB D81 read into attic)
+- [ ] **Write D64 / D81 images to the SD card**: a FAT32 writer with raw sector writes
+      (port and harden `megapc/src/fat_writer.asm`: contiguous clusters so HYPPO can mount
+      the image, new files only, every FAT sector read back); test on a scratch SD image in
+      Xemu (`-sdimg`), checked from the PC, before any real card. Then Caps bit 2
+- [ ] File Library: bulk add of files copied into a library's folder; the client has about
+      2 KB left below the bridge rings (frame buffers already moved to `$E000`), so the FAT32
+      writer may need the GUI tables moved too, or an overlay
+- [ ] File Library on real hardware: drives 9-11 (real IEC drives), the SD card, the ROM swap
+      around disk calls (`disk_begin`), a whole D81 upload (the bridge is too slow: ~500 B/s)
+- [ ] File Library: a CBM drive's subdirectories (CBM partitions) aren't listed or entered

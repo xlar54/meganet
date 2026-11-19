@@ -505,6 +505,26 @@ The multiplier's output is live: `MULTOUT` changes as soon as an input does. To 
   Fall back to "insert disk N (freezer), press RETURN".
 - Hypervisor trap `$70` toggles the ROM write protection on `$20000-$3FFFF`; test before and after.
 
+### SD card files through HYPPO (`client-src/storage.asm`)
+
+- **Listing a folder:** `cdrootdir` (`$3C`, X = `getdefaultdrive` `$02`), then per folder
+  `opendir` (`$12`), `readdir` (`$14`, X = descriptor, Y = a page below `$7E00`) until the
+  wanted entry, `chdir` (`$0C`) while the folder is still open, then `closedir` (`$16`). The
+  entry has the long name (asciiz) at `+$00`, the 8.3 name (space-padded, no dot) at `+$41`,
+  the size at `+$52` and the attributes at `+$56` (bit 4 folder, bit 3 volume label).
+  Matching on the 8.3 name finds files whatever case their long name is in; `findfile` only
+  finds upper-case long names. [Xemu]
+- **Reading a file:** `readdir` to it, `openfile` (`$18`), then `readfile` (`$1A`) a sector at a
+  time (Y:X bytes). **Keep the folder's descriptor open until the file is read:** closing it
+  right after `openfile` leaves no current file, and `readfile` fails with `$89`. [Xemu]
+- **The sector buffer at `$FFD6E00` is two buffers.** `$D689` bit 7 (BUFSEL) picks which one
+  that address shows: 0 (as it was after `readfile`) the floppy controller's, 1 the SD card's.
+  Set it for the DMA copy out of the buffer, and put it back. With it clear, every "sector"
+  read the same 512 bytes. [Xemu]
+- HYPPO can't write files: `mkfile`, `writefile`, `rmfile`, `rename`, `seekfile` and `mkdir`
+  are all documented as not implemented. Writing needs raw sector writes and your own FAT32
+  code (`megapc/src/fat_writer.asm`).
+
 ### Reading and writing files
 
 - SEQ names: `name,s,r` read, `@0:name,s,w` write (replace), `name,s,a` append. `,P,W` writes a PRG. KERNAL SAVE replaces a file with the `@:` prefix.
@@ -519,6 +539,13 @@ The multiplier's output is live: `MULTOUT` changes as soon as an input does. To 
 - **Is a drive there?** LISTEN + SECOND with `$FF`, check status bit 7, UNLISTEN, opening nothing (Todd Elliott, "Providing Multiple Drive Support via Machine Language"). Worth doing first: if CHKIN fails, CHRIN reads the keyboard and waits forever. The same article identifies drives with `M-R` of ROM addresses.
 - Internal floppy and managed D81s can be unit 8 or 10, and the second managed drive 9 or 11 (book, chapter 6), so a unit number doesn't say what kind of drive it is.
 - Refuse `* ? , : =` and quotes in names: the DOS reads them as patterns or commands.
+- **A framebuffer in the ROM area breaks every disk call.** The DOS (`$20000`), the interface
+  ROM (`$2C000`), BASIC and the KERNAL (`$3E000`) live in `$20000-$3FFFF`. A program that
+  unprotects it and draws there (MegaNet's 640x200 FCM screen) must put the ROM image back
+  (saved to attic at boot) before any KERNAL disk call, and its framebuffer afterwards:
+  `client-src/exit.asm` `disk_begin` / `disk_end`, about 384 KB of DMA with the display
+  blanked. Without it the first call to the drive (even the status channel or a LISTEN)
+  spins in the `$C000` ROM area for ever. [Xemu]
 - Block I/O: move up to 255 bytes with the whole CHKIN/CHRIN loop inside one KERNAL session, and close as soon as EOF arrives with an empty buffer. A recipe that worked: lfn 4, device 8, secondary 4, CHRIN into a page buffer, no zero-page pointer live across KERNAL calls, then copy each 256-byte chunk far.
 
 ---

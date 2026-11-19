@@ -24,6 +24,7 @@ python -m meganet --motd motd.txt   # load the message of the day from a text fi
 | `--host` | 0.0.0.0 | address to listen on |
 | `--db` | `data/meganet.db` | SQLite file, created (with its tables) on first run |
 | `--updates` | `updates/` | folder with `manifest.json` and the client files for forced updates; no manifest = updates off |
+| `--filelibs` | `filelibs/` | the file libraries' folders, one per library (made as needed) |
 | `--motd` | | text file to load into the message of the day at start (it replaces the saved one; see below) |
 
 Stop it with Ctrl+C.
@@ -70,7 +71,8 @@ Edit gadgets first, as the real client does).
 | `meganet/ui.py` | `Window` and the gadget classes (`Button`, `Label`, `TextBox`, `Password`, `ListBox`, `DropDown`, `TextView`, `TextArea` (Edit), `CheckBox`, `Radio`, `Progress`...), mirroring the client's GUI; `Menu` for the menu bar |
 | `meganet/session.py` | One per connection: reads frames, sign-on, sends events to windows and gadgets |
 | `meganet/server.py` | The listener and the shared state; `python -m meganet` runs `main()` here |
-| `meganet/db.py` | SQLite: users (PBKDF2-SHA256 password hashes), roles and their permissions, settings; stub tables for boards, messages and files |
+| `meganet/db.py` | SQLite: users (PBKDF2-SHA256 password hashes), roles and their permissions, settings, and every area's tables |
+| `meganet/filelib.py` | Areas > File Library: libraries, their files, downloads and uploads through the client's disks (`Storage`) |
 | `meganet/permissions.py` | The registry of permission keys, and the default roles |
 | `meganet/screens.py` | The menu bar (`MENU_TREE`), the welcome window with the message of the day, Who's Online, Help > Getting Around |
 | `meganet/chat.py` | Chat rooms: the room window, the room list, moderation |
@@ -199,7 +201,8 @@ for a button or a MENU_PICK for an item it was never given.
 | `chat.moderate` | Moderate chat | | | x | x |
 | `boards.moderate` | Moderate boards | | | x | x |
 | `news.post` | Post, edit and delete news bulletins (Areas > News) | | | | x |
-| `files.upload` | Upload files | | | | x |
+| `files.upload` | Upload files to the File Library | | | x | x |
+| `files.moderate` | Manage file libraries: libraries, file entries, access, approvals | | | x | x |
 | `admin.users` | Assign users to roles | | | | x |
 | `admin.roles` | Edit roles and their permissions | | | | x |
 | `admin.motd` | Edit the message of the day | | | | x |
@@ -455,6 +458,36 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
   opens News, **Later** closes it. It comes once per sign-on, and not after the Message of
   the Day editor's Preview.
 - Table: `news` (headline, body, author, posted, edited, editor).
+
+## File Library
+
+**Areas > File Library** (`meganet/filelib.py`; `files.download`, Member and up), listed like
+the chat rooms:
+- **Libraries** each have a title, a description and their own folder on the server:
+  `filelibs/` and the title in lower case with spaces as underscores (`C64 Games` ->
+  `filelibs/c64_games`). Renaming a library renames its folder; deleting one keeps the folder.
+- **The window** (41) lists the libraries the user may see, with the picked one's description
+  under the list. **Open** shows its files (name, type, size, date added, downloads) with the
+  picked file's description, **Download...**, **Upload...** (when allowed) and **Back**.
+- **Moderators** (`files.moderate`) get, under **Admin Tools**:
+  - **New... / Edit...** a library: title, description, and "Uploads show at once" (off:
+    uploads wait until a moderator **Approve**s them); **Delete**; **Access...** (per role:
+    See, Download, Upload; no row = all three).
+  - In a library, **Add... / Edit...** a file entry: Filename, Type (PRG SEQ USR D64 D81),
+    Description, Server Path (a file inside the library's folder; `..` and absolute paths are
+    refused). **Delete** (optionally the file on the server too). Bulk adding of files copied
+    into a folder is still to come.
+- **Downloads:** PRG, SEQ and USR go to drive 8-11 under a name (16 characters); D64 and D81
+  go to a folder of the SD card the user browses, under an 8.3 name. Nothing is ever
+  overwritten: a name that's taken is refused before anything is sent. A transfer window
+  shows a progress bar and the bytes so far, and Close when it's over.
+- **Uploads:** from drive 8-11 (its directory) or the SD card (its folders and images), with a
+  Filename and a Description. The file is stored as `filelibs/<folder>/<name>.<type>`. Held
+  uploads are seen only by moderators and the uploader (marked `?`); the moderators get a
+  toast, and the uploader gets one when it's approved.
+- **The client's disks** are reached through `S.LOCAL_DIR` / `SAVE_BEGIN` / `LOAD_FILE`
+  (`docs/DESIGN.md`, "File transfers and local storage"). `HELLO`'s caps say which the client
+  can do, and the server only offers those.
 
 ## Broadcast
 

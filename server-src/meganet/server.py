@@ -1,6 +1,7 @@
 """The MegaNet server: accepts MEGA65 clients over TCP and drives their screens.
 
     python -m meganet [--port 6400] [--db data/meganet.db] [--updates updates] [--motd FILE]
+                      [--filelibs filelibs]
 """
 
 import argparse
@@ -20,14 +21,22 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # server-s
 DEFAULT_PORT = 6400
 DEFAULT_DB = os.path.join(HERE, "data", "meganet.db")
 DEFAULT_UPDATES = os.path.join(HERE, "updates")
+DEFAULT_FILELIBS = os.path.join(HERE, "filelibs")     # the file libraries' folders (filelib.py)
 
 
 class Server:
     """Holds everything shared between sessions: the database, the chat lobby, the games."""
 
-    def __init__(self, db_path=DEFAULT_DB, updates_dir=DEFAULT_UPDATES, motd_file=None):
-        """`motd_file`: a text file to load into the message of the day (replacing it)."""
+    def __init__(self, db_path=DEFAULT_DB, updates_dir=DEFAULT_UPDATES, motd_file=None,
+                 filelibs_dir=None):
+        """`motd_file`: a text file to load into the message of the day (replacing it).
+        `filelibs_dir`: where the file libraries keep their files (default filelibs/; with a
+        :memory: database, as the tests use, a folder inside updates_dir instead)."""
         self.db = Database(db_path)
+        if filelibs_dir is None:
+            filelibs_dir = (os.path.join(updates_dir, "filelibs") if db_path == ":memory:"
+                            else DEFAULT_FILELIBS)
+        self.filelibs_dir = filelibs_dir
         if motd_file:
             lines = self.db.set_motd(read_motd_file(motd_file))
             logging.getLogger("meganet").info("message of the day: %d lines from %s",
@@ -104,13 +113,15 @@ def main(argv=None):
     ap.add_argument("--db", default=DEFAULT_DB, help="SQLite file (default data/meganet.db)")
     ap.add_argument("--updates", default=DEFAULT_UPDATES,
                     help="folder with manifest.json and the client files for forced updates")
+    ap.add_argument("--filelibs", default=DEFAULT_FILELIBS,
+                    help="folder for the file libraries (default filelibs/)")
     ap.add_argument("--motd", metavar="FILE",
                     help="text file to load as the message of the day (replaces the saved one)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
     async def run():
-        server = Server(args.db, args.updates, args.motd)
+        server = Server(args.db, args.updates, args.motd, args.filelibs)
         port = await server.start(args.host, args.port)
         logging.getLogger("meganet").info("MegaNet server listening on port %d (%d games)",
                                           port, len(server.games.classes))

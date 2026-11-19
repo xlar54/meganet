@@ -22,6 +22,11 @@ Status: early.
   screen, the menu bar (its own **MegaNet** menu first, with Exit back to BASIC), and the
   network and protocol code. In Xemu's replay build it signs on, uses the menus, opens the
   lobby, chats, and exits to BASIC.
+- **File Library:** libraries of files that the client downloads to drive 8-11 (PRG, SEQ,
+  USR) and uploads from them or from the SD card (D64, D81 images). The client works with
+  its disks through the KERNAL and HYPPO (`client-src/storage.asm`), putting the ROM back
+  for each KERNAL disk call, because the framebuffer lives where the ROM was. Writing images
+  to the SD card isn't done yet (it needs a FAT32 writer).
 - **The real Ethernet path hasn't been tried on a MEGA65 yet.**
 
 Build and run

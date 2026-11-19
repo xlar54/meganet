@@ -9,6 +9,8 @@ client-src/gen/
 __pycache__/
 *.pyc
 server-src/data/
+# the file libraries' files (uploads and what the sysop puts there)
+server-src/filelibs/
 .claude/settings.local.json
 # Personal notes, examples, non-build tools, temp data, the MEGA65 book: never published
 private/

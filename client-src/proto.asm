@@ -66,12 +66,17 @@ pf_len:         .word 0
 pf_n:           .word 0
 tx_n:           .word 0
 
-        .section bss
+; The frame buffers live in the RAM under the KERNAL ROM ($01 = $35 shows RAM there): they
+; only matter from one frame to the next, and nothing in them has to outlive a KERNAL call
+; (MEGA65_NOTES section 1 has $E000-$EFFF as data with the KERNAL kept, too).
+        .virtual $e000
 pf_buf:         .fill PF_MAX
 str_buf:        .fill 256
 str_buf2:       .fill 256
 tx_buf:         .fill 256                ; (indexed by X: frames up to 255 bytes)
-        .send
+proto_bufs_end:
+        .endv
+        .cerror proto_bufs_end > $f000, "the frame buffers overflow $E000-$EFFF"
 
 proto_reset:
         lda #0
@@ -213,11 +218,14 @@ _go:    txa
 _types: .byte S_HELLO, S_LOGIN_RESULT, S_WIN_OPEN, S_WIN_CLOSE, S_GADGET, S_SET_TEXT
         .byte S_SET_VALUE, S_FOCUS, S_ALERT, S_WIN_DONE, S_LIST_ROWS, S_APPEND, S_MENU
         .byte S_NOTIFY, S_SET_FLAGS, S_TOAST, S_DESK_ICON, S_BROADCAST, S_SOUND
+        .byte S_LOCAL_DIR, S_SAVE_BEGIN, S_FILE_DATA, S_FILE_END, S_LOAD_FILE, S_LOCAL_CANCEL
 _n = * - _types
 _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_text
         .word pm_set_value, pm_focus, pm_alert, pm_win_done, pm_list_rows, pm_append
         .word pm_menu, pm_notify, pm_set_flags, pm_toast, pm_desk_icon, pm_broadcast
         .word pm_sound
+        .word pm_local_dir, pm_save_begin, pm_file_data, pm_file_end, pm_load_file
+        .word pm_local_cancel
 
 ; u8 slot, u8 icon, str hint (the hint isn't shown yet). The server's slot n is the GUI's
 ; n + 1: the GUI's slot 0, rightmost, is the connectivity icon (link.asm)
@@ -798,7 +806,7 @@ proto_hello:
         lda #<CLIENT_BUILD
         ldx #>CLIENT_BUILD
         jsr tx_u16
-        lda #0                          ; caps
+        lda #CLIENT_CAPS                ; what storage.asm can do (protocol.Caps)
         jsr tx_u8
         lda #<s_client
         ldx #>s_client

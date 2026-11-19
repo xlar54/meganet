@@ -7,7 +7,8 @@ Fixed window ids (all below session.FIRST_DYNAMIC_WIN):
     11 = the Message of the Day editor (admin.py), 12 = Help > Getting Around,
     13-16 = Page Admin and the messages to the admins (pages.py),
     17-18 = Private Messages (mail.py), 19 = Reset Password (account.py),
-    22-25 = Message Boards (boards.py), 32-35 = Voting (polls.py), 36-38 = News (news.py),
+    22-25 = Message Boards (boards.py), 32-35 = Voting (polls.py), 36-40 = News (news.py),
+    41-48 = File Library (filelib.py),
     20 = the New User sign-up wizard (signup.py, before sign-on);
     private chats with an admin take dynamic ids
 
@@ -27,6 +28,7 @@ from .chat import Chat
 from .desktop import Desktop
 from .polls import Polls
 from .news import News
+from .filelib import FileLibrary
 from .im import IMs
 from .presence import Presence, STATUSES, LABELS
 from . import karma
@@ -72,7 +74,7 @@ MENU_TREE = [
         (M_MAIL, "Private Messages", perms.MAIL_USE, "open_mail"),
         (M_GALLERY, "Art Gallery", "gallery.view", "coming_soon"),
         (M_MUSIC, "SID Music", "music.listen", "coming_soon"),
-        (M_FILES, "File Library", "files.download", "coming_soon"),
+        (M_FILES, "File Library", "files.download", "open_files"),
         (M_GAMES, "Games", "games.play", "open_games"),
         (M_VOTING, "Voting", perms.POLLS_VOTE, "open_voting"),
     ]),
@@ -146,6 +148,7 @@ class Screens:
         self.desktop = Desktop(self)
         self.polls = Polls(server)
         self.news = News(server)
+        self.files = FileLibrary(server)
 
     def signed_on(self, session, welcome=True, after=None):
         """Everything a session gets on signing on. The desktop icons come first, under a
@@ -250,7 +253,7 @@ class Screens:
         return len(self.online())
 
     def open_files(self, session, item=None):
-        return session.alert("File Library", "Coming soon.")
+        return self.files.open(session)
 
     def status_changed(self, session):
         """Someone's status changed: their Status menu, and everyone's Who's Online."""
@@ -477,6 +480,7 @@ class Screens:
         self.boards.permissions_changed(session)
         self.polls.permissions_changed(session)
         self.news.permissions_changed(session)
+        self.files.permissions_changed(session)
         self.new_users_changed()
         self.im_rules_changed()
         self.desktop.refresh(session)
@@ -497,6 +501,7 @@ class Screens:
         self.boards.disconnected(session)
         self.polls.disconnected(session)
         self.news.disconnected(session)
+        self.files.disconnected(session)
         self.ims.disconnected(session)
         self.pages.disconnected(session)
         self.who.pop(session, None)

@@ -94,6 +94,8 @@ ADMIN_SETTINGS = register("admin.settings", "Admin: system settings")
 ADMIN_BROADCAST = register("admin.broadcast", "Admin: broadcast")
 POLLS_VOTE = register("polls.vote", "Vote in polls", like="chat.use")
 POLLS_MANAGE = register("polls.manage", "Set up polls", like="boards.moderate")
+FILES_MODERATE = register("files.moderate", "Manage file libraries", like="boards.moderate")
+FILES_DOWNLOAD, FILES_UPLOAD = "files.download", "files.upload"
 IM_SEND = "im.send"
 NEWS_READ, NEWS_POST = "news.read", "news.post"     # (Sysop only at first: Roles gives it out)
 
@@ -103,7 +105,8 @@ NEW_USER = ["chat.use", "games.play", "boards.read", "news.read", "gallery.view"
             "music.listen", MAIL_USE, POLLS_VOTE]
 MEMBER = NEW_USER + ["boards.post", "files.download", "im.send", "gallery.upload",
                      CHAT_ROOMS]
-MODERATOR = MEMBER + ["chat.moderate", "boards.moderate", ADMIN_PAGES, POLLS_MANAGE]
+MODERATOR = MEMBER + ["chat.moderate", "boards.moderate", ADMIN_PAGES, POLLS_MANAGE,
+                      FILES_UPLOAD, FILES_MODERATE]
 DEFAULT_ROLES = [
     ("New User", 10, NEW_USER),
     ("Member", 20, MEMBER),
