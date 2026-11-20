@@ -9,7 +9,9 @@ Fixed window ids (all below session.FIRST_DYNAMIC_WIN):
     17-18 = Private Messages (mail.py), 19 = Reset Password (account.py),
     22-25 = Message Boards (boards.py), 32-35 = Voting (polls.py), 36-40 = News (news.py),
     41-48 = File Library (filelib.py), 49 = Admin > Server Log (serverlog.py),
-    50 = chat's Delete Room confirmation,
+    50 = chat's Delete Room confirmation, 51-54 = a game's lobby and chess dialogs
+    (games/challenge.py, games/chess.py), 55 = "Loading Chess" (session.send_resource),
+    56 = Internet (internet/__init__.py), 57 = its Web Browser (internet/web.py),
     20 = the New User sign-up wizard (signup.py, before sign-on);
     private chats with an admin take dynamic ids
 
@@ -31,6 +33,7 @@ from .polls import Polls
 from .news import News
 from .filelib import FileLibrary
 from .serverlog import LogWindows
+from .internet import InternetArea
 from .im import IMs
 from .presence import Presence, STATUSES, LABELS
 from . import karma
@@ -56,6 +59,7 @@ M_ADMIN = MENU_LATE              # $E0: right of the client's Window menu
 M_BOARDS, M_CHAT, M_NEWS, M_FILES, M_GAMES = 0x10, 0x11, 0x12, 0x13, 0x14
 M_GALLERY, M_MUSIC, M_MAIL = 0x15, 0x16, 0x17
 M_VOTING = 0x18
+M_INTERNET = 0x19
 M_WHO, M_MEMBERS_SEP, M_SEARCH = 0x20, 0x21, 0x23     # $21: no longer used (was a separator)
 M_ACCOUNT = MENU_MY_ACCOUNT      # $22: sent by the client's own MegaNet > My Account
 M_ROLES, M_USERS, M_MOTD, M_ADMIN_MSGS = 0x30, 0x31, 0x32, 0x33
@@ -79,6 +83,7 @@ MENU_TREE = [
         (M_MUSIC, "SID Music", "music.listen", "coming_soon"),
         (M_FILES, "File Library", "files.download", "open_files"),
         (M_GAMES, "Games", "games.play", "open_games"),
+        (M_INTERNET, "Internet", perms.INTERNET_USE, "open_internet"),
         (M_VOTING, "Voting", perms.POLLS_VOTE, "open_voting"),
     ]),
     (M_MEMBERS, "Members", [
@@ -154,6 +159,7 @@ class Screens:
         self.news = News(server)
         self.files = FileLibrary(server)
         self.logs = LogWindows(server)
+        self.internet = InternetArea(server)
 
     def signed_on(self, session, welcome=True, after=None):
         """Everything a session gets on signing on. The desktop icons come first, under a
@@ -265,6 +271,9 @@ class Screens:
 
     def open_log(self, session, item=None):
         return self.logs.open(session)
+
+    def open_internet(self, session, item=None):
+        return self.internet.open(session)
 
     def status_changed(self, session):
         """Someone's status changed: their Status menu and dot, and everyone's Who's Online."""
@@ -497,6 +506,7 @@ class Screens:
         self.news.permissions_changed(session)
         self.files.permissions_changed(session)
         self.logs.permissions_changed(session)
+        self.internet.permissions_changed(session)
         self.new_users_changed()
         self.im_rules_changed()
         self.desktop.refresh(session)
@@ -519,6 +529,7 @@ class Screens:
         self.news.disconnected(session)
         self.files.disconnected(session)
         self.logs.disconnected(session)
+        self.internet.disconnected(session)
         self.ims.disconnected(session)
         self.pages.disconnected(session)
         self.who.pop(session, None)

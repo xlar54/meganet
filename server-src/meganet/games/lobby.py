@@ -12,7 +12,7 @@ import asyncio
 import logging
 
 from ..session import call
-from ..ui import Window, Button, Label, ListBox
+from ..ui import AreaWindow
 from .base import Player
 from .challenge import ChallengeLobby
 
@@ -38,18 +38,31 @@ class GameLobby:
     def open(self, session):
         if not session.can("games.play"):
             return session.alert("Games", "Your account can't play games.")
-        win = Window("Games", 120, 24, 400, 150, win_id=WIN_GAMES, on_close=self._closed)
-        win.add(Label(8, 4, 380, 10, "Pick a game and click Join."))
+        a = AreaWindow("Games", WIN_GAMES, on_close=self._closed)
+        win = a.win
         win.classes = [cls for cls in self.classes if self.may_play(session, cls)]
-        win.list = win.add(ListBox(8, 18, 380, 80, self.rows(win.classes),
-                                   on_select=self._selected))
-        win.status = win.add(Label(8, 102, 380, 10, ""))
-        win.add(Button(8, 118, 80, 16, "Join", on_click=self._join))
-        win.add(Button(96, 118, 88, 16, "Start Now", on_click=self._start_now))
-        win.add(Button(192, 118, 104, 16, "Leave Queue", on_click=self._unjoin))
+        win.head = a.heading("%d game%s to play." % (len(win.classes),
+                                                     "" if len(win.classes) == 1 else "s"))
+        win.list = a.list(self.rows(win.classes), self._selected, about=True)
+        win.about = a.about_view
+        win.join_b = a.command("Join", self._join, default=True)
+        win.start_b = a.command("Start Now", self._start_now)
+        win.leave_b = a.command("Leave Queue", self._unjoin)
+        win.status = a.status("Pick a game and Join." if win.classes else
+                              "There are no games for your account.")
+        self.buttons(session, win)
         win.show(session)
         self.windows[session] = win
         return None
+
+    def buttons(self, session, win):
+        """Join needs a game picked; Start Now and Leave Queue a queue you're in (not for a
+        game with a lobby: there you pick the opponent)."""
+        picked = win.list.selected is not None and win.list.selected < len(win.classes)
+        cls = self.waiting_for(session)
+        win.join_b.enable(picked)
+        win.start_b.enable(cls is not None and cls.min_players < cls.max_players)
+        win.leave_b.enable(cls is not None)
 
     def rows(self, classes):
         rows = []
@@ -58,12 +71,13 @@ class GameLobby:
                        else "%d-%d" % (cls.min_players, cls.max_players))
             waiting = (len(self.challenges[cls].seats) if cls in self.challenges
                        else len(self.queues[cls]))
-            rows.append("%s (%s players), %d waiting" % (cls.name, players, waiting))
+            rows.append("%-16s %s players, %d waiting" % (cls.name[:16], players, waiting))
         return rows
 
     def refresh(self):
-        for win in self.windows.values():
+        for session, win in self.windows.items():
             win.list.set_rows(self.rows(win.classes))
+            self.buttons(session, win)
 
     def permissions_changed(self, session):
         """The user's permissions changed: re-list the games, or close the window."""
@@ -81,12 +95,16 @@ class GameLobby:
             return
         win.classes = [c for c in self.classes if self.may_play(session, c)]
         win.list.set_rows(self.rows(win.classes))
+        self.buttons(session, win)
 
     def _selected(self, listbox, index, double):
-        if listbox.selected is not None:
-            listbox.window.status.set_text(listbox.window.classes[listbox.selected].description)
+        win = listbox.window
+        if listbox.selected is not None and listbox.selected < len(win.classes):
+            win.about.set_lines([win.classes[listbox.selected].description])
+        self.buttons(listbox.session, win)
         if double:
             return self._join(listbox)
+        return None
 
     def _closed(self, window):
         self.windows.pop(window.session, None)

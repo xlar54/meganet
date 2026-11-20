@@ -26,6 +26,7 @@ python -m meganet --motd motd.txt   # load the message of the day from a text fi
 | `--updates` | `updates/` | folder with `manifest.json` and the client files for forced updates; no manifest = updates off |
 | `--filelibs` | `filelibs/` | the file libraries' folders, one per library (made as needed) |
 | `--motd` | | text file to load into the message of the day at start (it replaces the saved one; see below) |
+| `--cafile` | | a PEM file of trusted certificates for the Web Browser's https, for a Python with no list of its own (an MSYS2 Python without its `ca-certificates` package) |
 
 Stop it with Ctrl+C.
 
@@ -73,6 +74,7 @@ Edit gadgets first, as the real client does).
 | `meganet/server.py` | The listener and the shared state; `python -m meganet` runs `main()` here |
 | `meganet/db.py` | SQLite: users (PBKDF2-SHA256 password hashes), roles and their permissions, settings, and every area's tables |
 | `meganet/filelib.py` | Areas > File Library: libraries, their files, downloads and uploads through the client's disks (`Storage`) |
+| `meganet/internet/` | Areas > Internet: services from outside, found at start-up like games (`base.Integration`); the text Web Browser (`web.py`, with `webtext.py`: fetching and HTML to text) |
 | `meganet/permissions.py` | The registry of permission keys, and the default roles |
 | `meganet/screens.py` | The menu bar (`MENU_TREE`), the welcome window with the message of the day, Who's Online, Help > Getting Around |
 | `meganet/chat.py` | Chat rooms: the room window, the room list, moderation |
@@ -327,6 +329,19 @@ Every window and button follows the same rules (Windows 95 conventions; `ui.add_
 - **Work windows** (Private Messages, Message Boards, a chat room, Chat Rooms, the User Editor,
   Roles, Who's Online, User Search, Messages from users, Games) **have no Close or Leave
   button.** The close box closes them (and leaves a chat room).
+- **Area windows look alike** (`ui.AreaWindow`): every Areas entry window (News, Message
+  Boards, Chat Rooms, Private Messages, File Library, Games, Internet, Voting), the views
+  inside them (a forum's topics, a topic's posts, a library's files) and a game's lobby:
+  - 560 x 160, centred; a heading line with a summary ("2 libraries.");
+  - the list on the left (400 wide; a column heading over it when its rows have columns),
+    and under it, when there is one, the picked item: its description, the message, the post;
+  - the commands in a column on the right (136 wide): the main one first, the default
+    (Open, Read, Go, Join, Vote, Reply..., Download...); then the others for everyone; then,
+    only for those allowed, **Admin Tools** under a line and a bold heading (pairs of short
+    commands side by side);
+  - a status line at the bottom: what to do next, or what just happened.
+  - A click on a row picks it; a double click does the main command.
+  `tests/test_layout.py` checks every area as the Sysop and as a New User (no Admin Tools).
 - **Dialogs end in a row of command buttons:** the command first, then Cancel (`OK  Cancel`,
   `Send  Cancel`, `Yes  No`).
   - Message boxes (a line or two of text, alerts, "Delete X?", Exit) centre the row under the
@@ -347,7 +362,7 @@ Every window and button follows the same rules (Windows 95 conventions; `ui.add_
     the like are greyed until something is picked in the list.
   - Mark as Unread is greyed until the message is read, and Unban... until someone is banned.
   - Kick, Mute, Ban and Karma +/- are greyed for yourself and for people you may not act on.
-  - Delete Room is greyed for the Lobby and for member rooms.
+  - Chat Rooms' Delete is greyed for the Lobby and for member rooms.
   - How it works: `Gadget.enable(on)` sends `S.SET_FLAGS` (`$1D`: win, gid, flags) when it
     changes. The client draws a disabled button etched and ignores clicks on it, and the
     server ignores clicks on it too. The handlers still check, since a client can send any
@@ -439,8 +454,9 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
     its votes and its share, and the total. It follows new votes while it's open.
 - **After the end date** nobody can vote. The choices list shows each one's share and
   Results shows the graph.
-- **Moderators and up** (`polls.manage`) also get **New Poll...** and **Delete**.
-  - New Poll... asks for a question (up to 60 characters), a description in a text area (up
+- **Moderators and up** (`polls.manage`) also get **New...** and **Delete** under Admin
+  Tools.
+  - New... asks for a question (up to 60 characters), a description in a text area (up
     to 600 characters), 2-6 choices (up to 30 characters) and an end date as YYYY-MM-DD,
     blank for none. Voting stops at the end of that day.
   - Delete asks first, and takes the poll's votes with it.
@@ -451,13 +467,13 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
 **Areas > News** (`meganet/news.py`; `news.read`, everyone from New User up):
 - **The News window** (36) lists the bulletins, newest first: "*" if one was posted or edited
   since your previous sign-on, then the day and the headline.
-- **Clicking one** opens it to read (window 40, modal): the headline and who posted it (and who
-  edited it last) centred at the top, then the text in a view exactly as wide as the
-  composer's text area, so every line reads as it was written; OK closes it. An open one
-  follows edits, and closes if the bulletin is deleted.
+- **Read** (or a double-click) opens the picked one to read (window 40, modal): the headline
+  and who posted it (and who edited it last) centred at the top, then the text in a view
+  exactly as wide as the composer's text area, so every line reads as it was written; OK
+  closes it. An open one follows edits, and closes if the bulletin is deleted.
 - **Holders of `news.post`** (only the Sysop in a new database; give it to any role in
-  Admin > Roles) also get **New...**, **Edit...** and **Delete** along the bottom; Edit and
-  Delete act on the bulletin last clicked.
+  Admin > Roles) also get **New...**, **Edit...** and **Delete** under Admin Tools; Edit and
+  Delete act on the picked bulletin.
   - New... and Edit... open the message composer (`compose.py`, window 37), with a Headline
     box and the same text area as the boards and private messages. Edit starts with the
     bulletin's headline and text, and the button says Save rather than Post.
@@ -622,8 +638,11 @@ a first sign-on everything is new), so it is the same for the whole session.
     double-click).
   - **A forum:** its topics, the most recently posted in first ("*" = new posts in it,
     subject, who started it, replies, last post); Read, New Topic, Back.
-  - **A topic:** its posts on the left ("*" = new, author, date), the picked one on the right
-    (Subject, From, Date, the text). It opens at the first new post. Reply, Back.
+  - **A topic:** its posts ("*" = new, author, date), the picked one under them (Subject,
+    From, Date, the text). It opens at the first new post. Reply, Back. A drop-down on the
+    column heading's row (`AreaWindow.list_option`, its right edge on the list's) puts them
+    **By Date** (oldest first, the default) or **Newest** first; the picked post stays
+    picked, and the order is kept for the rest of the session.
 - **Writing** (window 23, `compose.py`): New Topic asks for a subject and the text, Reply
   for the text. You need `boards.post`, the forum's Post access for your role, and the forum
   not locked. After Send the window shows the topic at your post. Everyone with the boards
@@ -673,8 +692,9 @@ Lobby). You are in one room at a time: joining another leaves the one you were i
   - In the room: Kick, Mute / Unmute, Ban, Unban... (window 27), Karma + / Karma - (for the
     person picked; picking someone shows their Karma Points), and Topic (sets the line typed
     as the topic; typing nothing clears it).
-  - In Chat Rooms: New Room (permanent) and Delete Room (asks first, window 50, saying how
-    many are in it; then everyone in it is told and put out).
+  - In Chat Rooms, under Admin Tools: New (a permanent room, named in the Name box) and
+    Delete (asks first, window 50, saying how many are in it; then everyone in it is told
+    and put out). Everyone gets Make A Room: Name, Private and Create.
   - Kick: out of the room. Mute: no talking there until unmuted or they leave. Ban: out, and
     kept out until unbanned or the server restarts (a member room's bans go with it).
   - Moderators can't act on other moderators, unless they are an admin (`admin.users`) acting
@@ -764,6 +784,35 @@ Fixed screens use window ids below `$40` (`screens.py` lists them: 1-19 are take
 session picks a free id from `$40` up. Keep windows below the menu bar: `y >= 11` and
 `y + h + 18 <= 200`, so the client area is at most 632x171 (`protocol.window_fits`).
 `Window.centred("Title", w, h, win_id=...)` places a window in the middle of that area.
+
+## Internet
+
+**Areas > Internet** (`internet.use`: Members and up at first) opens window 56, a list of
+services from outside MegaNet; pick one and Open (or double-click). Each is a module in
+`meganet/internet/` with an `Integration` subclass (`name`, `description`, `permission`,
+`open(session)`, `disconnected`, `permissions_changed`), found at start-up; give it its own
+key with `permissions.register(..., like="internet.use")`.
+
+**Web Browser** (`internet.web`; `internet/web.py`, window 57, 624x166): web pages as text.
+- Type an address (`https://` is added) or some words (a DuckDuckGo search: its result
+  links are unwrapped to the real sites), then Go or RETURN. Back goes to the page before
+  (kept, not fetched again; 20 of them).
+- The page: its title, the text on the left (wrapped to the view, 120 lines a page: Prev
+  Page / Next Page), the links on the right: link n is [n] in the text; a click opens it.
+  The text view opens at the top (`TextView.set_lines(top=True)`: SET_VALUE scrolls it).
+- What it does with HTML (`webtext.py`): scripts, styles, `<nav>`, and elements that are
+  `hidden`, `aria-hidden` or `role="navigation"` are left out; with a `<main>`, only it is
+  shown. Headings h1/h2 in capitals, lists with `*` / `1.`, `<pre>` kept, pictures as their
+  `[alt text]`, text boxes as `[______]`. Everything becomes plain ASCII (curly quotes
+  straight, accents off).
+- Pages load in the background (a task and a thread): "Loading ..." shows, the session can
+  do anything else, and another Go replaces the load. 15 s at most, 1 MB at most; only
+  `text/html` and `text/plain`.
+- **Safety:** only http and https, and never a host with a private, loopback, link-local or
+  multicast address, redirects included, so the server can't be used to reach its own
+  network. Every URL goes in the Server Log (area `internet`). The server's own HTTPS is
+  verified with Python's certificate list, or `--cafile`.
+- Not yet: forms (only the address box searches), cookies and sign-ins, pictures.
 
 ## Adding a game
 

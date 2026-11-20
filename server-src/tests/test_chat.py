@@ -48,7 +48,7 @@ class ChatBase(PagesBase):
         if private:
             c.select(WIN_ROOMS, gadget_of(w, Kind.CHECKBOX), 1)
         c.windows.pop(WIN_ROOM, None)
-        c.click_text(WIN_ROOMS, "Create Room")
+        c.click_text(WIN_ROOMS, "Create")
         if title:
             return await c.wait_window(title)
         return None
@@ -79,7 +79,7 @@ class RoomsTest(ChatBase):
 
         # bob (New User) can't make rooms
         await self.rooms(bob)
-        self.assertFalse(has_text(bob, WIN_ROOMS, "New Room"), "moderators only")
+        self.assertFalse(has_text(bob, WIN_ROOMS, "New"), "moderators only")
         await self.go_to(bob, "Bobs")
         await bob.wait_for(lambda: status_of(bob.windows[WIN_ROOMS]) ==
                            "There is no room called Bobs, and you can't make rooms.", "refused")
@@ -99,11 +99,11 @@ class RoomsTest(ChatBase):
                              "listed for moderators")
         row = next(r for r in self.room_rows(alice) if r.startswith("Secret"))
         self.assertTrue(row.endswith(" private"), row)       # (one word: it fits the list)
-        # Create Room greys itself while the name box is empty (the client does it as you
-        # type), under a line and a bold "Create A Room"
+        # Create greys itself while the name box is empty (the client does it as you type),
+        # under a line and a bold "Make A Room"
         w = alice.windows[WIN_ROOMS]
-        go = next(g for g in w.gadgets.values() if g["text"] == "Create Room")
-        head = next(g for g in w.gadgets.values() if g["text"] == "Create A Room")
+        go = next(g for g in w.gadgets.values() if g["text"] == "Create")
+        head = next(g for g in w.gadgets.values() if g["text"] == "Make A Room")
         self.assertTrue(head["flags"] & GFlag.BOLD)
         self.assertTrue(any(g["kind"] == Kind.GROUP for g in w.gadgets.values()), "the line")
         self.assertTrue(go["flags"] & GFlag.NEEDTEXT and go["flags"] & GFlag.DISABLED)
@@ -129,7 +129,7 @@ class RoomsTest(ChatBase):
         await self.rooms(alice)
         w = alice.windows[WIN_ROOMS]
         alice.value(WIN_ROOMS, gadget_of(w, Kind.TEXTBOX), "MEGA65 Talk")
-        alice.click_text(WIN_ROOMS, "New Room")
+        alice.click_text(WIN_ROOMS, "New")
         await alice.wait_for(lambda: status_of(w) == "Made MEGA65 Talk.", "made")
         self.assertIn("MEGA65 Talk", [r["name"] for r in d.chat_rooms()])
         await self.enter(self.bob)
@@ -148,7 +148,7 @@ class RoomsTest(ChatBase):
         rows = self.room_rows(alice)
         alice.select(WIN_ROOMS, gadget_of(alice.windows[WIN_ROOMS], Kind.LISTBOX),
                      next(i for i, r in enumerate(rows) if r.startswith("MEGA65 Talk")))
-        alice.click_text(WIN_ROOMS, "Delete Room")
+        alice.click_text(WIN_ROOMS, "Delete")
         from meganet.chat import WIN_DELETE_ROOM
         await alice.wait_for(lambda: has_text(alice, WIN_DELETE_ROOM, "Delete"), "asked")
         self.assertIn(WIN_ROOM, self.bob.windows, "not before the answer")
@@ -159,7 +159,7 @@ class RoomsTest(ChatBase):
         rows = self.room_rows(alice)
         alice.select(WIN_ROOMS, gadget_of(alice.windows[WIN_ROOMS], Kind.LISTBOX),
                      next(i for i, r in enumerate(rows) if r.startswith("Lobby")))
-        await alice.wait_for(lambda: not alice.enabled(WIN_ROOMS, "Delete Room") and
+        await alice.wait_for(lambda: not alice.enabled(WIN_ROOMS, "Delete") and
                              alice.enabled(WIN_ROOMS, "Go"), "the Lobby picked: no Delete")
         self.server.screens.chat.lists[self.session("alice")]._delete(None)   # past the UI
         await alice.wait_for(lambda: status_of(alice.windows[WIN_ROOMS]) == "The Lobby stays.",

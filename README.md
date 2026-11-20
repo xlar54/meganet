@@ -29,6 +29,10 @@ Status: early.
   the SD card through the client's own FAT32 writer (`client-src/sdwrite.asm`: new files
   only, contiguous). It is tested in Xemu on scratch card images, **not yet on a real card:
   back your card up before trying it.**
+- **Internet:** Areas > Internet lists services from outside MegaNet. The first is a text
+  **Web Browser**: the server fetches the page and turns it into text with numbered links
+  (no JavaScript, no pictures); words in the address box search the web. It never opens
+  addresses on the server's own network.
 - **Server Log:** everything the server logs (connections, sign-ons and failed ones, what
   people do in each area, refusals, crashes with their tracebacks) is kept in the database
   as well, for admins to read in Admin > Server Log... with filters by area, level, user and

@@ -90,6 +90,18 @@
       Tic-Tac-Toe could use the lobby too; spectators; saving finished games (PGN)
 - [ ] Chess: not tried in Xemu yet: a capture, castling, the promotion dialog, Offer
       Draw / Resign / Rematch / Lobby (all covered by the server tests with fake clients)
+- [x] Areas > Internet (2026-11-19): integrations found at start-up (internet/), and a
+      text Web Browser (internet.web): pages as text with numbered links, search from the
+      address box, Back, pages of 120 lines, private addresses refused, URLs in the Server
+      Log. Tried in Xemu: mega65.org, a link, a DuckDuckGo search
+- [ ] Web Browser: forms (GET and POST: text boxes, check boxes, Submit), cookies per user
+      (sign-ins), a Home / bookmarks list, Find on the page, downloading a file into the
+      File Library or to the client's disks, reading a site's own "reader" markup better
+      (Wikipedia's language list comes first)
+- [ ] Internet: a picture viewer for the web (a headless browser's screenshots in an attic
+      viewport, links as hot spots, clicks sent back), RSS feeds into News, Gopher / Gemini
+- [ ] This machine's MSYS2 Python has no certificate list: the bridge tests export the
+      Windows roots to private/temp/winroots.pem and pass --cafile
 - [ ] Resources: the client could say in HELLO which slots it still holds (attic survives
       a reset), so a reconnect skips the 14 KB of chess tiles
 - [x] Areas menu: News, Message Boards, Chat Rooms, Art Gallery, SID Music, File Library,

@@ -12,11 +12,11 @@ A game may set `needs_caps` (protocol.Caps) for what its window needs from the c
 """
 
 from ..protocol import GFlag, WFlag
-from ..ui import Window, Button, Label, ListBox, add_buttons, MARGIN
+from ..ui import AreaWindow, Window, Label, add_buttons, MARGIN
 
 WIN_GAME_LOBBY = 51
 WIN_CHALLENGED = 52
-LOBBY_W, LOBBY_H = 320, 150
+COLUMNS = "%-12s%s" % ("Player", "State")          # (the rows: refresh())
 
 
 class Seat:
@@ -62,19 +62,16 @@ class ChallengeLobby:
         return None
 
     def _window(self, seat):
-        win = Window(self.title, 160, 24, LOBBY_W, LOBBY_H, win_id=WIN_GAME_LOBBY,
-                     on_close=lambda w: self.leave(seat.session))
-        win.add(Label(MARGIN, 4, LOBBY_W - 2 * MARGIN, 10,
-                      "Pick an opponent, then Challenge..."))
-        seat.list = win.add(ListBox(MARGIN, 16, LOBBY_W - 2 * MARGIN, 88,
-                                    on_select=lambda g, i, d: self._picked(seat, i, d)))
-        seat.status = win.add(Label(MARGIN, 108, LOBBY_W - 2 * MARGIN, 10, ""))
-        seat.challenge_b, seat.cancel_b = add_buttons(win, [
-            ("Challenge...", lambda b: self.challenge(seat), GFlag.DEFAULT),
-            ("Cancel", lambda b: self.withdraw(seat), 0)])
-        seat.win = win
+        a = AreaWindow(self.title, WIN_GAME_LOBBY, on_close=lambda w: self.leave(seat.session))
+        seat.head = a.heading("Waiting for a game of %s:" % self.cls.name)
+        seat.list = a.list([], lambda g, i, d: self._picked(seat, i, d), columns=COLUMNS)
+        seat.challenge_b = a.command("Challenge...", lambda b: self.challenge(seat),
+                                     default=True)
+        seat.cancel_b = a.command("Cancel Challenge", lambda b: self.withdraw(seat))
+        seat.status = a.status("")
+        seat.win = a.win
         self._buttons(seat)
-        win.show(seat.session)
+        a.win.show(seat.session)
 
     def leave(self, session, why=None):
         """Out of the lobby (its window closed, signed off, or into a game): every
@@ -150,8 +147,9 @@ class ChallengeLobby:
         seat.cancel_b.enable(seat.out is not None)
         if seat.out is not None:
             seat.status.set_text("Waiting for %s to answer..." % seat.out.session.user)
-        elif seat.status.text.startswith("Waiting for"):
-            seat.status.set_text("")
+        elif not seat.status.text or seat.status.text.startswith("Waiting for"):
+            seat.status.set_text("Pick an opponent and Challenge them." if len(self.seats) > 1
+                                 else "Nobody else is waiting yet.")
 
     # ---- challenges ----
 

@@ -100,7 +100,8 @@ class S(IntEnum):
     WIN_CLOSE = 0x11     # u8 win
     GADGET = 0x12        # u8 win, u8 gid, u8 kind, u16 x, u8 y, u16 w, u8 h, u8 flags, str text
     SET_TEXT = 0x13      # u8 win, u8 gid, str text
-    SET_VALUE = 0x14     # u8 win, u8 gid, u16 value  (checkbox state, list selection, progress)
+    SET_VALUE = 0x14     # u8 win, u8 gid, u16 value  (checkbox state, list selection, progress;
+                         # a text view's scroll: the wrapped line at its top)
     LIST_ROWS = 0x15     # u8 win, u8 gid, u16 total, u16 first, u8 n, n x str
     APPEND = 0x16        # u8 win, u8 gid, str line  (chat, terminal-style views)
     FOCUS = 0x17         # u8 win, u8 gid

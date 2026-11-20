@@ -20,17 +20,16 @@ from . import permissions as perms
 from .compose import refuse
 from .protocol import WFlag, GFlag, clean_text
 from .ui import (add_buttons, closer, Window, Button, Label, TextBox, ListBox, Progress,
-                 TextArea, TextView)
+                 TextArea, TextView, AreaWindow, AREA_TOP, AREA_LIST_W, AREA_BOTTOM)
 
 VOTE, MANAGE = perms.POLLS_VOTE, perms.POLLS_MANAGE
 WIN_VOTING, WIN_RESULTS, WIN_NEW_POLL, WIN_DELETE_POLL = 32, 33, 34, 35
 TITLE = "Voting"
-W, H = 560, 170
 QUESTION_MAX = 60
 DESCRIPTION_MAX = 600            # characters of background, over a few lines
 CHOICE_MAX = 30
 CHOICES_MAX = 6
-QUESTION_COLS = 46               # of the question in the list (then its state)
+QUESTION_COLS = 35               # of the question in the list (then its state: 11 at most)
 
 
 def ended(poll, now=None):
@@ -181,6 +180,14 @@ class VotingWindow:
             return "voted"
         return "until %s" % end_day(poll) if poll["ends"] is not None else "open"
 
+    def heading(self):
+        polls = self.db.polls()
+        if not polls:
+            return "No polls yet."
+        n_open = sum(1 for p in polls if not ended(p))
+        return "%d poll%s, %d open for voting." % (len(polls), "" if len(polls) == 1 else "s",
+                                                   n_open)
+
     def poll_rows(self):
         polls = self.db.polls()
         self.ids = [p["id"] for p in polls]
@@ -213,7 +220,7 @@ class VotingWindow:
         poll = self.db.poll(self.poll_id) if self.poll_id in self.ids else None
         if poll is None:
             return "Pick a poll." if self.ids else (
-                "No polls yet." + (" New Poll... sets one up." if self.manager else ""))
+                "No polls yet." + (" New... sets one up." if self.manager else ""))
         if ended(poll):
             return "Voting has ended: these are the results."
         if self.db.poll_vote_of(poll["id"], self.session.user_id) is not None:
@@ -224,22 +231,25 @@ class VotingWindow:
 
     def show(self, status=None):
         self.polls.windows[self.session] = self
-        win = Window.centred(TITLE, W, H, flags=WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_VOTING,
-                             on_close=self._closed)
-        win.add(Label(8, 2, 544, 10, "%-*s %s" % (QUESTION_COLS, "Poll", "State")))
-        self.list = win.add(ListBox(8, 14, 544, 44, self.poll_rows(), on_select=self._pick))
-        self.about = win.add(TextView(8, 62, 544, 32, self.description()))
-        win.add(Label(8, 98, 360, 10, "Choices:"))
-        self.choices = win.add(ListBox(8, 110, 360, 46, self.choice_rows(),
-                                       on_select=self._pick_choice))
-        self.vote_b = win.add(Button(376, 110, 72, 16, "Vote", GFlag.DEFAULT,
-                                     on_click=self._vote))
-        self.results_b = win.add(Button(376, 130, 72, 16, "Results", on_click=self._results))
+        a = AreaWindow(TITLE, WIN_VOTING, on_close=self._closed)
+        win = a.win
+        rows = self.poll_rows()
+        self.head = a.heading(self.heading())
+        # the left side: the polls, the picked one's background, its choices
+        win.add(Label(8, AREA_TOP, AREA_LIST_W, 10, "%-*s %s" % (QUESTION_COLS, "Poll",
+                                                                 "State")))
+        self.list = win.add(ListBox(8, AREA_TOP + 12, AREA_LIST_W, 38, rows,
+                                    on_select=self._pick))
+        self.about = win.add(TextView(8, 68, AREA_LIST_W, 28, self.description()))
+        self.choices = win.add(ListBox(8, 100, AREA_LIST_W, AREA_BOTTOM - 100,
+                                       self.choice_rows(), on_select=self._pick_choice))
+        self.vote_b = a.command("Vote", self._vote, default=True)
+        self.results_b = a.command("Results", self._results)
         self.new_b = self.delete_b = None
         if self.manager:
-            self.new_b = win.add(Button(456, 110, 96, 16, "New Poll...", on_click=self._new))
-            self.delete_b = win.add(Button(456, 130, 96, 16, "Delete", on_click=self._delete))
-        self.status = win.add(Label(8, 158, 544, 10, status or self.hint()))
+            a.section("Admin Tools")
+            self.new_b, self.delete_b = a.pair(("New...", self._new), ("Delete", self._delete))
+        self.status = a.status(status or self.hint())
         self.win = win
         self._select()
         self.buttons()
@@ -272,6 +282,7 @@ class VotingWindow:
         if self.win is None or not self.win.shown:
             return
         self.list.set_rows(self.poll_rows())
+        self.head.set_text(self.heading())
         if self.poll_id not in self.ids:
             self.poll_id = self.choice_id = None
         self.choices.set_rows(self.choice_rows())

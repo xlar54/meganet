@@ -2859,7 +2859,23 @@ gui_set_value:
         jsr l_gg_find
         bcs _no
         lda gg_kind,x
-        cmp #GK_LIST
+        cmp #GK_VIEW                    ; a text view: scrolled to wrapped line gp_x (0 = the
+        bne +                           ; top; past the end: the last page)
+        ldy gg_big,x
+        cpy #$ff
+        beq _no
+        jsr l_gb_vlgad
+        jsr l_gb_maxtop
+        sta l_gb_t
+        lda gp_x+1
+        bne _vmax
+        lda gp_x
+        cmp l_gb_t
+        bcc _vset
+_vmax:  lda l_gb_t
+_vset:  sta gb_top,y
+        jmp l_gg_later
++       cmp #GK_LIST
         beq +
         cmp #GK_DROP
         bne _val

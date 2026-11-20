@@ -81,7 +81,7 @@ class SignOnTest(ServerTest):
         self.assertEqual(c.menus_received, 1, "the menu bar came with the sign-on")
         self.assertEqual(c.menu_items("Areas"), ["News", "Message Boards", "Chat Rooms",
                                                  "Private Messages", "Art Gallery", "SID Music",
-                                                 "File Library", "Games", "Voting"])
+                                                 "File Library", "Games", "Internet", "Voting"])
         self.assertLess(c.messages.index(S.MENU), c.messages.index(S.WIN_OPEN))
         await c.close()
 

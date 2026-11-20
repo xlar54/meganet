@@ -88,6 +88,136 @@ def confirm(session, title, lines, action, win_id, command="Delete"):
     return win
 
 
+# ---- area windows: every Areas entry window, and the views inside an area, look alike ----
+#
+#   +------------------------------------------------------------------+
+#   | heading: a summary ("3 forums, 2 new since your last sign-on.")  |
+#   | +--------------------------------------+  [ Main command    ]    |
+#   | | the list (a column heading over it   |  [ other commands  ]    |
+#   | |  when it has columns)                |  ------------------     |
+#   | |                                      |     Admin Tools         |
+#   | +--------------------------------------+  [ New ] [ Edit  ]      |
+#   | +--------------------------------------+  [ Del ] [ ...   ]      |
+#   | | the picked item: description, text   |                         |
+#   | +--------------------------------------+                         |
+#   | status: what to do next, or what just happened                    |
+#   +------------------------------------------------------------------+
+#
+# 560 x 160, centred. The main command is the default button (RETURN), at the top of the
+# command column; commands for everyone come under it; then, only for those allowed,
+# "Admin Tools" under a line. Commands that need something picked are greyed until it is.
+AREA_W, AREA_H = 560, 160
+AREA_LIST_W = 400                 # the left side: the list and what's under it
+AREA_COL_X, AREA_COL_W = 416, 136 # the command column
+AREA_HALF_W = 66                  # two commands side by side in it
+AREA_TOP = 14                     # the list's top (AREA_TOP + 12 under a column heading)
+AREA_BOTTOM = 144                 # the left side's bottom (the status line is under it)
+
+
+class AreaWindow:
+    """Builds an area window in the layout above (an area module keeps the gadgets):
+
+        a = AreaWindow(TITLE, WIN_X, on_close=...)
+        head = a.heading("2 libraries.")
+        lst = a.list(rows, on_select, about=True)       # about: a TextView under the list
+        a.command("Open", on_click, default=True)
+        if moderator:
+            a.section("Admin Tools")
+            a.pair(("New...", new), ("Edit...", edit))
+        status = a.status("Pick a library and Open it.")
+        a.win.show(session)
+    """
+
+    def __init__(self, title, win_id, on_close=None, h=AREA_H):
+        self.win = Window.centred(title, AREA_W, h, flags=WFlag.CLOSE | WFlag.MOVABLE,
+                                  win_id=win_id, on_close=on_close)
+        self.h = h
+        self.col_y = AREA_TOP
+        self.about_view = None
+
+    def heading(self, text):
+        return self.win.add(Label(MARGIN, 2, AREA_W - 2 * MARGIN, 10, text))
+
+    def list(self, rows, on_select, columns=None, about=False, about_h=42, about_lines=(),
+             columns_w=AREA_LIST_W):
+        """The list on the left: under a column heading if `columns` is given (`columns_w`
+        wide: less leaves room on its row, for list_option()), and with a TextView (`about_h`
+        high) under it for the picked item if `about`."""
+        top = AREA_TOP
+        if columns is not None:
+            self.win.add(Label(MARGIN, AREA_TOP, columns_w, 10, columns))
+            top += 12
+        bottom = AREA_BOTTOM - (about_h + 4 if about else 0)
+        lst = self.win.add(ListBox(MARGIN, top, AREA_LIST_W, bottom - top, rows,
+                                   on_select=on_select))
+        if about:
+            self.about_view = self.win.add(TextView(MARGIN, bottom + 4, AREA_LIST_W, about_h,
+                                                    about_lines))
+        return lst
+
+    def list_option(self, rows, selected, on_select, w=80):
+        """A drop-down on the column heading's row, its right edge on the list's (a sort
+        order, say). Give list() columns_w <= AREA_LIST_W - w - 8 so they don't meet."""
+        return self.win.add(DropDown(MARGIN + AREA_LIST_W - w, AREA_TOP - 2, w, rows,
+                                     selected=selected, on_select=on_select))
+
+    def command(self, text, on_click, default=False, needs=None):
+        """A command the whole column wide, under the last."""
+        b = self.win.add(Button(AREA_COL_X, self.col_y, AREA_COL_W, BUTTON_H, text,
+                                GFlag.DEFAULT if default else GFlag.NONE, needs=needs,
+                                on_click=on_click))
+        self.col_y += BUTTON_H + 4
+        return b
+
+    def pair(self, left, right=None):
+        """Two commands side by side: (text, on_click) or (text, on_click, needs=box)."""
+        out = []
+        for i, spec in enumerate((left, right)):
+            if spec is None:
+                continue
+            text, fn = spec[0], spec[1]           # (one: the left half)
+            needs = spec[2] if len(spec) > 2 else None
+            out.append(self.win.add(Button(AREA_COL_X + i * (AREA_HALF_W + 4), self.col_y,
+                                           AREA_HALF_W, BUTTON_H, text, needs=needs,
+                                           on_click=fn)))
+        self.col_y += BUTTON_H + 4
+        return out if right is not None else out[0]
+
+    def section(self, title="Admin Tools"):
+        """A line across the column and a bold heading: the commands under it are apart
+        from the ones above (Admin Tools: only for those allowed)."""
+        self.win.add(Group(AREA_COL_X, self.col_y + 2, AREA_COL_W, 2))
+        self.win.add(Label(AREA_COL_X, self.col_y + 8, AREA_COL_W, 10, title,
+                           GFlag.BOLD | GFlag.CENTRE))
+        self.col_y += 22
+
+    def field(self, label, text="", label_w=48):
+        """A label and a text box on one row of the column; returns the box."""
+        self.win.add(Label(AREA_COL_X, self.col_y + 2, label_w, 10, label))
+        box = self.win.add(TextBox(AREA_COL_X + label_w, self.col_y,
+                                   AREA_COL_W - label_w, 12, text))
+        self.col_y += 16
+        return box
+
+    def check(self, text):
+        box = self.win.add(CheckBox(AREA_COL_X, self.col_y, AREA_COL_W, 12, text))
+        self.col_y += 16
+        return box
+
+    def check_and_command(self, text, command, on_click, needs=None, command_w=58):
+        """A check box and a short command on one row: (the box, the button)."""
+        box = self.win.add(CheckBox(AREA_COL_X, self.col_y + 2, AREA_COL_W - command_w - 4,
+                                    12, text))
+        b = self.win.add(Button(AREA_COL_X + AREA_COL_W - command_w, self.col_y, command_w,
+                                BUTTON_H, command, needs=needs, on_click=on_click))
+        self.col_y += BUTTON_H + 4
+        return box, b
+
+    def status(self, text=""):
+        assert self.col_y <= self.h - 12, "the command column runs into the status line"
+        return self.win.add(Label(MARGIN, self.h - 12, AREA_W - 2 * MARGIN, 10, text))
+
+
 class Gadget:
     """One gadget. Subclasses set `kind` and add the behaviour of that kind."""
 
@@ -317,14 +447,23 @@ class TextView(Gadget):
         del self.lines[:-self.KEEP_LINES]
         self._append(line)
 
-    def set_lines(self, lines):
+    def set_lines(self, lines, top=False):
         """Replace what it shows, in place: SET_TEXT "" empties it on the client, then an
-        APPEND a line (the client redraws it once, at its next frame)."""
+        APPEND a line (the client redraws it once, at its next frame). It follows the new
+        lines down, as a chat does; top=True scrolls it back to the first line after
+        (SET_VALUE 0: a page to read from the start)."""
         self.lines = list(lines)[-self.KEEP_LINES:]
         if self.shown:
             self._send(S.SET_TEXT, Writer().u8(self.window.win_id).u8(self.gid).str(""))
             for line in self.lines:
                 self._append(line)
+            if top:
+                self.scroll_to(0)
+
+    def scroll_to(self, line):
+        """Scroll the client's view to wrapped line `line` (0 = the top; past the end, the
+        last lines)."""
+        self.set_value(line)
 
     def _append(self, line):
         self._send(S.APPEND, Writer().u8(self.window.win_id).u8(self.gid).str(line))

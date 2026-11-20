@@ -32,7 +32,7 @@ from . import karma
 from . import permissions as perms
 from .protocol import WFlag, GFlag, clean_text, CLIENT_MAX_H
 from .ui import (add_buttons, closer, confirm, Window, Button, Label, TextBox, ListBox,
-                 TextView, CheckBox, DropDown, Group)
+                 TextView, CheckBox, DropDown, Group, AreaWindow)
 
 USE, MODERATE, ROOMS = "chat.use", "chat.moderate", perms.CHAT_ROOMS
 WIN_ROOM = 2
@@ -524,37 +524,37 @@ class RoomList:
         out = []
         for r in self.rooms:
             kind = "private" if r.private else "" if r.permanent else "member"   # (one word fits)
-            out.append(("%-18s %2d %s" % (r.name[:18], len(r.windows), kind)).rstrip())
+            out.append(("%-18s %3d  %s" % (r.name[:18], len(r.windows), kind)).rstrip())
         return out
+
+    def heading(self):
+        people = sum(len(r.windows) for r in self.rooms)
+        return "%d room%s, %d %s chatting." % (len(self.rooms), "" if len(self.rooms) == 1
+                                               else "s", people,
+                                               "person" if people == 1 else "people")
 
     def show(self, status=None):
         self.chat.lists[self.session] = self
-        win = Window.centred(TITLE, self.W, self.H, flags=WFlag.CLOSE | WFlag.MOVABLE,
-                             win_id=WIN_ROOMS, on_close=self._closed)
-        win.add(Label(8, 2, 272, 10, "Room               In"))
-        self.list = win.add(ListBox(8, 14, 272, 128, self.rows(), on_select=self._pick))
-        self.go_b = win.add(Button(288, 14, 104, 16, "Go", GFlag.DEFAULT, on_click=self._go))
-        y = 34
+        a = AreaWindow(TITLE, WIN_ROOMS, on_close=self._closed)
+        rows = self.rows()
+        self.head = a.heading(self.heading())
+        self.list = a.list(rows, self._pick, columns="%-18s %3s  %s" % ("Room", "In", "Kind"))
+        self.go_b = a.command("Go", self._go, default=True)
+        a.section("Make A Room")                   # (anyone with chat.rooms makes one)
+        self.name = a.field("Name:")
+        # Create: makes a member room, or joins the room of that name if there is one (the
+        # way into a private room, which isn't listed)
+        self.private, _ = a.check_and_command("Private", "Create", self._go_named,
+                                              needs=self.name)
         self.delete_b = None
-        if self.mod:                     # (acts on the picked room, like Go)
-            self.delete_b = win.add(Button(288, y, 104, 16, "Delete Room",
-                                           on_click=self._delete))
-            y += 20
-        win.add(Group(288, y + 2, 104, 2))                    # a line, then making a room
-        win.add(Label(288, y + 8, 104, 10, "Create A Room", GFlag.BOLD | GFlag.CENTRE))
-        win.add(Label(288, y + 22, 104, 10, "Room name:"))
-        self.name = win.add(TextBox(288, y + 34, 104, 12))
-        self.private = win.add(CheckBox(288, y + 50, 104, 12, "Private"))
-        # Create Room: makes a member room, or joins the room of that name if there is one
-        # (the way into a private room, which isn't listed)
-        win.add(Button(288, y + 66, 104, 16, "Create Room", needs=self.name,
-                       on_click=self._go_named))
         if self.mod:
-            win.add(Button(288, y + 86, 104, 16, "New Room", needs=self.name, on_click=self._new))
-        self.status = win.add(Label(8, 146, 272, 10, status or "Pick a room and Go."))
-        self.win = win
+            a.section("Admin Tools")
+            new_b, self.delete_b = a.pair(("New", self._new, self.name),
+                                          ("Delete", self._delete))
+        self.status = a.status(status or "Pick a room and Go, or make one.")
+        self.win = a.win
         self.buttons()
-        win.show(self.session)
+        a.win.show(self.session)
         return self
 
     def buttons(self):
@@ -569,6 +569,7 @@ class RoomList:
         if self.win is None or not self.win.shown:
             return
         self.list.set_rows(self.rows())
+        self.head.set_text(self.heading())
         keys = [r.key for r in self.rooms]
         if self.picked in keys:
             self.list.selected = keys.index(self.picked)

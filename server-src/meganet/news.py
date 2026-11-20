@@ -20,15 +20,12 @@ import time
 from . import permissions as perms
 from .compose import Composer, refuse
 from .protocol import WFlag, GFlag, clean_text
-from .ui import add_buttons, closer, Window, Button, Label, ListBox, TextView
+from .ui import add_buttons, closer, Window, Button, Label, ListBox, TextView, AreaWindow
 
 READ, POST = perms.NEWS_READ, perms.NEWS_POST
 WIN_NEWS, WIN_NEWS_EDIT, WIN_NEWS_DELETE, WIN_NEWS_OFFER, WIN_NEWS_READ = 36, 37, 38, 39, 40
 TITLE = "News"
-W = 360                          # the list window
-LIST_H = 112
-BUTTONS_H = 20
-ROW_COLS = 41                    # characters of a list row the client shows
+ROW_COLS = 47                    # characters of a list row the client shows
 # The reading window's text is exactly as wide as the composer's text area, so each line
 # reads as it was written (as the MOTD view matches its editor).
 READ_W = Composer.W
@@ -235,31 +232,27 @@ class NewsWindow:
     def hint(self):
         if not self.ids:
             return "No news yet." + (" New... writes one." if self.poster else "")
-        return "Click a bulletin to read it."
+        return "Pick a bulletin and Read it."
 
     # ---- the list window ----
 
     def show(self, status=None):
         self.news.windows[self.session] = self
-        h = 14 + LIST_H + 4 + (BUTTONS_H if self.poster else 0) + 12   # (the status line last)
-        win = Window.centred(TITLE, W, h, flags=WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_NEWS,
-                             on_close=self._closed)
-        self.win = win
+        a = AreaWindow(TITLE, WIN_NEWS, on_close=self._closed)
+        win = self.win = a.win
         rows = self.rows()
         if self.news_id not in self.ids:
             self.news_id = None
-        self.head = win.add(Label(8, 2, W - 16, 10, self.heading()))
-        self.list = win.add(ListBox(8, 14, W - 16, LIST_H, rows, on_select=self._pick))
+        self.head = a.heading(self.heading())
+        self.list = a.list(rows, self._pick, columns="  %-5s %s" % ("Date", "Headline"))
         if self.news_id in self.ids:
             self.list.selected = self.ids.index(self.news_id)
-        y = 14 + LIST_H + 4
-        self.need = []
+        self.need = [a.command("Read", self._read, default=True)]
         if self.poster:
-            win.add(Button(8, y, 80, 16, "New...", on_click=self._new))
-            self.need.append(win.add(Button(96, y, 80, 16, "Edit...", on_click=self._edit)))
-            self.need.append(win.add(Button(184, y, 80, 16, "Delete", on_click=self._delete)))
-            y += BUTTONS_H
-        self.status = win.add(Label(8, y, W - 16, 10, status or self.hint()))
+            a.section("Admin Tools")
+            new_b, edit_b = a.pair(("New...", self._new), ("Edit...", self._edit))
+            self.need += [edit_b, a.pair(("Delete", self._delete))]
+        self.status = a.status(status or self.hint())
         self.buttons()
         win.show(self.session)
         if self.list.selected is not None:
@@ -308,12 +301,21 @@ class NewsWindow:
     # ---- handlers ----
 
     def _pick(self, listbox, index, double):
-        """A click on a bulletin: it's picked (for Edit and Delete) and opens to read."""
+        """A click on a bulletin picks it (Read, Edit, Delete); a double click reads it."""
         if not self._ok() or listbox.selected is None:
             return None
         self.news_id = self.ids[listbox.selected]
         self.buttons()
         self.say("")
+        if double:
+            return self.news.read(self.session, self.news_id)
+        return None
+
+    def _read(self, button):
+        if not self._ok():
+            return None
+        if self.news_id not in self.ids:
+            return self.say("Pick a bulletin first.")
         return self.news.read(self.session, self.news_id)
 
     def _new(self, button):

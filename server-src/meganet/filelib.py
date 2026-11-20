@@ -42,7 +42,7 @@ from .compose import refuse, MOD_ONLY
 from .protocol import (S, C, Writer, WFlag, GFlag, clean_text, Caps, Local, LocalStatus,
                        LOCAL_SD, LOCAL_DRIVES, LOCAL_MAX, FILE_CHUNK, FILE_WINDOW, UP_CHUNK)
 from .ui import (add_buttons, closer, Window, Button, Label, TextBox, ListBox, TextView,
-                 TextArea, CheckBox, DropDown, Progress, Group)
+                 TextArea, CheckBox, DropDown, Progress, Group, AreaWindow)
 
 SEE, UPLOAD, MODERATE = perms.FILES_DOWNLOAD, perms.FILES_UPLOAD, perms.FILES_MODERATE
 
@@ -426,10 +426,9 @@ class Browser:
             self.view, self.lib_id = "libs", None
             lib = None
         title = TITLE if self.view == "libs" else "%s: %s" % (TITLE, lib["title"])
-        win = Window.centred(title, W, H, flags=WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_FILES,
-                             on_close=self._closed)
-        self.win = win
-        getattr(self, "_show_" + self.view)(win, lib, status)
+        a = AreaWindow(title, WIN_FILES, on_close=self._closed)
+        win = self.win = a.win
+        getattr(self, "_show_" + self.view)(a, lib, status)
         self.buttons()
         win.show(self.session)
         if self.list.selected is not None:
@@ -517,27 +516,23 @@ class Browser:
                                                  extra)).rstrip())
         return rows
 
-    def _show_libs(self, win, lib, status):
+    def _show_libs(self, a, lib, status):
         rows = self._rows_libs()
-        self.head = win.add(Label(8, 2, 544, 10, self._heading(None)))
-        self.list = win.add(ListBox(8, 14, 400, 84, rows, on_select=self._pick_lib))
+        self.head = a.heading(self._heading(None))
+        self.list = a.list(rows, self._pick_lib, about=True, about_lines=self._about())
         if self.lib_id in self.ids:
             self.list.selected = self.ids.index(self.lib_id)
-        self.about = win.add(TextView(8, 102, 400, 42, self._about()))
-        self.need = [win.add(Button(416, 14, 136, 16, "Open", GFlag.DEFAULT,
-                                    on_click=self._open_lib))]
+        self.about = a.about_view
+        self.need = [a.command("Open", self._open_lib, default=True)]
         if self.mod:
-            win.add(Group(416, 36, 136, 2))
-            win.add(Label(416, 42, 136, 10, "Admin Tools", GFlag.BOLD | GFlag.CENTRE))
-            win.add(Button(416, 56, 66, 16, "New...", on_click=self._new_lib))
-            self.need.append(win.add(Button(486, 56, 66, 16, "Edit...", on_click=self._edit_lib)))
-            self.need.append(win.add(Button(416, 76, 66, 16, "Delete", on_click=self._delete_lib)))
-            self.need.append(win.add(Button(486, 76, 66, 16, "Access...",
-                                            on_click=self._access)))
+            a.section("Admin Tools")
+            new_b, edit_b = a.pair(("New...", self._new_lib), ("Edit...", self._edit_lib))
+            self.need += [edit_b, a.pair(("Delete", self._delete_lib)),
+                          a.command("Access...", self._access)]
         if status is None:
             status = "Pick a library and Open it." if rows else (
-                "New... makes one." if self.mod else "")
-        self.status = win.add(Label(8, 148, 544, 10, status))
+                "New... makes one." if self.mod else "There are no file libraries yet.")
+        self.status = a.status(status)
 
     # a library's files
     def _rows_files(self, lib):
@@ -554,40 +549,31 @@ class Browser:
         """(Download..., Upload...) shown in the files view."""
         return (self.files.can_download(self.session, lib), self.files.can_upload(self.session, lib))
 
-    def _show_files(self, win, lib, status):
+    def _show_files(self, a, lib, status):
         rows = self._rows_files(lib)
-        self.head = win.add(Label(8, 2, 544, 10, self._heading(lib)))
-        win.add(Label(8, 14, 400, 10, "  %-*s %-3s %6s %-8s %4s" % (
-            NAME_MAX, "Name", "Typ", "Size", "Added", "Got")))
-        self.list = win.add(ListBox(8, 26, 400, 72, rows, on_select=self._pick_file))
+        self.head = a.heading(self._heading(lib))
+        self.list = a.list(rows, self._pick_file, about=True, about_lines=self._about(),
+                           columns="  %-*s %-3s %6s %-8s %4s" % (
+                               NAME_MAX, "Name", "Typ", "Size", "Added", "Got"))
         if self.file_id in self.ids:
             self.list.selected = self.ids.index(self.file_id)
-        self.about = win.add(TextView(8, 102, 400, 42, self._about()))
+        self.about = a.about_view
         self.need = []
-        y = 14
         self.buttons_shown = self._rights(lib)          # (refresh: re-shown if they change)
         if self.buttons_shown[0]:
-            self.need.append(win.add(Button(416, y, 136, 16, "Download...", GFlag.DEFAULT,
-                                            on_click=self._download)))
-            y += 20
+            self.need.append(a.command("Download...", self._download, default=True))
         if self.buttons_shown[1]:
-            win.add(Button(416, y, 136, 16, "Upload...", on_click=self._upload))
-            y += 20
-        win.add(Button(416, y, 136, 16, "Back", on_click=self._back))
+            a.command("Upload...", self._upload)
+        a.command("Back", self._back)
         if self.mod:
-            y = 76
-            win.add(Group(416, y, 136, 2))
-            win.add(Label(416, y + 6, 136, 10, "Admin Tools", GFlag.BOLD | GFlag.CENTRE))
-            win.add(Button(416, y + 20, 66, 16, "Add...", on_click=self._add_file))
-            self.need.append(win.add(Button(486, y + 20, 66, 16, "Edit...",
-                                            on_click=self._edit_file)))
-            self.need.append(win.add(Button(416, y + 40, 66, 16, "Delete",
-                                            on_click=self._delete_file)))
-            self.approve = win.add(Button(486, y + 40, 66, 16, "Approve",
-                                          on_click=self._approve))
+            a.section("Admin Tools")
+            add_b, edit_b = a.pair(("Add...", self._add_file), ("Edit...", self._edit_file))
+            delete_b, self.approve = a.pair(("Delete", self._delete_file),
+                                            ("Approve", self._approve))
+            self.need += [edit_b, delete_b]
         if status is None:
             status = "Pick a file to read about it." if rows else "No files here yet."
-        self.status = win.add(Label(8, 148, 544, 10, status))
+        self.status = a.status(status)
 
     # ---- handlers: everyone ----
 

@@ -27,7 +27,7 @@ class PollsBase(PagesBase):
         return w.gadgets[gadget_of(w, Kind.TEXTVIEW)]["lines"]
 
     async def new_poll(self, c, question, about, choices, ends=""):
-        c.click_text(WIN_VOTING, "New Poll...")
+        c.click_text(WIN_VOTING, "New...")
         win = await c.wait_window("New Poll")
         boxes = [g for g in sorted(win.gadgets) if win.gadgets[g]["kind"] == Kind.TEXTBOX]
         c.value(WIN_NEW_POLL, boxes[0], question)
@@ -49,7 +49,7 @@ class VotingTest(PollsBase):
         alice, bob = self.alice, self.bob                   # alice: Sysop; bob: New User
         self.assertIn("Voting", bob.menu_items("Areas"))
         await self.open_voting(bob)
-        self.assertFalse(any(g["text"] == "New Poll..." for g in
+        self.assertFalse(any(g["text"] == "New..." for g in
                              bob.windows[WIN_VOTING].gadgets.values()), "managers only")
         self.assertEqual(status_of(bob.windows[WIN_VOTING]), "No polls yet.")
 

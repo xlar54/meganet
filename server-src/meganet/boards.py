@@ -29,7 +29,7 @@ from . import karma
 from .compose import Composer, refuse, MOD_ONLY
 from .protocol import WFlag, GFlag, clean_text
 from .ui import (add_buttons, closer, confirm, Window, Button, Label, TextBox, ListBox,
-                 TextView, CheckBox, Group)
+                 TextView, CheckBox, Group, AreaWindow)
 
 READ, POST, MODERATE = "boards.read", "boards.post", "boards.moderate"
 
@@ -38,9 +38,11 @@ WIN_POST = 23
 WIN_ACCESS = 24
 WIN_DELETE = 25
 TITLE = "Message Boards"
-W, H = 560, 160
 ACCESS_ROLES = 6                 # role rows in the Access window (the client's gadgets)
-SUBJECT_COLS = 28
+SUBJECT_COLS = 24               # a forum's topics: * subject author re last (47 characters)
+POST_VIEW_H = 82                # a topic's view: the picked post under the list of posts
+BY_DATE, NEWEST = "By Date", "Newest"     # a topic's posts: oldest first, or newest first
+POST_ORDERS = [BY_DATE, NEWEST]
 
 
 def when(t, fmt="%m-%d %H:%M"):
@@ -199,6 +201,8 @@ class Browser:
         self.forum_id = self.topic_id = self.post_id = None
         self.ids = []                    # list row -> forum, topic or post id
         self.win = None
+        # a topic's posts By Date (oldest first) or Newest first: kept for the session
+        self.post_order = getattr(session, "post_order", BY_DATE)
 
     @property
     def db(self):
@@ -233,10 +237,9 @@ class Browser:
         if self.view == "topic" and self.db.topic(self.topic_id) is None:
             self.view, self.topic_id = "forum", None
         title = TITLE if self.view == "forums" else "%s: %s" % (TITLE, forum["name"])
-        win = Window.centred(title, W, H, flags=WFlag.CLOSE | WFlag.MOVABLE,
-                             win_id=WIN_BOARDS, on_close=self._closed)
-        self.win = win
-        getattr(self, "_show_" + self.view)(win, forum, status)
+        a = AreaWindow(title, WIN_BOARDS, on_close=self._closed)
+        win = self.win = a.win
+        getattr(self, "_show_" + self.view)(a, forum, status)
         self.buttons()
         win.show(self.session)
         if self.list.selected is not None:
@@ -309,34 +312,26 @@ class Browser:
                 "%3d new" % f["new"] if f["new"] else "       ", " ".join(flags))).rstrip())
         return rows
 
-    def _show_forums(self, win, forum, status):
+    def _show_forums(self, a, forum, status):
         rows = self._rows_forums()
-        self.head = win.add(Label(8, 2, 544, 10, self._heading(None)))
-        self.list = win.add(ListBox(8, 14, 400, 112, rows, on_select=self._pick_forum))
+        self.head = a.heading(self._heading(None))
+        self.list = a.list(rows, self._pick_forum)      # (the rows say "3 topics, 1 new")
         if self.forum_id in self.ids:
             self.list.selected = self.ids.index(self.forum_id)
-        self.need = [win.add(Button(416, 14, 136, 16, "Open", GFlag.DEFAULT,
-                                    on_click=self._open_forum))]      # (need a forum picked)
-        if self.mod:                     # under a line and a heading, set apart from Open
+        self.need = [a.command("Open", self._open_forum, default=True)]  # (need a forum picked)
+        if self.mod:
             picked = self.db.forum(self.forum_id) if self.forum_id in self.ids else None
-            win.add(Group(416, 36, 136, 2))
-            win.add(Label(416, 42, 136, 10, "Admin Tools", GFlag.BOLD | GFlag.CENTRE))
-            win.add(Label(416, 56, 136, 10, "Forum name:"))
-            self.name = win.add(TextBox(416, 68, 136, 12, picked["name"] if picked else ""))
-            win.add(Button(416, 84, 66, 16, "New", on_click=self._new_forum,
-                           needs=self.name))                  # (greyed until a name is typed)
-            self.need.append(win.add(Button(486, 84, 66, 16, "Rename", on_click=self._rename)))
-            self.need.append(win.add(Button(416, 104, 66, 16, "Delete",
-                                            on_click=self._delete_forum)))
-            self.lock = win.add(Button(486, 104, 66, 16,
-                                       "Unlock" if picked and picked["locked"] else "Lock",
-                                       on_click=self._lock))
-            self.need.append(self.lock)
-            self.need.append(win.add(Button(416, 124, 136, 16, "Access...",
-                                            on_click=self._access)))
+            a.section("Admin Tools")
+            self.name = a.field("Name:", picked["name"] if picked else "")
+            new_b, rename_b = a.pair(("New", self._new_forum, self.name),   # (New: greyed
+                                     ("Rename", self._rename))              # until named)
+            delete_b, self.lock = a.pair(("Delete", self._delete_forum),
+                                         ("Unlock" if picked and picked["locked"] else "Lock",
+                                          self._lock))
+            self.need += [rename_b, delete_b, self.lock, a.command("Access...", self._access)]
         if status is None:
             status = "Pick a forum and Open it." if rows else "There are no forums yet."
-        self.status = win.add(Label(8, 148, 544, 10, status))
+        self.status = a.status(status)
 
     # a forum's topics
     def _rows_forum(self, forum):
@@ -344,38 +339,36 @@ class Browser:
         self.ids = [t["id"] for t in self.topics]
         return [("%s %-*s %-10s %3d %s" % (
             "*" if t["new"] else " ", SUBJECT_COLS, t["subject"][:SUBJECT_COLS],
-            t["author_name"][:10], t["posts"] - 1, when(t["last_post"])))
+            t["author_name"][:10], t["posts"] - 1, when(t["last_post"], "%m-%d")))
             for t in self.topics]
 
-    def _show_forum(self, win, forum, status):
+    def _show_forum(self, a, forum, status):
         rows = self._rows_forum(forum)
         self.locked_shown = bool(forum["locked"])
-        self.head = win.add(Label(8, 2, 544, 10, self._heading(forum)))
-        win.add(Label(8, 14, 544, 10, "  %-*s %-10s %3s %s" % (SUBJECT_COLS, "Subject",
-                                                               "Started by", "Re", "Last post")))
-        self.list = win.add(ListBox(8, 26, 544, 100, rows, on_select=self._pick_topic))
+        self.head = a.heading(self._heading(forum))
+        self.list = a.list(rows, self._pick_topic,
+                           columns="  %-*s %-10s %3s %s" % (SUBJECT_COLS, "Subject",
+                                                            "Started by", "Re", "Last"))
         if self.topic_id in self.ids:
             self.list.selected = self.ids.index(self.topic_id)
-        self.need = [win.add(Button(8, 130, 72, 16, "Read", GFlag.DEFAULT,
-                                    on_click=self._read))]           # (need a topic picked)
-        x = 88
+        self.need = [a.command("Read", self._read, default=True)]   # (need a topic picked)
         if self.boards.can_post(self.session, forum):
-            win.add(Button(x, 130, 104, 16, "New Topic...", on_click=self._new_topic))
-            x += 112
-        win.add(Button(x, 130, 72, 16, "Back", on_click=self._back))
-        x += 80
+            a.command("New Topic...", self._new_topic)
+        a.command("Back", self._back)
         if self.mod:
-            self.need.append(win.add(Button(x, 130, 112, 16, "Delete Topic",
-                                            on_click=self._delete_topic)))
+            a.section("Admin Tools")
+            self.need.append(a.command("Delete Topic", self._delete_topic))
         if status is None:
             status = ("Pick a topic and Read it." if rows else "No topics yet.") + (
                 "  This forum is locked." if forum["locked"] else "")
-        self.status = win.add(Label(8, 148, 544, 10, status))
+        self.status = a.status(status)
 
     # a topic's posts
     def _rows_topic(self, forum):
         s = since(self.session)
-        self.posts = self.db.posts(self.topic_id)
+        self.posts = self.db.posts(self.topic_id)           # (oldest first)
+        if self.post_order == NEWEST:
+            self.posts = self.posts[::-1]
         self.ids = [p["id"] for p in self.posts]
         return ["%s %-10s %s" % ("*" if p["posted"] > s else " ", p["author_name"][:10],
                                  when(p["posted"])) for p in self.posts]
@@ -388,31 +381,33 @@ class Browser:
         return (["Subject: %s" % topic["subject"], "From: %s" % p["author_name"],
                  "Date: %s" % when(p["posted"], "%Y-%m-%d %H:%M"), ""] + p["body"].split("\n"))
 
-    def _show_topic(self, win, forum, status):
+    def _show_topic(self, a, forum, status):
         rows = self._rows_topic(forum)
         if self.post_id not in self.ids:         # the first new post, or the first
             s = since(self.session)
             self.post_id = next((p["id"] for p in self.posts if p["posted"] > s),
                                 self.ids[0] if self.ids else None)
-        self.head = win.add(Label(8, 2, 544, 10, self._heading(forum)))
-        self.list = win.add(ListBox(8, 14, 216, 112, rows, on_select=self._pick_post))
+        self.head = a.heading(self._heading(forum))
+        # the posts, and under them the picked one; the order on the column heading's row
+        self.list = a.list(rows, self._pick_post, about=True, about_h=POST_VIEW_H,
+                           about_lines=self.post_lines(),
+                           columns="  %-10s %s" % ("From", "Posted"), columns_w=300)
+        self.order_dd = a.list_option(POST_ORDERS, POST_ORDERS.index(self.post_order),
+                                      self._sort_posts)
         if self.post_id in self.ids:
             self.list.selected = self.ids.index(self.post_id)
-        self.view_box = win.add(TextView(232, 14, 320, 112, self.post_lines()))
-        x = 8
+        self.view_box = a.about_view
         self.need = []                                               # (need a post picked)
         if self.boards.can_post(self.session, forum):
-            win.add(Button(x, 130, 80, 16, "Reply...", GFlag.DEFAULT, on_click=self._reply))
-            x += 88
-        win.add(Button(x, 130, 72, 16, "Back", on_click=self._back))
-        x += 80
+            a.command("Reply...", self._reply, default=True)
+        a.command("Back", self._back)
         if self.mod:
-            self.need.append(win.add(Button(x, 130, 112, 16, "Delete Post",
-                                            on_click=self._delete_post)))
+            a.section("Admin Tools")
+            self.need.append(a.command("Delete Post", self._delete_post))
         if status is None:
             status = "Pick a post to read it." + (
                 "  This forum is locked." if forum["locked"] else "")
-        self.status = win.add(Label(8, 148, 544, 10, status))
+        self.status = a.status(status)
 
     # ---- handlers: everyone (each checks boards.read and the forum again) ----
 
@@ -481,6 +476,15 @@ class Browser:
         self.buttons()
         self.view_box.set_lines(self.post_lines())
         return self.say("")
+
+    def _sort_posts(self, dropdown, index, double):
+        """By Date / Newest: the posts again in that order, the picked one still picked."""
+        if not self._ok() or self.view != "topic" or dropdown.selected is None:
+            return None
+        if self._forum() is None:
+            return None
+        self.post_order = self.session.post_order = POST_ORDERS[dropdown.selected]
+        return self.refresh()
 
     def _back(self, button):
         if not self._ok():

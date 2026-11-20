@@ -15,14 +15,14 @@ import time
 from . import permissions as perms
 from .compose import Composer, refuse, sent
 from .protocol import WFlag, GFlag, Icon, SLOT_MAIL, clean_text
-from .ui import Window, Button, Label, ListBox, TextView
+from .ui import Window, Button, Label, ListBox, TextView, AreaWindow
 
 WIN_INBOX = 17
 WIN_COMPOSE = 18
 TITLE = "Private Messages"
-INBOX_W, INBOX_H = 632, 160
 NAME_COLS = 10                    # list rows: name, subject, date and time, " *" if unread
-SUBJECT_COLS = 12                 # (37 characters: the list's width)
+SUBJECT_COLS = 22                 # (47 characters: the list's width)
+LIST_VIEW_H = 68                  # the message under the list: 7 lines (the list shows 5)
 
 
 def message_row(m, sent_folder):
@@ -180,25 +180,27 @@ class Inbox:
         if self.msg_id not in self.ids:
             self.msg_id = None
         lines = self.message_lines()
-        win = Window.centred(TITLE, INBOX_W, INBOX_H, flags=WFlag.CLOSE | WFlag.MOVABLE,
-                             win_id=WIN_INBOX, on_close=self._closed)
-        self.head = win.add(Label(8, 2, 320, 10, self.heading()))
-        self.list = win.add(ListBox(8, 14, 320, 112, rows, on_select=self._pick))
-        self.view = win.add(TextView(336, 14, 288, 112, lines))
-        win.add(Button(8, 130, 72, 16, "New...", on_click=self._new))
-        self.reply_b = win.add(Button(88, 130, 80, 16, "Reply...", on_click=self._reply))
-        self.delete_b = win.add(Button(176, 130, 72, 16, "Delete", on_click=self._delete))
-        win.add(Button(256, 130, 72, 16, "Inbox" if self.sent else "Sent",
-                       on_click=self._folder))
+        a = AreaWindow(TITLE, WIN_INBOX, on_close=self._closed)
+        win = a.win
+        self.head = a.heading(self.heading())
+        # the list, and under it the picked message
+        self.list = a.list(rows, self._pick, about=True, about_h=LIST_VIEW_H,
+                           about_lines=lines,
+                           columns="%-*s %-*s %s" % (NAME_COLS, "To" if self.sent else "From",
+                                                     SUBJECT_COLS, "Subject", "Sent"))
+        self.view = a.about_view
+        self.reply_b = a.command("Reply...", self._reply, default=True)
+        a.command("New...", self._new)
+        self.delete_b = a.command("Delete", self._delete)
         self.unread_b = None
         if not self.sent:                    # (read or not is the recipient's)
-            self.unread_b = win.add(Button(336, 130, 128, 16, "Mark as Unread",
-                                           on_click=self._unread))
+            self.unread_b = a.command("Mark as Unread", self._unread)
+        a.command("Show Inbox" if self.sent else "Show Sent", self._folder)
         self.buttons()
         if status is None:
             status = "Pick a message to read it." if rows else (
                 "Nothing sent yet." if self.sent else "No messages.")
-        self.status = win.add(Label(8, 148, 616, 10, status))
+        self.status = a.status(status)
         self.win = win
         win.show(self.session)
         if self.msg_id is not None:

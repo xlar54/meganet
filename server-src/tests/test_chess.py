@@ -119,8 +119,8 @@ class LobbyTest(ChessBase):
         ask = await self.challenge(a, b)
         self.assertEqual((ask.text(1), ask.text(2)), ("alice challenges you to",
                                                       "a game of Chess."))
-        await a.wait_for(lambda: a.windows[WIN_GAME_LOBBY].text(3).startswith("Waiting for bob"),
-                         "waiting")
+        await a.wait_for(lambda: any(g["text"].startswith("Waiting for bob") for g in
+                                     a.windows[WIN_GAME_LOBBY].gadgets.values()), "waiting")
         await b.wait_for(lambda: any("challenging you" in r for r in self.lobby_rows(b)), "row")
         b.click_text(WIN_CHALLENGED, "Decline")
         await a.wait_for(lambda: any("declined" in t for _, _, t in a.toasts), "declined")

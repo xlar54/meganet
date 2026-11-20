@@ -101,6 +101,48 @@ class BoardsTest(PagesBase):
         self.assertTrue(any(g["text"].endswith(": 0 new posts.")
                             for g in self.win(bob).gadgets.values()))
 
+    async def test_post_order(self):
+        """A topic's posts By Date (oldest first, the default) or Newest first, from the
+        drop-down on the column heading's row; the picked post stays picked, and the order
+        is kept for the session."""
+        alice, d = self.alice, self.server.db
+        fid = d.forums()[0]["id"]
+        t = d.create_topic(fid, d.user("alice")["id"], "Order", ["one"], now=1000)
+        d.add_post(t, d.user("bob")["id"], ["two"], now=2000)
+        d.add_post(t, d.user("alice")["id"], ["three"], now=3000)
+        await self.open_boards(alice)
+        await self.open_forum(alice, "General")
+        await self.pick(alice, "Order")
+        alice.windows[WIN_BOARDS].done = False
+        alice.click_text(WIN_BOARDS, "Read")
+        w = await self.shown(alice, "Reply...")
+        dd = gadget_of(w, Kind.DROPDOWN)
+        self.assertEqual((w.gadgets[dd]["rows"], w.gadgets[dd]["value"]), (["By Date", "Newest"], 0))
+        lst = w.gadgets[gadget_of(w, Kind.LISTBOX)]
+        x, y, dw, dh = w.gadgets[dd]["box"]
+        self.assertEqual(x + dw, lst["box"][0] + lst["box"][2], "right edge on the list's")
+        self.assertLess(y + dh, lst["box"][1], "above the list")
+        authors = lambda: [r.split()[-3] for r in self.rows(alice)]
+        self.assertEqual(authors(), ["alice", "bob", "alice"])
+        b = self.server.screens.boards.browsers[self.session("alice")]
+        alice.select(WIN_BOARDS, gadget_of(w, Kind.LISTBOX), 1)          # bob's post
+        await alice.wait_for(lambda: b.post_id == b.ids[1], "picked")
+        alice.pick_dropdown(WIN_BOARDS, dd, 1)                          # Newest
+        await alice.wait_for(lambda: authors() == ["alice", "bob", "alice"]
+                             and b.ids[0] == d.posts(t)[-1]["id"], "newest first")
+        self.assertEqual([p for p in b.ids], [p["id"] for p in d.posts(t)][::-1])
+        self.assertEqual(b.post_id, d.posts(t)[1]["id"], "bob's post still picked")
+        self.assertEqual(lst["value"], 1, "and highlighted")
+        # kept: the next topic opens Newest first too
+        alice.click_text(WIN_BOARDS, "Back")
+        await self.shown(alice, "New Topic...")
+        await self.pick(alice, "Order")
+        alice.windows[WIN_BOARDS].done = False
+        alice.click_text(WIN_BOARDS, "Read")
+        w = await self.shown(alice, "Reply...")
+        self.assertEqual(w.gadgets[gadget_of(w, Kind.DROPDOWN)]["value"], 1)
+        self.assertEqual(b.ids, [p["id"] for p in d.posts(t)][::-1])
+
     async def test_moderator_controls(self):
         alice, bob, d = self.alice, self.bob, self.server.db
         await self.open_boards(bob)

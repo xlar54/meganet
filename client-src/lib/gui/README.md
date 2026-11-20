@@ -102,6 +102,9 @@ left corner).
   - A click selects one (its label on navy). The same one again within half a second gives
     `GE_DESK` with `ge_val` = the slot. A click elsewhere on the desktop clears the selection.
   - Line 1 empty removes the icon; `gui_desk_clear` removes them all.
+- **Text views** take `gui_set_value` too: the wrapped line to show at the top (0 = the
+  first; past the end, the last page). A view that is shown and scrolled to the bottom
+  follows appended lines down; this puts a page back at its start.
 - **Grids** (`GK_GRID`, in `grid.asm`, included after `gui.asm`): a board of picture tiles
   for board games.
   - The gadget's text is 7 bytes, each value + 1: cols, rows, tile w, tile h, resource

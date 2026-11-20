@@ -333,7 +333,10 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   - dialogs end in `[Command] [Cancel]`, centred in message boxes and bottom right in forms;
   - buttons are at least 72 wide; "..." marks a button that opens a dialog;
   - a button that can't act yet (nothing picked) is greyed out: `S.SET_FLAGS` (`$1D`: win,
-    gid, flags) changes a gadget's flags after the window is open.
+    gid, flags) changes a gadget's flags after the window is open;
+  - every area window has one layout (`ui.AreaWindow`, 560 x 160): a heading, the list on
+    the left (with the picked item under it), a column of commands on the right with the
+    main one first and Admin Tools last, only for those allowed, and a status line.
 - **New users** (admins with `admin.users`): a black pawn icon (slot 4, icon 5) while anyone is
   still in the default role; a click opens Admin > User Editor at the oldest one.
 - **My Account** (the client's MegaNet menu, `MENU_PICK $22`; `meganet/account.py`): a centred
@@ -393,6 +396,11 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   Offer Draw / Resign / Rematch / Lobby. Every rule is enforced: castling, en passant,
   promotion (a dialog), check, checkmate, stalemate, and the automatic draws (insufficient
   material, fifty moves, threefold repetition). No clocks yet.
+- **Internet** (`meganet/internet/`): Areas > Internet lists integrations, plugins found at
+  start-up like games. The first is a text Web Browser: the server fetches pages (never on a
+  private network), turns HTML into wrapped ASCII with numbered links, and shows it in a
+  TextView with the links in a ListBox. Later: forms, then a rendered-page viewer (a
+  headless browser's screenshots in an attic viewport, clicks sent back).
 - **Grids and resources** (`Caps.GRID` clients): `S.RESOURCE` (`$30`: `u8 slot, u16 offset,
   bytes`, at most 1024) fills one of 16 attic slots of 64 KB; a `GRID` gadget (kind 14; its
   text is 7 bytes, each + 1: cols, rows, tile w, tile h, slot, mark colours 1 and 2) shows

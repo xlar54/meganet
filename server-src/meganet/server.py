@@ -1,7 +1,7 @@
 """The MegaNet server: accepts MEGA65 clients over TCP and drives their screens.
 
     python -m meganet [--port 6400] [--db data/meganet.db] [--updates updates] [--motd FILE]
-                      [--filelibs filelibs]
+                      [--filelibs filelibs] [--cafile PEM]
 """
 
 import argparse
@@ -132,7 +132,13 @@ def main(argv=None):
                     help="folder for the file libraries (default filelibs/)")
     ap.add_argument("--motd", metavar="FILE",
                     help="text file to load as the message of the day (replaces the saved one)")
+    ap.add_argument("--cafile", metavar="PEM",
+                    help="trusted certificates for the web browser's https (for a Python "
+                         "without its own list)")
     args = ap.parse_args(argv)
+    if args.cafile:
+        from .internet import webtext
+        webtext.set_cafile(args.cafile)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
     async def run():

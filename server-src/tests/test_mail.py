@@ -62,7 +62,7 @@ class MailTest(PagesBase):
         await self.sign_off(self.bob)
         self.assertEqual(self.alice.menu_items("Areas")[3], "Private Messages")
         win = await self.inbox(alice)
-        self.assertEqual(win.pos, ui.centre(632, 160))
+        self.assertEqual(win.pos, ui.centre(ui.AREA_W, ui.AREA_H))
         win.find("Inbox: 0 messages, 0 unread")
         win, n = await self.compose(alice, "BOB", "Hello", ["Hi Bob,", "", "Chess on Friday?"])
         self.assertEqual(win.pos, ui.centre(544, 168))
@@ -109,13 +109,13 @@ class MailTest(PagesBase):
                              "alice's open inbox updated")
 
         # The Sent folder, and back.
-        bob.click_text(WIN_INBOX, "Sent")
+        bob.click_text(WIN_INBOX, "Show Sent")
         await bob.wait_for(lambda: has_text(bob, WIN_INBOX, "Sent: 1 message"), "sent folder")
         self.assertEqual(self.rows(bob), ["alice      Re: Hello"])
-        bob.windows[WIN_INBOX].find("Inbox")
+        bob.windows[WIN_INBOX].find("Show Inbox")
         lines = await self.read(bob, 0, "Yes please!")
         self.assertEqual(lines[0], "To: alice")
-        bob.click_text(WIN_INBOX, "Inbox")
+        bob.click_text(WIN_INBOX, "Show Inbox")
         await bob.wait_for(lambda: has_text(bob, WIN_INBOX, "Inbox: 1 message, 0 unread"),
                            "inbox again")
 
@@ -127,7 +127,7 @@ class MailTest(PagesBase):
                            "deleted")
         self.assertEqual(d.inbox(d.user("bob")["id"]), [])
         self.assertEqual([m["id"] for m in d.sent_messages(d.user("alice")["id"])], [first])
-        alice.click_text(WIN_INBOX, "Sent")
+        alice.click_text(WIN_INBOX, "Show Sent")
         await alice.wait_for(lambda: has_text(alice, WIN_INBOX, "Sent: 1 message"), "her Sent")
         await self.read(alice, 0, "Chess on Friday?")
         alice.click_text(WIN_INBOX, "Delete")
@@ -158,7 +158,7 @@ class MailTest(PagesBase):
                          [("bob", "Hi", "Hello?")])
         self.assertEqual(DATE.sub("", message_row(msgs[0], False)).rstrip(), "bob        Hi *")
         self.assertEqual(DATE.sub("", message_row(msgs[0], True)).rstrip(), "alice      Hi")
-        self.assertLessEqual(len(message_row(msgs[0], False)), 37, "fits the width of the list")
+        self.assertLessEqual(len(message_row(msgs[0], False)), 47, "fits the width of the list")
 
     async def test_without_mail_use(self):
         d = self.server.db
@@ -195,7 +195,7 @@ class MailTest(PagesBase):
         await self.inbox(alice)
         self.session("alice").perms = frozenset({"chat.use"})
         self.assertFalse(alice.enabled(WIN_INBOX, "Reply..."), "nothing picked: greyed")
-        for button in ("New...", "Reply...", "Delete", "Sent"):     # (2 greyed: ignored)
+        for button in ("New...", "Reply...", "Delete", "Show Sent"):   # (2 greyed: ignored)
             alice.click_text(WIN_INBOX, button)
         await alice.wait_for(lambda: len(alice.alerts) == 2, "2 refusals")
         self.assertNotIn(WIN_COMPOSE, alice.windows)

@@ -29,7 +29,8 @@ class NewsTest(PagesBase):
     async def click_row(self, c, nth):
         w = c.windows[WIN_NEWS]
         c.windows.pop(WIN_NEWS_READ, None)
-        c.select(WIN_NEWS, gadget_of(w, Kind.LISTBOX), nth)
+        c.select(WIN_NEWS, gadget_of(w, Kind.LISTBOX), nth)     # (picked: Read opens it)
+        c.click_text(WIN_NEWS, "Read")
         return await c.wait_for(lambda: WIN_NEWS_READ in c.windows, "reading window")
 
     async def write(self, c, button, title, headline, lines, send):
