@@ -106,14 +106,25 @@ def unwrap_search_link(url):
     return url
 
 
-def fetch(text_or_url, resolve=socket.getaddrinfo):
-    """Fetch and convert a page (blocking). Raises WebError with a message for the user."""
-    url = to_url(text_or_url)
+class Fetched:
+    """What fetch_raw got: the final URL, the content type and charset, the bytes (at most
+    MAX_BYTES), and a note if they were cut."""
+
+    def __init__(self, url, ctype, charset, data, note):
+        self.url, self.ctype, self.charset, self.data, self.note = url, ctype, charset, data, note
+
+    def text(self):
+        return self.data.decode(self.charset or sniff_charset(self.data) or "utf-8",
+                                errors="replace")
+
+
+def fetch_raw(url, accept="text/html, text/plain;q=0.9", resolve=socket.getaddrinfo):
+    """Fetch `url` (blocking), refusing private networks (check_url, redirects too). Raises
+    WebError with a message for the user."""
     check_url(url, resolve)
     opener = urllib.request.build_opener(_Redirects,
                                          urllib.request.HTTPSHandler(context=ssl_context()))
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT,
-                                               "Accept": "text/html, text/plain;q=0.9"})
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
     try:
         with opener.open(req, timeout=TIMEOUT) as resp:
             final = resp.geturl()
@@ -144,13 +155,19 @@ def fetch(text_or_url, resolve=socket.getaddrinfo):
     if len(data) > MAX_BYTES:
         data = data[:MAX_BYTES]
         note = "(Only the first %d KB of this page.)" % (MAX_BYTES // 1000)
-    if ctype not in ("text/html", "application/xhtml+xml", "text/plain"):
-        raise WebError("That's a %s file: the text browser shows only web pages." % ctype)
-    text = data.decode(charset or sniff_charset(data) or "utf-8", errors="replace")
-    if ctype == "text/plain":
+    return Fetched(final, ctype, charset, data, note)
+
+
+def fetch(text_or_url, resolve=socket.getaddrinfo):
+    """Fetch and convert a page (blocking). Raises WebError with a message for the user."""
+    got = fetch_raw(to_url(text_or_url), resolve=resolve)
+    if got.ctype not in ("text/html", "application/xhtml+xml", "text/plain"):
+        raise WebError("That's a %s file: the text browser shows only web pages." % got.ctype)
+    text = got.text()
+    if got.ctype == "text/plain":
         lines = [ascii_text(line.rstrip()) for line in text.splitlines()]
-        return Page(final, final, lines, [], note)
-    return html_to_page(text, final, note)
+        return Page(got.url, got.url, lines, [], got.note)
+    return html_to_page(text, got.url, got.note)
 
 
 def sniff_charset(data):

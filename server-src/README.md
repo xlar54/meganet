@@ -74,7 +74,7 @@ Edit gadgets first, as the real client does).
 | `meganet/server.py` | The listener and the shared state; `python -m meganet` runs `main()` here |
 | `meganet/db.py` | SQLite: users (PBKDF2-SHA256 password hashes), roles and their permissions, settings, and every area's tables |
 | `meganet/filelib.py` | Areas > File Library: libraries, their files, downloads and uploads through the client's disks (`Storage`) |
-| `meganet/internet/` | Areas > Internet: services from outside, found at start-up like games (`base.Integration`); the text Web Browser (`web.py`, with `webtext.py`: fetching and HTML to text) |
+| `meganet/internet/` | Areas > Internet: services from outside, found at start-up like games (`base.Integration`); the text Web Browser (`web.py`, with `webtext.py`: fetching and HTML to text); News Feeds (`feeds.py`, with `feedparse.py`: RSS and Atom) |
 | `meganet/permissions.py` | The registry of permission keys, and the default roles |
 | `meganet/screens.py` | The menu bar (`MENU_TREE`), the welcome window with the message of the day, Who's Online, Help > Getting Around |
 | `meganet/chat.py` | Chat rooms: the room window, the room list, moderation |
@@ -839,6 +839,23 @@ key with `permissions.register(..., like="internet.use")`.
   network. Every URL goes in the Server Log (area `internet`). The server's own HTTPS is
   verified with Python's certificate list, or `--cafile`.
 - Not yet: forms (only the address box searches), cookies and sign-ins, pictures.
+
+**News Feeds** (`internet.feeds`; `internet/feeds.py`, a dynamic window id, 624x166):
+headlines from RSS and Atom feeds as text.
+- The feeds on the left (the `feeds` table; a new database starts with 17 common ones,
+  `db.DEFAULT_FEEDS`: news, technology, science, retro computing, sport), the picked
+  feed's stories on the right ("11-21 Headline"), and the picked story under them: its
+  headline, date and summary (HTML made text by `webtext`, at most 1,500 characters).
+  **Open in Browser** (or a double-click on a story) opens it in the Web Browser, if the
+  account may use it. **Refresh** fetches the feed again.
+- Feeds are fetched as the browser fetches pages (`webtext.fetch_raw`: http(s) only, never a
+  private network, 15 s, 1 MB) in the background, and kept for everyone for 10 minutes.
+  `feedparse.py` reads RSS 2.0, RSS 1.0 (RDF) and Atom with `xml.etree`, refuses a feed that
+  declares entities, and keeps 50 stories.
+- Holders of `internet.manage` (Moderators and up at first) get **Add Feed...** (a name of
+  up to 19 characters and an address; it's fetched and read before it's kept) and
+  **Remove** (asks first). Every open News Feeds window follows. Each feed opened goes in
+  the Server Log.
 
 ## Art Gallery
 

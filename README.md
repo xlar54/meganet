@@ -32,7 +32,10 @@ Status: early.
 - **Internet:** Areas > Internet lists services from outside MegaNet. The first is a text
   **Web Browser**: the server fetches the page and turns it into text with numbered links
   (no JavaScript, no pictures); words in the address box search the web. It never opens
-  addresses on the server's own network.
+  addresses on the server's own network. **News Feeds** reads RSS and Atom feeds as text
+  (BBC, NPR, The Guardian, Ars Technica, Hacker News, Slashdot, NASA, Hackaday, Indie Retro
+  News and more to start with; moderators add and remove them), and opens a story in the
+  Web Browser.
 - **Art Gallery:** galleries of IFF pictures (Deluxe Paint's format) that moderators set up
   and members upload to from a drive. View shows a picture over the whole screen; Slideshow
   steps through them with Space (Esc stops). The server reads and converts the IFF, so the

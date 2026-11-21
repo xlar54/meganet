@@ -17,7 +17,7 @@ from .base import Integration
 log = logging.getLogger("meganet")
 INTERNET_USE = perms.INTERNET_USE
 WIN_INTERNET = 56
-FRAMEWORK_MODULES = {"base", "webtext"}
+FRAMEWORK_MODULES = {"base", "webtext", "feedparse"}
 
 
 def discover():

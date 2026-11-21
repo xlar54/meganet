@@ -167,6 +167,12 @@ CREATE TABLE IF NOT EXISTS news (
     edited    INTEGER,                  -- NULL: never edited
     editor    INTEGER REFERENCES users(id)
 );
+CREATE TABLE IF NOT EXISTS feeds (            -- Internet > News Feeds (internet/feeds.py)
+    id        INTEGER PRIMARY KEY,
+    name      TEXT NOT NULL,
+    url       TEXT NOT NULL,
+    position  INTEGER NOT NULL           -- the list's order
+);
 CREATE TABLE IF NOT EXISTS news_reads (       -- who has read which bulletin, and when
     user_id   INTEGER NOT NULL REFERENCES users(id),
     news_id   INTEGER NOT NULL REFERENCES news(id),
@@ -294,6 +300,30 @@ def check_birthdate(text, today=None):
     if day.year < 1900:
         return "A birthdate from 1900 on, please."
     return None
+
+# Internet > News Feeds starts with these (checked working 2026-11-21); moderators change them.
+DEFAULT_FEEDS = [
+    ("BBC News", "https://feeds.bbci.co.uk/news/rss.xml"),
+    ("NPR News", "https://feeds.npr.org/1001/rss.xml"),
+    ("The Guardian: World", "https://www.theguardian.com/world/rss"),
+    ("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
+    ("BBC Technology", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
+    ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"),
+    ("The Verge", "https://www.theverge.com/rss/index.xml"),
+    ("Wired", "https://www.wired.com/feed/rss"),
+    ("Engadget", "https://www.engadget.com/rss.xml"),
+    ("Hacker News", "https://news.ycombinator.com/rss"),
+    ("Slashdot", "https://rss.slashdot.org/Slashdot/slashdotMain"),
+    ("BBC Science", "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"),
+    ("NASA", "https://www.nasa.gov/news-release/feed/"),
+    ("ScienceDaily", "https://www.sciencedaily.com/rss/all.xml"),
+    ("Hackaday", "https://hackaday.com/blog/feed/"),
+    ("Indie Retro News", "https://www.indieretronews.com/feeds/posts/default"),
+    ("ESPN", "https://www.espn.com/espn/rss/news"),
+]
+FEED_NAME_MAX = 19               # (all of it shows in the feeds list)
+FEED_URL_MAX = 255
+
 
 # The Terms of Service new users agree to at the end of sign-up (signup.py), edited by the
 # Sysop in Admin > Terms of Service... (admin.py, admin.tos). Kept in the settings table as
@@ -531,6 +561,12 @@ class Database:
                 "WHERE u.last_login IS NOT NULL "                                  # their last
                 "AND COALESCE(n.edited, n.posted) <= u.last_login")               # sign-on)
             self._set_setting("news_reads_seeded", 1)
+        if self.setting("feeds_seeded") is None:            # common news feeds, once
+            if not self.feeds():
+                for i, (name, url) in enumerate(DEFAULT_FEEDS):
+                    self.conn.execute("INSERT INTO feeds (name, url, position) VALUES (?, ?, ?)",
+                                      (name, url, i))
+            self._set_setting("feeds_seeded", 1)
         if self.setting("rooms_seeded") is None:            # the Lobby, once
             if not self.chat_rooms():
                 self.conn.execute("INSERT INTO chat_rooms (name, created) VALUES (?, ?)",
@@ -683,6 +719,26 @@ class Database:
         with self.conn:
             self._set_setting(MOTD_KEY, json.dumps(lines))
         return lines
+
+    # ---- news feeds (Internet > News Feeds) ----
+
+    def feeds(self):
+        return self.conn.execute("SELECT * FROM feeds ORDER BY position, id").fetchall()
+
+    def feed(self, feed_id):
+        return self.conn.execute("SELECT * FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+
+    def add_feed(self, name, url):
+        with self.conn:
+            pos = self.conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM feeds"
+                                    ).fetchone()[0]
+            cur = self.conn.execute("INSERT INTO feeds (name, url, position) VALUES (?, ?, ?)",
+                                    (name, url, pos))
+        return cur.lastrowid
+
+    def delete_feed(self, feed_id):
+        with self.conn:
+            self.conn.execute("DELETE FROM feeds WHERE id = ?", (feed_id,))
 
     def tos(self):
         """The Terms of Service: TOS_PAGES lists of lines (the default if none is stored)."""

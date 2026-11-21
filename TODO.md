@@ -109,8 +109,9 @@
       hardware: the sprite's palette bank and the card sprite's position.
 - [ ] Client space: about 1.9 KB left (1.5 KB in the bridge build). Next things to move to
       an overlay of their own (the window takes up to 5.9 KB, no resident cost but a stub
-      each): the sign-on screens (login.asm's windows), Exit Ideas: a turn timer (the computer plays
-      for someone who's away), a stronger computer (it never bluffs), a high-score list
+      each): the sign-on screens (login.asm's windows), Exit
+- [ ] One: ideas: a turn timer (the computer plays for someone who's away), a stronger
+      computer (it never bluffs), a high-score list
 - [x] Areas > Internet (2026-11-19): integrations found at start-up (internet/), and a
       text Web Browser (internet.web): pages as text with numbered links, search from the
       address box, Back, pages of 120 lines, private addresses refused, URLs in the Server
@@ -119,8 +120,14 @@
       (sign-ins), a Home / bookmarks list, Find on the page, downloading a file into the
       File Library or to the client's disks, reading a site's own "reader" markup better
       (Wikipedia's language list comes first)
+- [x] News Feeds (2026-11-21): Internet > News Feeds (internet/feeds.py, feedparse.py: RSS
+      2.0, RSS 1.0 / RDF, Atom), 17 common feeds to start with (db.DEFAULT_FEEDS, checked
+      working), a shared 10-minute cache, Open in Browser, moderators add (tried first) and
+      remove feeds. Tried in Xemu: BBC News live, a story's summary
+- [ ] News Feeds: an address longer than 63 characters can't be typed (the client's text
+      boxes); per-user favourite feeds; new-story counts
 - [ ] Internet: a picture viewer for the web (a headless browser's screenshots in an attic
-      viewport, links as hot spots, clicks sent back), RSS feeds into News, Gopher / Gemini
+      viewport, links as hot spots, clicks sent back), Gopher / Gemini
 - [ ] This machine's MSYS2 Python has no certificate list: the bridge tests export the
       Windows roots to private/temp/winroots.pem and pass --cafile
 - [ ] Resources: the client could say in HELLO which slots it still holds (attic survives

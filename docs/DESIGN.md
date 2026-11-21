@@ -427,7 +427,9 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   start-up like games. The first is a text Web Browser: the server fetches pages (never on a
   private network), turns HTML into wrapped ASCII with numbered links, and shows it in a
   TextView with the links in a ListBox. Later: forms, then a rendered-page viewer (a
-  headless browser's screenshots in an attic viewport, clicks sent back).
+  headless browser's screenshots in an attic viewport, clicks sent back). The second is News
+  Feeds (`internet/feeds.py`): RSS / Atom (`feedparse.py`) fetched the browser's way, a
+  three-pane reader (feeds, stories, the picked story's summary), Open in Browser.
 - **Grids and resources** (`Caps.GRID` clients): `S.RESOURCE` (`$30`: `u8 slot, u16 offset,
   bytes`, at most 1024) fills one of 16 attic slots of 64 KB; a `GRID` gadget (kind 14; its
   text is 7 bytes, each + 1: cols, rows, tile w, tile h, slot, mark colours 1 and 2) shows
