@@ -16,7 +16,7 @@ in [docs/MEGA65_NOTES.md](docs/MEGA65_NOTES.md). Remaining work is in [TODO.md](
 
 Status: early.
 - **Server:** signs users on (accounts and roles in SQLite), then sends a menu bar (Areas,
-  Members, Admin, Help), chat rooms (a Lobby, moderators' and members' rooms, private rooms), a two-player tic-tac-toe game, chess (a lobby to pick an opponent, a picture board, every rule enforced, chat beside the board), and admin windows for
+  Members, Admin, Help), chat rooms (a Lobby, moderators' and members' rooms, private rooms), a two-player tic-tac-toe game, chess (a lobby to pick an opponent, a picture board, every rule enforced, chat beside the board), **One** (the card game for 2-4: match the colour or number, Skips, Reverses, Draw Twos, Wilds, call One! on your last card; wait for other players or play against 1-3 computer players; cards played and drawn fly across the table as hardware sprites), and admin windows for
   roles and users. Tested with fake clients.
 - **Client:** has its Windows 95-style GUI library (`client-src/lib/gui/`), the sign-on
   screen, the menu bar (its own **MegaNet** menu first, with Exit back to BASIC), and the
@@ -33,6 +33,17 @@ Status: early.
   **Web Browser**: the server fetches the page and turns it into text with numbered links
   (no JavaScript, no pictures); words in the address box search the web. It never opens
   addresses on the server's own network.
+- **Art Gallery:** galleries of IFF pictures (Deluxe Paint's format) that moderators set up
+  and members upload to from a drive. View shows a picture over the whole screen; Slideshow
+  steps through them with Space (Esc stops). The server reads and converts the IFF, so the
+  client only copies the pixels to the screen (`client-src/picture.asm`). **Paint** draws
+  your own (Draw, Line, Box, Oval, Fill, a 32-colour palette, Undo, Save): the server keeps
+  the picture and paints, the client shows it full screen and draws strokes at once while
+  the server's answer comes (`client-src/canvas.asm`).
+- **Client memory:** code used now and then lives in attic RAM as overlays and takes turns
+  in one window (`client-src/overlays.asm`): the File Library's disk and SD-card work (`OVL0`)
+  and the Art Gallery's pictures and Paint (`OVL1`). The disk has `MEGANET`, `OVL0` and
+  `OVL1`; a client update must send all three.
 - **Server Log:** everything the server logs (connections, sign-ons and failed ones, what
   people do in each area, refusals, crashes with their tracebacks) is kept in the database
   as well, for admins to read in Admin > Server Log... with filters by area, level, user and

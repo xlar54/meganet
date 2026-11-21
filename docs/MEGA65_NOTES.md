@@ -200,7 +200,23 @@ its vectors: a BRK storm with PC = `$0000`. `sei` first.
 `$C000-$CFFF` becomes usable RAM once the character ROM is mapped out. Until `$D030` banks the
 ROMs out, CPU **reads** at `$C000-$CFFF` see the C64 KERNAL ROM shadow (`$2C000`) although writes go
 to RAM (symptom: a screenful of pi characters from walking ROM `$FF` padding). One bank-out mask:
-`$D030 & %11000111`. Data read before the bank-out must be below `$C000`.
+`$D030 & %11000111`. Data read before the bank-out must be below `$C000` (DMA reads RAM, so
+a DMA copy of data above `$C000` at boot is fine). This bites when a
+program grows: MegaNet's asset manifest (included at the end) passed `$C000`, every boot
+`LOAD` then got ROM bytes for its file name and failed, and the logo silently vanished. Include
+boot-time data early and `.cerror` its end against `$C000`.
+
+**Reusing boot-only data's bytes for variables.** Data needed only once (MegaNet's 768-byte
+art palette) can go last in the PRG, be DMA'd to bank 1 right after the takeover, and the
+uninitialised variables placed over it with `.virtual palette_rgb` / `.dsection bss` /
+`.endv`: the PRG is unchanged, and the variables cost no extra bytes. Nothing may write a
+variable before the copy, and `.cerror` the variables' end, not `*`.
+
+**A 16-colour hardware sprite from 640-wide art.** In H640 a sprite pixel is two screen
+pixels, so a 16-colour sprite (16 pixels) covers 32 screen pixels. Art drawn with every
+pixel doubled across becomes a sprite of every second byte, at full detail. Give the sprites
+their own palette bank (`$D070` bits 2-3) and copy the pointer's colours into it, or the
+sprite's colours (entries n*16+c) overwrite the screen's. Seen in Xemu (MegaNet's flying cards).
 
 MSEdit keeps its line buffers at `$C000`, uninitialised and not in the PRG. In Xemu, KERNAL disk jobs
 (open, read, write, directory, DOS commands) left `$C400-$CFFF` untouched. Not yet checked on hardware.
@@ -265,6 +281,14 @@ Dan Sanderson's recommended default model:
 - **Pulls set the flags, stores don't.** `lda src,x / plx / sta dst,x / beq done` tests X from the `plx`, not the byte just copied. A copy loop like that ran until X wrapped to 0 and wrote 256 bytes over the GUI's gadget tables (MegaNet's text-area line join). Put `cmp #0` (or the load) right before the branch.
 - `inw`/`dew`/`asw` work on the base page only.
 - There is no `lda abs,z`, `cpx abs,x`, `cpy abs,x` or `ldx abs,x`.
+- **A difference of two labels stays a 16-bit address in 64tass.** `OVL_ATTIC + (lab - OVL_BASE)`
+  wraps to a small number (with "memory location address overflow" only in some forms). Multiply
+  by 1 to make it a plain number first: `OVL_ATTIC + (lab - OVL_BASE) * 1`. 64tass also writes
+  computed constants to the `.lbl` file in decimal, not `$hex`; a tool reading it must take both.
+- Z moves only through A (`taz` / `tza`): there is no `tyz` or `txz`. 64tass takes an unknown
+  word at the start of a line as a **label**, so `tyz` silently defines a global label, ends
+  the scope of the `_local` labels around it, and the error shows up as "not defined symbol
+  '_loop'" a few lines away.
 - 32-bit indirect: `lda [zp],z` / `sta [zp],z` with a 28-bit address in 4 base-page bytes reaches all chip RAM and attic. Set Z (`ldz #0`) before each one. Keep IRQs off if an IRQ handler might change Z [?].
 - `ldx #n-1 / ... / dex / bpl` handles at most 128 bytes. Count up (`inx / cpx #n / bne`) for longer blocks.
 - An `asl`/`tax` index wraps past 127 entries: use separate lo/hi tables.
@@ -357,6 +381,7 @@ The multiplier's output is live: `MULTOUT` changes as soon as an input does. To 
 - CHR16 + FCLRHI (`$D054` bits 0 and 2): 16-bit char numbers, one byte per pixel, 64 bytes per char. Char number = address / 64. Glyphs above `$3FC0` need char numbers above 255, so 8-bit char code silently truncates.
 - Give each cell its own char and lay chars out **column by column**: offset = `(x>>3) * rows * 64 + y*8 + (x&7)` (for 32 rows that's `(x>>3)*$800`). Row-major also works: `((y>>3)*cols + (x>>3))*64 + (y&7)*8 + (x&7)`.
 - Clearing colour RAM leaves the per-char NCM bit off, so chars render as FCM.
+- **A pixel of `$00` shows the background colour `$D021`, not palette entry 0** (and `$FF` shows the cell's colour-RAM colour). Showing a full-screen picture with its own palette, keep `$D021` = 0 and colour the border with `$D020` only: MegaNet set `$D021` to the picture's darkest colour and every colour-0 pixel turned that colour (seen in Xemu).
 - Double-buffer by flipping `$D060-$D063` in a raster IRQ in the bottom border. The same IRQ can feed the music.
 - Game-loop pattern: logic is plain sequential code that calls `frame` whenever it waits. `frame` draws into the back buffer, flips at the next vertical blank, and reads the controls.
 - Sync heavy redraws to vertical blank; poll input before the wait so the blank is all drawing time.
@@ -599,6 +624,18 @@ The multiplier's output is live: `MULTOUT` changes as soon as an input does. To 
 - [?] An attic mirror path (`$801xxxx`) written back with enhanced DMA corrupted memory once; a CPU copy loop worked.
 - **Two overlays that call each other** (Lightsource's modeller, overlays 4 and 6): a resident `ovl_far` reads its target from the bytes after the `jsr` (`jsr ovl_far / .byte overlay / .word routine`, a `FAR` macro), pushes the caller's overlay number, swaps, calls, swaps back and returns past the bytes. The swap writes the window back to its attic slot before it copies the other in, so both keep their variables and calls can nest (4 -> 6 -> 4 -> 6 works). Keep A, X, Y and the flags going through both ways, and use fixed DMA lists, not the base-page pointers a copy routine uses, so the callee's arguments survive. Don't write back after disk work that may have used the window: reload fresh from attic. A swap is two 20 KB DMA copies, which didn't show in a redraw's timing.
 - With one assembly (shared labels), data both overlays use has to be resident, and a script that lists identifiers in one overlay's files naming labels defined in the other's (Lightsource's `private/tools/ovl_check.py`) catches what the assembler can't; the template's `private/tools/ovl_check.py` reads the layout from `main.asm` and checks every pair of overlays. Resident routines the second overlay calls mustn't use the first's labels either (`ovl_check.py --resident` lists those references to read by hand).
+- **One overlay alone saves nothing:** the window is as big as the overlay. The saving is every
+  overlay but the biggest, so group rarely-used code that never runs at the same time
+  (MegaNet: the File Library's disk work, 5.7 KB, and the Art Gallery's, 2.1 KB, share one
+  window). Code that reads another module's variables directly has to share its overlay.
+- **Per-frame calls into an overlay:** keep the flag that says "anything to do" resident and
+  test it before the `#FAR`, so an idle frame costs nothing (each `#FAR` from the resident part
+  is two window-sized DMA copies; about 0.3 ms for 6 KB, fine per message or per frame).
+- **Pointers the resident part keeps** (a GUI hook, a callback) must point at resident `#FAR`
+  stubs, never into the overlay: the hook runs when another overlay, or none, is in the window.
+- **A test harness peeking an overlay's variable** by its label reads whatever is in the window.
+  Every `#FAR` writes the overlay back, so its attic copy is current between calls: give the
+  harness `at_name = OVL_ATTIC + n * $10000 + (name - OVL_BASE) * 1` aliases.
 - **An overlay's variables don't survive a plain reload.** When resident code loads another overlay and then reloads the caller's fresh from attic (no write-back), every variable the caller changed since its image was last stored is back to its old value. Keep anything needed across such a call resident.
 - **`ldq` loads X and Y too** (Q is A, X, Y, Z), so a `#MOVQ`-style macro between setting an index register and using it destroys it: set X and Y after the Q moves.
 - **Text past the window's end:** an overlay's file can go on past the window (`.fill OVL_END - *` then the data, or a `.section` in the source collected there by `.dsection`). `ovl_load` copies only the window, so the rest stays in attic, and the overlay DMAs the piece it needs into a small buffer. Lightsource's modeller help lines and parser error messages (about 1.2 KB) live this way; keep the pointer table in the window, pointing at the logical addresses past `OVL_END`, and subtract `OVL_BASE` for the attic offset.

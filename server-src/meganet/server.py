@@ -1,7 +1,7 @@
 """The MegaNet server: accepts MEGA65 clients over TCP and drives their screens.
 
     python -m meganet [--port 6400] [--db data/meganet.db] [--updates updates] [--motd FILE]
-                      [--filelibs filelibs] [--cafile PEM]
+                      [--filelibs filelibs] [--galleries galleries] [--cafile PEM]
 """
 
 import argparse
@@ -26,13 +26,14 @@ DEFAULT_PORT = 6400
 DEFAULT_DB = os.path.join(HERE, "data", "meganet.db")
 DEFAULT_UPDATES = os.path.join(HERE, "updates")
 DEFAULT_FILELIBS = os.path.join(HERE, "filelibs")     # the file libraries' folders (filelib.py)
+DEFAULT_GALLERIES = os.path.join(HERE, "galleries")   # the Art Gallery's pictures (gallery/)
 
 
 class Server:
     """Holds everything shared between sessions: the database, the chat lobby, the games."""
 
     def __init__(self, db_path=DEFAULT_DB, updates_dir=DEFAULT_UPDATES, motd_file=None,
-                 filelibs_dir=None):
+                 filelibs_dir=None, galleries_dir=None):
         """`motd_file`: a text file to load into the message of the day (replacing it).
         `filelibs_dir`: where the file libraries keep their files (default filelibs/; with a
         :memory: database, as the tests use, a folder inside updates_dir instead)."""
@@ -42,6 +43,10 @@ class Server:
             filelibs_dir = (os.path.join(updates_dir, "filelibs") if db_path == ":memory:"
                             else DEFAULT_FILELIBS)
         self.filelibs_dir = filelibs_dir
+        if galleries_dir is None:            # the Art Gallery's pictures (gallery/)
+            galleries_dir = (os.path.join(updates_dir, "galleries") if db_path == ":memory:"
+                             else DEFAULT_GALLERIES)
+        self.galleries_dir = galleries_dir
         if motd_file:
             lines = self.db.set_motd(read_motd_file(motd_file))
             self.serverlog.write("message of the day: %d lines from %s" % (len(lines), motd_file))
@@ -130,6 +135,8 @@ def main(argv=None):
                     help="folder with manifest.json and the client files for forced updates")
     ap.add_argument("--filelibs", default=DEFAULT_FILELIBS,
                     help="folder for the file libraries (default filelibs/)")
+    ap.add_argument("--galleries", default=DEFAULT_GALLERIES,
+                    help="folder for the Art Gallery's pictures (default galleries/)")
     ap.add_argument("--motd", metavar="FILE",
                     help="text file to load as the message of the day (replaces the saved one)")
     ap.add_argument("--cafile", metavar="PEM",
@@ -142,7 +149,7 @@ def main(argv=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
     async def run():
-        server = Server(args.db, args.updates, args.motd, args.filelibs)
+        server = Server(args.db, args.updates, args.motd, args.filelibs, args.galleries)
         port = await server.start(args.host, args.port)
         server.serverlog.write("MegaNet server %s listening on port %d (%d games)"
                                % (__version__, port, len(server.games.classes)))

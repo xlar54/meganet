@@ -63,7 +63,7 @@ MENU_MY_ACCOUNT = 0x22
 # icon. The hint (at most NOTIFY_HINT_MAX characters) is a short text the client may show.
 # C.NOTIFY_CLICK (u8 slot) says the user clicked that slot's icon; the client leaves the icon
 # there, and the server sends icon 0 when it's done with it. The server's slots:
-NOTIFY_SLOTS = 6
+NOTIFY_SLOTS = 7          # (clients from before the newspaper have 6: they ignore slot 6)
 NOTIFY_HINT_MAX = 40
 SLOT_STATUS = 0          # your status, always shown: a green / yellow / dark grey dot
 SLOT_PAGE = 1            # a user is paging the admins (admins only)
@@ -71,6 +71,7 @@ SLOT_ADMIN_MAIL = 2      # messages from users to the admins (admins only)
 SLOT_MAIL = 3            # unread private messages
 SLOT_NEW_USER = 4        # users still in the default role (admins with admin.users only)
 SLOT_IM = 5              # instant messages not read yet
+SLOT_NEWS = 6            # unread news bulletins (news.py)
 TOAST_NO_SLOT = 0xFF
 
 
@@ -90,6 +91,7 @@ class Icon(IntEnum):
     AVAILABLE = 7        # status dots (SLOT_STATUS): green
     AWAY = 8             # yellow
     OFFLINE = 9          # dark grey
+    NEWS = 10            # a folded newspaper: unread news
 
 
 class S(IntEnum):
@@ -109,7 +111,7 @@ class S(IntEnum):
                          # replaces the whole server menu ("-" = separator; see MENU_FIRST)
     ALERT = 0x19         # u8 icon, str title, str text  (client draws a modal OK box)
     WIN_DONE = 0x1A      # u8 win  (all gadgets sent: the client may draw the window now)
-    NOTIFY = 0x1B        # u8 slot (0-5), u8 icon, str hint  (an icon button at the right end
+    NOTIFY = 0x1B        # u8 slot (0-6), u8 icon, str hint  (an icon button at the right end
                          # of the menu bar; see NOTIFY_SLOTS)
     PONG = 0x1C          # (nothing)  the answer to C.PING
     SET_FLAGS = 0x1D     # u8 win, u8 gid, u8 flags  (GFlag: e.g. DISABLED greys a button out
@@ -152,7 +154,44 @@ class S(IntEnum):
                          # stored in the client's resource slot (64 KB of attic each) at
                          # offset. A GRID's tiles live in one: tile t at t * tile_w * tile_h,
                          # row by row, a byte (palette index) a pixel
-    UPDATE = 0x40        # u16 new build, u8 nfiles, str message  (forced: the client shows a
+    # A picture over the whole screen (the Art Gallery). Clients with Caps.PICTURE only.
+    PICTURE = 0x2A       # u8 slot, u8 mode (PIC_LORES / PIC_HIRES), u8 border, u8 n (1-255),
+                         # n x (r, g, b): the pixels are in resource slot `slot` on (two slots
+                         # for hires; see gallery/picture.py for their order), the colours
+                         # palette entries 0..n-1, the screen's border colour `border`. The client hides its desktop and draws nothing else until
+                         # S.PICTURE_END (it still takes messages, and keeps their changes for
+                         # then); keys and clicks go to the server as C.PIC_KEY. Another
+                         # PICTURE while one shows replaces it
+    PICTURE_END = 0x2B   # (nothing)  back to the desktop: its palette, everything drawn again
+    RESOURCE_PACKED = 0x2C   # u8 slot, u16 offset, PackBits bytes...  (at most RESOURCE_CHUNK;
+                         # gallery/picture.py packed_chunks): as RESOURCE, unpacked from offset
+                         # on (wrapping inside the slot). Caps.PICTURE clients only
+    # Paint (gallery/paint.py): a picture the server keeps, as the desktop. Caps.CANVAS only.
+    CANVAS = 0x2D        # u8 slot, u8 n (1-239), n x (r, g, b): the picture in resource slot
+                         # `slot` (320x200 in the lores framebuffer order of
+                         # gallery/picture.py, each byte a palette entry: CANVAS_FIRST + its
+                         # colour) becomes the desktop, its colours palette entries
+                         # CANVAS_FIRST on. The windows open now are hidden, and the menu bar,
+                         # until CANVAS_END; windows opened after it show over the picture.
+                         # Presses, moves and releases on it come as C.CANVAS. Again while it
+                         # shows: new colours
+    CANVAS_END = 0x2E    # (nothing)  the desktop, the hidden windows and the menu bar back
+    CANVAS_RECT = 0x2F   # u16 x, u8 y, u16 w, u8 h, PackBits of w * h bytes, row by row
+                         # (palette entries): those pixels of the picture changed
+    # The server's sprites (Caps.SPRITES; session.sprite_show / sprite_move / sprite_off /
+    # fly): SPRITES hardware sprites made by the client from any picture in a resource slot
+    SPRITE = 0x32        # u8 n, u8 win, u8 slot, u16 offset, u8 w (1-16), u8 h (1-64),
+                         # u16 stride, u8 step, u16 x, u8 y, u8 c, c x (u8 colour, r, g, b):
+                         # sprite n is the picture at `offset` in slot `slot` (w pixels `step`
+                         # bytes apart, h rows `stride` apart), its colours the c listed (any
+                         # other byte see-through), at (x, y) in window win's client area
+    SPRITE_MOVE = 0x33   # u8 n, s16 dx, s16 dy, u8 frames, u8 hide: it moves (dx, dy) a frame
+                         # (8.8 fixed point) for `frames` frames, then goes if hide is 1
+    SPRITE_OFF = 0x34    # u8 n ($FF: all): gone
+    CANVAS_PEN = 0x31    # u8 mode (CanvasPen), u8 colour (a palette entry), u8 size (1-16):
+                         # what the client draws at once while the mouse is held, before the
+                         # server's CANVAS_RECT comes
+    UPDATE = 0x40      # u16 new build, u8 nfiles, str message  (forced: the client shows a
                          # progress window, receives nfiles x FILE_BEGIN/DATA/END, writes them,
                          # reboots)
 
@@ -186,6 +225,11 @@ class C(IntEnum):
     UP_BEGIN = 0x90      # u8 req, u32 size  (S.LOAD_FILE's file follows)
     UP_DATA = 0x91       # u8 req, bytes...  (at most UP_CHUNK, in order)
     UP_END = 0x92        # u8 req, u32 crc32
+    PIC_KEY = 0x93       # u8 key  (while an S.PICTURE shows: the key's ASCII code, Esc = 27, a
+                         # left click = PIC_CLICK, a right click = Esc)
+    CANVAS = 0x94        # u8 event (CanvasEvent), u16 x, u8 y  (on S.CANVAS's picture, in its
+                         # pixels: 0-319, 0-199; moves only while the button is held, and only
+                         # when the picture pixel changes)
 
 
 class Kind(IntEnum):
@@ -237,9 +281,48 @@ GAME_COLOURS = [
     (238, 238, 210), (200, 40, 40),              # 250 cream squares; 251 red
     (60, 120, 200), (230, 190, 40), (20, 20, 20),    # 252 blue; 253 gold; 254 near black
 ]
+GUI_RGB = list(zip(     # palette entries 0-15: the client's GUI colours (lib/gui/gui.asm GUIPAL_*)
+    [0, 255, 192, 128, 223, 0, 0, 16, 255, 192, 0, 64, 0, 8, 255, 0],
+    [0, 255, 192, 128, 223, 0, 128, 132, 255, 0, 128, 64, 0, 8, 255, 255],
+    [0, 255, 192, 128, 223, 128, 128, 208, 225, 0, 0, 64, 255, 24, 0, 255]))
+
+
+def palette_rgb(index):
+    """(r, g, b) of a palette entry the server knows: the GUI's (0-15) or the game colours."""
+    if index < 16:
+        return GUI_RGB[index]
+    if GAME_FIRST <= index < GAME_FIRST + len(GAME_COLOURS):
+        return GAME_COLOURS[index - GAME_FIRST]
+    raise ValueError("palette entry %d isn't a fixed colour" % index)
+
+
+SPRITES = 2              # the server's sprites (S.SPRITE n): 0 and 1
+SPRITE_W, SPRITE_H, SPRITE_COLOURS = 16, 64, 15     # a sprite's pixels across, rows, colours
 RESOURCE_SLOTS = 16
 RESOURCE_SIZE = 0x10000  # bytes a slot
 RESOURCE_CHUNK = 1024    # S.RESOURCE bytes at most
+PIC_LORES, PIC_HIRES = 0, 1      # S.PICTURE modes: 320x200 (pixels doubled across), 640x200
+PIC_CLICK = 1            # C.PIC_KEY: a left click
+PIC_ESC = 27
+CANVAS_FIRST = 16        # S.CANVAS: the palette entry of the picture's colour 0
+CANVAS_COLOURS = 239     # (entries 16-254)
+CANVAS_W, CANVAS_H = 320, 200
+
+
+class CanvasPen(IntEnum):
+    """S.CANVAS_PEN modes: what the client draws at once while the mouse is held."""
+    NONE = 0             # nothing (the server's answer shows it)
+    FREE = 1             # the brush (a square `size` across) along the pointer
+    LINE = 2             # a 1-pixel line from the press to the pointer, gone at the release
+    BOX = 3              # a box's 1-pixel outline from the press to the pointer, the same
+
+
+class CanvasEvent(IntEnum):
+    """C.CANVAS events."""
+    DOWN = 1
+    MOVE = 2
+    UP = 3
+    RIGHT = 4            # a right click
 DROPDOWN_ROWS = 128      # a DROPDOWN holds at most this many rows
 DROPDOWN_NONE = 0xFFFF   # SET_VALUE / C.SELECT index for "no row selected"
 EDIT_LINES = 32          # an EDIT holds at most this many lines
@@ -285,6 +368,9 @@ class Caps(IntFlag):
     SD_READ = 2          # the SD card: folders, and reading D64 / D81 images (uploads)
     SD_WRITE = 4         # writing D64 / D81 images to the SD card (downloads)
     GRID = 8             # Kind.GRID gadgets, S.CELLS and S.RESOURCE (board games)
+    PICTURE = 16         # S.PICTURE / PICTURE_END / RESOURCE_PACKED, C.PIC_KEY (Art Gallery)
+    CANVAS = 32          # S.CANVAS / CANVAS_END / CANVAS_RECT / CANVAS_PEN, C.CANVAS (Paint)
+    SPRITES = 64         # S.SPRITE / SPRITE_MOVE / SPRITE_OFF (One's flying cards)
 
 
 class Local(IntEnum):

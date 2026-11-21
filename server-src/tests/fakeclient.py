@@ -4,13 +4,16 @@ of the windows the server has opened, the way the MEGA65 client will."""
 import asyncio
 import zlib
 
-from meganet.protocol import (Local, LocalStatus, LOCAL_SD, LOCAL_MAX, FILE_CHUNK, UP_CHUNK,
+from meganet.protocol import (SPRITES, SPRITE_W, SPRITE_H, SPRITE_COLOURS, Local, LocalStatus, LOCAL_SD, LOCAL_MAX, FILE_CHUNK, UP_CHUNK,
                               BROADCAST_MAX, DESK_SLOTS, DESK_ICON_W, DESK_ICON_H, DESK_LABEL_MAX,
                               DESK_CLEAR, GFlag, S, C, Kind, Writer, Deframer, LOGIN_NEW_USER, MENU_FIRST,
                               MENU_LAST, MENU_SEPARATOR, NOTIFY_SLOTS, NOTIFY_HINT_MAX, Icon,
                               window_fits, DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES,
                               EDIT_COLS_MAX, Caps, GRID_PARAMS, GRID_CELLS_MAX, RESOURCE_SLOTS,
-                              RESOURCE_CHUNK, RESOURCE_SIZE)
+                              RESOURCE_CHUNK, RESOURCE_SIZE, PIC_LORES, PIC_HIRES,
+                              CANVAS_COLOURS, CANVAS_FIRST, CANVAS_W, CANVAS_H, CanvasPen)
+from meganet.gallery.picture import unpackbits
+from meganet.gallery.paint import canvas_offset
 
 TIMEOUT = 5.0
 ROW_MAX = 63             # list box / drop-down rows
@@ -206,6 +209,17 @@ class FakeClient:
         self.resources = {}      # S.RESOURCE: slot -> 64 KB
         self.resource_bytes = 0  # how many came
         self.progress = []       # every progress bar value set, in order: (window title, %)
+        self.packed_bytes = 0    # S.RESOURCE_PACKED bytes as sent (before unpacking)
+        self.picture = None      # the S.PICTURE showing: dict(slot, mode, palette, data)
+        self.pictures = []       # every S.PICTURE, in order
+        self.canvas = None       # S.CANVAS while painting: dict(slot, palette)
+        self.hidden = set()      # the window ids S.CANVAS hid
+        self.canvas_rects = 0    # S.CANVAS_RECTs received
+        self.pen = None          # the last S.CANVAS_PEN: (mode, colour, size)
+        self.sprites = {}        # S.SPRITE: n -> its dict (win, slot, offset, w, h, stride,
+                                 # step, x, y, colours)
+        self.flights = []        # S.SPRITE_MOVE: the sprite dict + dx, dy, frames, hide,
+                                 # end
         self._changed = asyncio.Event()
 
     async def connect(self, port):
@@ -331,6 +345,22 @@ class FakeClient:
 
     def hint(self, slot):
         return self.notify.get(slot, (Icon.NONE, ""))[1]
+
+    def pic_key(self, key):
+        """A key (or PIC_CLICK) while a picture shows."""
+        if isinstance(key, str):
+            key = ord(key)
+        self.send(C.PIC_KEY, Writer().u8(key))
+
+    def canvas_event(self, event, x, y):
+        """The mouse on the picture while painting (C.CANVAS)."""
+        self.send(C.CANVAS, Writer().u8(event).u16(x).u8(y))
+
+    def canvas_pixels(self):
+        """The picture as this client has it: colour numbers, row by row."""
+        buf = self.resources.get(self.canvas["slot"] if self.canvas else 6, bytes(RESOURCE_SIZE))
+        return bytes(buf[canvas_offset(x, y)] - CANVAS_FIRST
+                     for y in range(CANVAS_H) for x in range(CANVAS_W))
 
     def close_box(self, win):
         self.windows.pop(win, None)
@@ -554,6 +584,88 @@ class FakeClient:
             buf = self.resources.setdefault(slot, bytearray(RESOURCE_SIZE))
             buf[offset:offset + len(data)] = data
             self.resource_bytes += len(data)
+        elif t == S.RESOURCE_PACKED:
+            assert self.caps & Caps.PICTURE, "RESOURCE_PACKED for a client without Caps.PICTURE"
+            slot, offset = r.u8(), r.u16()
+            packed = r.rest()
+            assert slot < RESOURCE_SLOTS and len(packed) <= RESOURCE_CHUNK
+            data = unpackbits(packed)
+            assert offset + len(data) <= RESOURCE_SIZE, "RESOURCE_PACKED past the slot's end"
+            buf = self.resources.setdefault(slot, bytearray(RESOURCE_SIZE))
+            buf[offset:offset + len(data)] = data
+            self.resource_bytes += len(data)
+            self.packed_bytes += len(packed)
+        elif t == S.PICTURE:
+            assert self.caps & Caps.PICTURE, "a PICTURE for a client without Caps.PICTURE"
+            slot, mode, border, n = r.u8(), r.u8(), r.u8(), r.u8()
+            assert 1 <= n <= 255 and mode in (PIC_LORES, PIC_HIRES) and border < n
+            palette = [(r.u8(), r.u8(), r.u8()) for _ in range(n)]
+            assert not r.rest(), "bytes left over in PICTURE"
+            size = 64000 if mode == PIC_LORES else 128000
+            data = bytes(self.resources.get(slot, bytes(RESOURCE_SIZE))) + \
+                bytes(self.resources.get(slot + 1, bytes(RESOURCE_SIZE)))
+            self.picture = dict(slot=slot, mode=mode, palette=palette, data=data[:size],
+                                border=border)
+            self.pictures.append(self.picture)
+        elif t == S.CANVAS:
+            assert self.caps & Caps.CANVAS, "a CANVAS for a client without Caps.CANVAS"
+            slot, n = r.u8(), r.u8()
+            assert 1 <= n <= CANVAS_COLOURS and slot < RESOURCE_SLOTS
+            palette = [(r.u8(), r.u8(), r.u8()) for _ in range(n)]
+            assert not r.rest(), "bytes left over in CANVAS"
+            if self.canvas is None:
+                self.hidden = set(self.windows)         # (the windows open now are hidden)
+            self.canvas = dict(slot=slot, palette=palette)
+        elif t == S.CANVAS_END:
+            assert self.canvas is not None, "CANVAS_END while not painting"
+            self.canvas = None
+            self.hidden = set()
+        elif t == S.CANVAS_RECT:
+            assert self.canvas is not None, "CANVAS_RECT while not painting"
+            x, y, w, h = r.u16(), r.u8(), r.u16(), r.u8()
+            assert x + w <= CANVAS_W and y + h <= CANVAS_H and w and h, "CANVAS_RECT out"
+            packed = r.rest()
+            assert len(packed) <= RESOURCE_CHUNK, "CANVAS_RECT of %d bytes" % len(packed)
+            data = unpackbits(packed)
+            assert len(data) == w * h, "CANVAS_RECT: %d bytes for %dx%d" % (len(data), w, h)
+            buf = self.resources.setdefault(self.canvas["slot"], bytearray(RESOURCE_SIZE))
+            for j in range(h):
+                for i in range(w):
+                    buf[canvas_offset(x + i, y + j)] = data[j * w + i]
+            self.canvas_rects += 1
+        elif t == S.CANVAS_PEN:
+            self.pen = (CanvasPen(r.u8()), r.u8(), r.u8())
+        elif t == S.SPRITE:
+            assert self.caps & Caps.SPRITES, "S.SPRITE for a client without Caps.SPRITES"
+            sp = dict(n=r.u8(), win=r.u8(), slot=r.u8(), offset=r.u16(), w=r.u8(), h=r.u8(),
+                      stride=r.u16(), step=r.u8(), x=r.u16(), y=r.u8())
+            sp["colours"] = [(r.u8(), (r.u8(), r.u8(), r.u8())) for _ in range(r.u8())]
+            assert sp["n"] < SPRITES and sp["win"] in self.windows, "a bad S.SPRITE"
+            assert 1 <= sp["w"] <= SPRITE_W and 1 <= sp["h"] <= SPRITE_H
+            assert len(sp["colours"]) <= SPRITE_COLOURS
+            self.sprites[sp["n"]] = sp
+        elif t == S.SPRITE_MOVE:
+            def s16(v):
+                return v - 0x10000 if v & 0x8000 else v
+            n, dx, dy, frames, hide = r.u8(), s16(r.u16()), s16(r.u16()), r.u8(), r.u8()
+            sp = self.sprites.get(n)
+            assert sp is not None, "S.SPRITE_MOVE for a sprite not shown"
+            # where it ends, as sprites.asm adds the steps (the fraction starts at a half)
+            end = (sp["x"] + (128 + dx * frames) // 256, sp["y"] + (128 + dy * frames) // 256)
+            self.flights.append(dict(sp, dx=dx, dy=dy, frames=frames, hide=hide, end=end))
+            if hide:
+                self.sprites.pop(n)
+            else:
+                sp["x"], sp["y"] = end
+        elif t == S.SPRITE_OFF:
+            n = r.u8()
+            if n == 0xFF:
+                self.sprites.clear()
+            else:
+                self.sprites.pop(n, None)
+        elif t == S.PICTURE_END:
+            assert self.picture is not None, "PICTURE_END with no picture showing"
+            self.picture = None
         elif t == S.UPDATE:
             self.update = (r.u16(), r.u8(), r.str())
         elif t in (S.LOCAL_DIR, S.SAVE_BEGIN, S.LOAD_FILE, S.LOCAL_CANCEL):

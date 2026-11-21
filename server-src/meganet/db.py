@@ -166,6 +166,13 @@ CREATE TABLE IF NOT EXISTS news (
     edited    INTEGER,                  -- NULL: never edited
     editor    INTEGER REFERENCES users(id)
 );
+CREATE TABLE IF NOT EXISTS news_reads (       -- who has read which bulletin, and when
+    user_id   INTEGER NOT NULL REFERENCES users(id),
+    news_id   INTEGER NOT NULL REFERENCES news(id),
+    read_at   INTEGER NOT NULL,         -- the version read: the bulletin's COALESCE(edited,
+                                        -- posted) then (an edit makes it unread again)
+    PRIMARY KEY (user_id, news_id)
+);
 CREATE TABLE IF NOT EXISTS libraries (
     id           INTEGER PRIMARY KEY,
     title        TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -196,6 +203,26 @@ CREATE TABLE IF NOT EXISTS library_files (
     downloads   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS library_files_library ON library_files (library_id);
+CREATE TABLE IF NOT EXISTS galleries (           -- the Art Gallery (gallery/)
+    id           INTEGER PRIMARY KEY,
+    title        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    description  TEXT NOT NULL DEFAULT '',       -- lines joined with newlines
+    created      INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gallery_pictures (
+    id          INTEGER PRIMARY KEY,
+    gallery_id  INTEGER NOT NULL REFERENCES galleries(id),
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    path        TEXT NOT NULL,                   -- the IFF, relative to the galleries folder
+    width       INTEGER NOT NULL,
+    height      INTEGER NOT NULL,
+    colours     INTEGER NOT NULL,                -- colours used
+    artist      INTEGER REFERENCES users(id),
+    added       INTEGER NOT NULL,
+    views       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS gallery_pictures_gallery ON gallery_pictures (gallery_id);
 CREATE TABLE IF NOT EXISTS log (                -- the server log (serverlog.py)
     id       INTEGER PRIMARY KEY,
     at       INTEGER NOT NULL,                  -- Unix time
@@ -373,6 +400,13 @@ class Database:
                 self.conn.execute("INSERT INTO forums (name, created) VALUES (?, ?)",
                                   (FIRST_FORUM, int(time.time())))
             self._set_setting("forums_seeded", 1)
+        if self.setting("news_reads_seeded") is None:       # read tracking began: what
+            self.conn.execute(                              # each user saw by the old rule
+                "INSERT OR IGNORE INTO news_reads (user_id, news_id, read_at) "   # (changed
+                "SELECT u.id, n.id, COALESCE(n.edited, n.posted) FROM users u, news n "           # before
+                "WHERE u.last_login IS NOT NULL "                                  # their last
+                "AND COALESCE(n.edited, n.posted) <= u.last_login")               # sign-on)
+            self._set_setting("news_reads_seeded", 1)
         if self.setting("rooms_seeded") is None:            # the Lobby, once
             if not self.chat_rooms():
                 self.conn.execute("INSERT INTO chat_rooms (name, created) VALUES (?, ?)",
@@ -1018,6 +1052,96 @@ class Database:
             self.conn.execute("UPDATE library_files SET downloads = downloads + 1 WHERE id = ?",
                               (file_id,))
 
+    # ---- the Art Gallery (gallery/) ----
+
+    _GALLERY_SQL = ("SELECT g.id, g.title, g.description, g.created, (SELECT COUNT(*) FROM "
+                    "gallery_pictures p WHERE p.gallery_id = g.id) AS pictures FROM galleries g ")
+
+    def galleries(self):
+        """Every gallery (id, title, description, created, pictures), sorted by title."""
+        return self.conn.execute(self._GALLERY_SQL + "ORDER BY g.title COLLATE NOCASE").fetchall()
+
+    def gallery(self, gallery_id):
+        return self.conn.execute(self._GALLERY_SQL + "WHERE g.id = ?", (gallery_id,)).fetchone()
+
+    def create_gallery(self, title, description=""):
+        """A new gallery's id, or None if the title (any case) is taken."""
+        try:
+            with self.conn:
+                cur = self.conn.execute(
+                    "INSERT INTO galleries (title, description, created) VALUES (?, ?, ?)",
+                    (title, description, int(time.time())))
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+
+    def update_gallery(self, gallery_id, title, description):
+        """None, or why not."""
+        try:
+            with self.conn:
+                self.conn.execute("UPDATE galleries SET title = ?, description = ? WHERE id = ?",
+                                  (title, description, gallery_id))
+            return None
+        except sqlite3.IntegrityError:
+            return "There is already a gallery called %s." % title
+
+    def delete_gallery(self, gallery_id):
+        """The gallery and its pictures' rows; the paths of their files (for the caller)."""
+        paths = [r["path"] for r in self.conn.execute(
+            "SELECT path FROM gallery_pictures WHERE gallery_id = ?", (gallery_id,))]
+        with self.conn:
+            self.conn.execute("DELETE FROM gallery_pictures WHERE gallery_id = ?", (gallery_id,))
+            self.conn.execute("DELETE FROM galleries WHERE id = ?", (gallery_id,))
+        return paths
+
+    _PICTURE_SQL = ("SELECT p.id, p.gallery_id, p.title, p.description, p.path, p.width, "
+                    "p.height, p.colours, p.artist, COALESCE(u.name, '') AS artist_name, "
+                    "p.added, p.views FROM gallery_pictures p LEFT JOIN users u "
+                    "ON u.id = p.artist ")
+
+    def gallery_pictures(self, gallery_id):
+        """A gallery's pictures, oldest first."""
+        return self.conn.execute(self._PICTURE_SQL + "WHERE p.gallery_id = ? ORDER BY p.added, "
+                                 "p.id", (gallery_id,)).fetchall()
+
+    def gallery_picture(self, picture_id):
+        return self.conn.execute(self._PICTURE_SQL + "WHERE p.id = ?", (picture_id,)).fetchone()
+
+    def add_gallery_picture(self, gallery_id, title, description, width, height, colours,
+                            artist=None):
+        """A new picture's id; its path is set with set_gallery_picture_path once it's saved."""
+        with self.conn:
+            cur = self.conn.execute(
+                "INSERT INTO gallery_pictures (gallery_id, title, description, path, width, "
+                "height, colours, artist, added) VALUES (?, ?, ?, '', ?, ?, ?, ?, ?)",
+                (gallery_id, title, description, width, height, colours, artist,
+                 int(time.time())))
+        return cur.lastrowid
+
+    def set_gallery_picture_path(self, picture_id, path):
+        with self.conn:
+            self.conn.execute("UPDATE gallery_pictures SET path = ? WHERE id = ?",
+                              (path, picture_id))
+
+    def set_gallery_picture_size(self, picture_id, width, height, colours):
+        with self.conn:
+            self.conn.execute("UPDATE gallery_pictures SET width = ?, height = ?, colours = ? "
+                              "WHERE id = ?", (width, height, colours, picture_id))
+
+    def update_gallery_picture(self, picture_id, title, description):
+        with self.conn:
+            self.conn.execute("UPDATE gallery_pictures SET title = ?, description = ? "
+                              "WHERE id = ?", (title, description, picture_id))
+
+    def delete_gallery_picture(self, picture_id):
+        with self.conn:
+            self.conn.execute("DELETE FROM gallery_pictures WHERE id = ?", (picture_id,))
+
+    def count_view(self, picture_id):
+        with self.conn:
+            self.conn.execute("UPDATE gallery_pictures SET views = views + 1 WHERE id = ?",
+                              (picture_id,))
+
     _TOPIC_SQL = ("SELECT t.id, t.forum_id, t.subject, t.author, COALESCE(u.name, '?') AS "
                   "author_name, t.created, t.last_post, "
                   "(SELECT COUNT(*) FROM posts p WHERE p.topic_id = t.id) AS posts, "
@@ -1246,11 +1370,31 @@ class Database:
         return cur.lastrowid
 
     def edit_news(self, news_id, headline, lines, editor):
+        """(`edited` always moves on, even within a second: it is the version news_reads
+        compares, so every edit is unread again.)"""
         with self.conn:
-            self.conn.execute("UPDATE news SET headline = ?, body = ?, edited = ?, editor = ? "
-                              "WHERE id = ?", (headline, "\n".join(lines), int(time.time()),
-                                               editor, news_id))
+            self.conn.execute("UPDATE news SET headline = ?, body = ?, editor = ?, "
+                              "edited = MAX(?, COALESCE(edited, posted) + 1) WHERE id = ?",
+                              (headline, "\n".join(lines), editor, int(time.time()), news_id))
 
     def delete_news(self, news_id):
         with self.conn:
+            self.conn.execute("DELETE FROM news_reads WHERE news_id = ?", (news_id,))
             self.conn.execute("DELETE FROM news WHERE id = ?", (news_id,))
+
+    def unread_news(self, user_id):
+        """The ids of the bulletins `user_id` hasn't read since they were posted or last
+        edited, newest first."""
+        return [r[0] for r in self.conn.execute(
+            "SELECT n.id FROM news n LEFT JOIN news_reads r ON r.news_id = n.id "
+            "AND r.user_id = ? WHERE r.read_at IS NULL "
+            "OR r.read_at < COALESCE(n.edited, n.posted) "
+            "ORDER BY n.posted DESC, n.id DESC", (user_id,))]
+
+    def mark_news_read(self, user_id, news_ids):
+        """`user_id` has read these bulletins, as they are now."""
+        with self.conn:
+            self.conn.executemany(
+                "INSERT OR REPLACE INTO news_reads (user_id, news_id, read_at) "
+                "SELECT ?, id, COALESCE(edited, posted) FROM news WHERE id = ?",
+                [(user_id, i) for i in news_ids])

@@ -90,6 +90,27 @@
       Tic-Tac-Toe could use the lobby too; spectators; saving finished games (PGN)
 - [ ] Chess: not tried in Xemu yet: a capture, castling, the promotion dialog, Offer
       Draw / Resign / Rematch / Lobby (all covered by the server tests with fake clients)
+- [x] One (2026-11-20): the card game for 2-4 by the official rules, Wait for Others or vs
+      Computer (1-3), cards as GRID tiles (sent packed). Tried in Xemu: Join's question,
+      the table and the cards, the computer's move. Server tests cover every rule, the
+      dialogs, One! / Catch!, scoring and leaving
+- [x] One's cards fly (2026-11-20): first S.FLY, then (2026-11-21) the general server
+      sprites: S.SPRITE / SPRITE_MOVE / SPRITE_OFF, Caps.SPRITES (client sprites.asm on
+      lib/hwsprite.asm hws_from_bitmap, also in the template). Tried in Xemu: drawn cards in
+      flight on both sprites
+- [x] Overlays (2026-11-21): the File Library's disk and SD code (OVL0) and the Art
+      Gallery's pictures and Paint (OVL1) in attic, one window (client-src/overlays.asm).
+      Tried in Xemu: a download to drive 8, an upload from it, Paint (a box, Done, Leave),
+      a picture shown. Not tried: the SD card paths since the move (filessd*, filesd64)
+- [ ] Sprites: use them for chess (the piece glides along its move; a piece follows the
+      pointer while dragged)
+- [ ] One: not tried in Xemu yet: playing a card yourself (and its flight to the pile), the
+      colour and challenge dialogs, paging a long hand, two people at one table. On real
+      hardware: the sprite's palette bank and the card sprite's position.
+- [ ] Client space: about 1.9 KB left (1.5 KB in the bridge build). Next things to move to
+      an overlay of their own (the window takes up to 5.9 KB, no resident cost but a stub
+      each): the sign-on screens (login.asm's windows), Exit Ideas: a turn timer (the computer plays
+      for someone who's away), a stronger computer (it never bluffs), a high-score list
 - [x] Areas > Internet (2026-11-19): integrations found at start-up (internet/), and a
       text Web Browser (internet.web): pages as text with numbered links, search from the
       address box, Back, pages of 120 lines, private addresses refused, URLs in the Server
@@ -103,15 +124,37 @@
 - [ ] This machine's MSYS2 Python has no certificate list: the bridge tests export the
       Windows roots to private/temp/winroots.pem and pass --cafile
 - [ ] Resources: the client could say in HELLO which slots it still holds (attic survives
-      a reset), so a reconnect skips the 14 KB of chess tiles
+      a reset), so a reconnect skips the chess and One tiles (3 KB and 17 KB packed)
+- [x] Unread news (2026-11-21): per-user read tracking (db news_reads, the version read),
+      the newspaper icon (NOTIFY slot 6, icon 10; the client has 8 slots now), the offer
+      after the welcome window counts unread ones, Mark All Read. Tried in Xemu: the icon,
+      the offer, News from Read Now
 - [x] Areas menu: News, Message Boards, Chat Rooms, Art Gallery, SID Music, File Library,
       Games; Members > User Search (name contains, any case; * = signed on now)
-- [ ] **Art Gallery** (`gallery.view`, `gallery.upload`): a list of pictures with title and
-      artist; viewing sends the image to the client, which shows it full-screen in the FCM
-      framebuffer and returns to the desktop on a key or click. The client decodes IFF ILBM
-      (ByteRun1) itself, starting from deluxepaint65's `ovr-iff.asm`. Upload: pick an IFF
-      file on the MEGA65's disk (kstream), send it in FILE_DATA chunks, and have the server
-      check and store it. The server could also convert PNG/GIF uploads from a web page later.
+- [x] **Art Gallery** (`gallery/`; `gallery.view`, `gallery.upload`, `gallery.moderate`):
+      galleries (moderators New / Edit / Delete), pictures listed with title, artist and
+      date; View (any key back), Slideshow (Space next, Esc back, the next one sent ahead;
+      a Loading window with a progress bar when it isn't there yet); Upload... an IFF from
+      drive 8-11; moderators and the artist Edit... / Delete a picture. The server decodes
+      the IFF (ILBM / PBM, EHB, HAM) and sends framebuffer-ordered pixels, PackBits-packed
+      (S.PICTURE, S.RESOURCE_PACKED, C.PIC_KEY; client-src/picture.asm). Tested in Xemu over
+      the bridge: View of deluxepaint65's tut.iff (about 50 s for its 28 KB packed), the
+      Loading window, Space back to the desktop
+- [x] Art Gallery: **Paint**, run on the server (`gallery/paint.py`; client-src/canvas.asm):
+      the picture as the client's desktop, the tool window over it (Draw, Line, Box, Oval,
+      Fill, Pick, Solid, Size, a 32-colour palette, Undo, Clear, Save..., Done), freehand
+      strokes and line / box outlines drawn on the client at once. Tested in Xemu over the
+      bridge: a new picture, a stroke, a box (its outline while dragged), Save, Done / Leave
+- [ ] Paint: edit the palette's colours; an oval's outline while dragging (the client
+      shows its box); text; brushes cut from the picture; magnify; pictures of more than
+      32 colours (palette entries 16-254 are free: 239)
+- [ ] **The client is nearly full**: 623 bytes left below $D000 (175 in the bridge build,
+      below $CD00). The next client feature needs lib/overlay.asm (code swapped in from
+      attic), or moving data under the KERNAL ROM
+- [ ] Art Gallery: uploads from the SD card (the client reads only D64 / D81 images there
+      now); a download of a picture to a drive; thumbnails; PNG / GIF uploads (from the web)
+- [ ] Art Gallery: test on real hardware (the full-screen copy, $D020 / $D021, the pointer
+      sprites off and on, the palette given back)
 - [ ] **SID Music** (`music.listen`, `music.upload`): stream it as SID register frames, about
       25 bytes per 1/50 s frame, about 1.3 KB/s, which mega-ip carries easily. The server runs
       the tune's own 6502 player code in an emulated 6502 (Python) and sends the SID writes

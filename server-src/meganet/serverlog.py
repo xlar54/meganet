@@ -37,7 +37,7 @@ console = logging.getLogger("meganet")
 
 # The areas, in the viewer's drop-down order, and the modules that log into each one
 AREAS = ["server", "conn", "login", "account", "admin", "files", "chat", "boards", "mail",
-         "news", "polls", "pages", "im", "karma", "games", "internet", "ui"]
+         "news", "polls", "pages", "im", "karma", "games", "internet", "gallery", "ui"]
 MODULE_AREAS = {
     "server": "server", "db": "server", "serverlog": "server",
     "session": "conn", "updates": "conn", "presence": "conn",
@@ -54,6 +54,8 @@ def area_of(module):
         return "games"
     if module.startswith("meganet.internet"):
         return "internet"
+    if module.startswith("meganet.gallery"):
+        return "gallery"
     return MODULE_AREAS.get(module.rsplit(".", 1)[-1], "server")
 
 

@@ -116,6 +116,19 @@ left corner).
     t * w * h, row by row, a palette index a pixel), filled by `gui_resource`. They're drawn
     a pixel at a time, so the grid can be anywhere; clipped to the screen.
   - A click on a cell gives `GE_SELECT` with `ge_val` = row * cols + col.
+  - `gui_resource_packed` fills a slot from PackBits (ByteRun1) bytes instead.
+- **The desktop as the program's:** `gui_desk_hook` draws it (instead of the plain colour);
+  with `gui_desk_input` set, presses on it go to that routine instead of selecting icons
+  (A = `GUI_DK_DOWN`, `_MOVE` while held, `_UP`, `_RIGHT` for a right click; `ev_x` /
+  `ev_y`), and the icons aren't drawn. `gui_hide_all` hides every open window (not drawn or
+  clicked, their gadgets still updated) until `gui_show_all`; windows opened in between show
+  as usual. `gui_win_rects` then `gui_covered` (`d6_x` / `d6_y`) tell the program whether a
+  window or the bar covers a point, for drawing on the desktop between full redraws. The
+  client's Paint (`client-src/canvas.asm`) uses all of these.
+- **Holding the screen:** a program that takes the whole screen for a while (the client's
+  full-screen pictures) sets `gui_hold` to 1 and stops calling `gui_update`. Changes keep
+  arriving and are kept, but nothing is drawn (the menu-bar icons wait too). Afterwards:
+  `gui_hold` 0, `gui_palette` (entries 0-15 back), and `gui_redraw_later`.
 - **Broadcast:** `gui_banner` (`txt_ptr` = text, up to 79 characters; A = seconds) puts a
   line across the whole bottom row, yellow on red, over everything. It takes no keys and
   goes after the given seconds or when clicked. A toast moves up a row while it's there.
@@ -124,12 +137,13 @@ left corner).
 - **Busy:** `gui_busy` with A = 1 turns the pointer into an hourglass, and `gui_update` then
   ignores clicks and keys; the pointer still moves. A = 0 brings back the arrow. Use it while
   waiting for something such as a server's answer.
-- **Notification icons:** `gui_notify` (A = slot 0-4, X = icon) puts a small button at the
+- **Notification icons:** `gui_notify` (A = slot 0-7, X = icon) puts a small button at the
   right end of the menu bar. They are packed from the right: the shown icon with the lowest
   slot is rightmost, and empty slots leave no gap. Icon 1 is an alert that flashes red twice
   a second, icon 2 an envelope, icon 3 a Wi-Fi fan (connected), icon 4 the fan greyed with a
-  red X (not connected), icon 5 a person (a black pawn), icon 6 a speech bubble, and 0
-  removes it. There are 6 slots (0-5). A click gives `GE_NOTIFY` with `ge_val` = the
+  red X (not connected), icon 5 a person (a black pawn), icon 6 a speech bubble, icons
+  7-9 a green / yellow / dark grey dot, icon 10 a newspaper, and 0 removes it. There are 8
+  slots (0-7, `GUI_NSLOTS`), 24 pixels apart. A click gives `GE_NOTIFY` with `ge_val` = the
   slot.
 - **Scroll bars:** every list and text view has a Windows 95 scroll bar on its right, 11 pixels
   wide.

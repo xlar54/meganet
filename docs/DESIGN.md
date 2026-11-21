@@ -164,12 +164,13 @@ ASCII. The authoritative list of messages is [`server-src/meganet/protocol.py`](
   - **`$22` is My Account, on the client's own MegaNet menu** (its first item). The client sends
     `MENU_PICK $22` for it. The server never sends `$22` in `MENU` but always accepts it from a
     signed-on session (`protocol.MENU_MY_ACCOUNT`).
-- **Menu-bar icons:** `NOTIFY` (`$1B`): `u8 slot` (0-5), `u8 icon`, `str hint`. The client draws a
+- **Menu-bar icons:** `NOTIFY` (`$1B`): `u8 slot` (0-6; clients before the newspaper had
+  0-5 and ignore slot 6), `u8 icon`, `str hint`. The client draws a
   small icon button at the right end of its menu bar: slot 0 is the rightmost (just left of the
   client's own connectivity icon, which is always at the very end), slot 1 left of it, and so
   on; the icons shown are packed together with no gaps for empty slots. Icon 0 removes the slot's icon, 1 = page / alert (flashing, to get attention), 2 =
   mail / messages waiting, 5 = a person, 6 = a speech bubble, 7 / 8 / 9 = a green / yellow /
-  dark grey dot (3 and 4 are the client's own Wi-Fi icons). The hint is a short text (at most 40 characters) the client may show;
+  dark grey dot, 10 = a newspaper (unread news) (3 and 4 are the client's own Wi-Fi icons). The hint is a short text (at most 40 characters) the client may show;
   the server always sends one.
   - `NOTIFY_CLICK` (`$8A`): `u8 slot`, the user clicked that slot's icon. The client doesn't
     remove the icon itself; the server sends `NOTIFY` icon 0 when it's done with it.
@@ -396,6 +397,31 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   Offer Draw / Resign / Rematch / Lobby. Every rule is enforced: castling, en passant,
   promotion (a dialog), check, checkmate, stalemate, and the automatic draws (insufficient
   material, fifty moves, threefold repetition). No clocks yet.
+- **One** (`games/one.py`, rules in `one_rules.py`, cards in `one_art.py`): the card game for
+  2-4 by the usual official rules (Wild Draw Four challenges, calling One!, scoring to 500).
+  Join asks "Wait for Others" (the queue) or "vs Computer..." (1-3 computer players, played
+  by `tick()`); a player who leaves is replaced by the computer. The table: two `GRID`s (the
+  piles; the hand, 12 x 2 cards of 32 x 22, 64 tiles in resource slot 8), the others' card
+  counts in play order, the play-by-play and chat. Cards played and drawn fly between the
+  hand, the rows and the piles (below).
+- **The server's sprites** (`Caps.SPRITES` clients, `client-src/sprites.asm`, built on
+  `lib/hwsprite.asm` `hws_from_bitmap`): `S.SPRITE` (`$32`: `u8 n, u8 win, u8 slot, u16
+  offset, u8 w, u8 h, u16 stride, u8 step, u16 x, u8 y, u8 c, c x (u8 colour, r, g, b)`) makes
+  server sprite n (0-1: hardware sprites 6-7) from any picture in a resource slot (w pixels
+  up to 16, `step` bytes apart; h rows up to 64, `stride` apart; the c colours listed, the
+  rest see-through) at (x, y) in a window's client area wherever the window is now.
+  `S.SPRITE_MOVE` (`$33`: `u8 n, s16 dx, s16 dy, u8 frames, u8 hide`) glides it (8.8 fixed
+  point, the fraction starting at a half so it ends to the nearest pixel), then hides it if
+  asked; `S.SPRITE_OFF` (`$34`: `u8 n`, `$FF` both). The sprites' colours go into palette
+  bank 1 (with the GUI's, for the pointer), so the screen's never change; the two share the
+  tall-sprite height (the taller one's: rows past a sprite's own are see-through). The server
+  holds back what a flying card covers (the pile, the cell) until it lands (`session.fly`,
+  `games/one.py`).
+- **Overlays** (`client-src/overlays.asm`, `lib/overlay.asm`): the File Library's disk and
+  SD-card code (`storage.asm`, `sdwrite.asm`: OVL0) and the Art Gallery's pictures and Paint
+  (`picture.asm`, `canvas.asm`: OVL1) live in attic and take turns in one window
+  (`OVL_BASE`-`$CFFF`, `$CCFF` in the bridge build), reached through `#FAR` stubs; the
+  variables the resident part reads (`st_mode`, `pic_on`) are resident.
 - **Internet** (`meganet/internet/`): Areas > Internet lists integrations, plugins found at
   start-up like games. The first is a text Web Browser: the server fetches pages (never on a
   private network), turns HTML into wrapped ASCII with numbered links, and shows it in a
@@ -408,6 +434,28 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   cells (bits 0-5 the tile, bit 7 / 6 a frame in mark colour 1 / 2). A click on a cell sends
   `C.SELECT` with the cell number. Palette entries 240-254 are fixed game colours
   (`protocol.GAME_COLOURS`) for the tiles.
+- **Art Gallery** (`meganet/gallery/`): galleries (moderators make, edit and delete them) of
+  IFF pictures, uploaded from a drive. The server reads the IFF (ILBM or PBM, 1-8 planes,
+  EHB, HAM6/8 cut to 255 colours), fits it to 320x200 (shown doubled across) or 640x200,
+  and puts the pixels in the client's framebuffer order, so the client only copies them in
+  (`client-src/picture.asm`, a few hundred bytes). View shows one; Slideshow goes on with
+  Space and sends the next picture while one shows.
+- **Pictures** (`Caps.PICTURE` clients): `S.RESOURCE_PACKED` (`$2C`) is `S.RESOURCE` with
+  PackBits bytes; `S.PICTURE` (`$2A`: `u8 slot, u8 mode, u8 border, u8 n, n x rgb`) shows the
+  slot's pixels over the whole screen with that palette, while the GUI is held (it takes
+  messages but draws nothing); keys and clicks go back as `C.PIC_KEY` (`$93`), and
+  `S.PICTURE_END` (`$2B`) brings the desktop back. In Full Colour Mode a pixel of 0 shows
+  `$D021`, so the client keeps that at 0 (palette entry 0) and puts the border colour only
+  in `$D020`.
+- **Paint** (`gallery/paint.py`, `client-src/canvas.asm`; `Caps.CANVAS`): the server keeps
+  the picture and paints; the client's desktop shows it. `S.CANVAS` (`$2D`: slot, colours)
+  hides the open windows and the menu bar and puts the picture (slot 6, lores framebuffer
+  order, palette entries 16 on) behind everything (`gui_desk_hook`); the mouse on it goes
+  back as `C.CANVAS` (`$94`: event, x, y in picture pixels); `S.CANVAS_RECT` (`$2F`) brings
+  the changed pixels (PackBits rows); `S.CANVAS_PEN` (`$31`) says what to draw at once while
+  the button is held (a freehand stroke, or a line's or box's outline: Bresenham, the same
+  on both sides), so drawing doesn't wait for the network. `S.CANVAS_END` (`$2E`) gives the
+  desktop back. The tool window is an ordinary server window over the picture.
 - `tests/` (`python -m unittest`) runs a real server on a random port with fake clients over
   TCP: sign-on, the menu bar, the lobby, a tic-tac-toe match, the forced update, roles and
   permissions, the message of the day, Page Admin, private messages, My Account, the New User

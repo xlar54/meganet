@@ -18,6 +18,9 @@
 ; long name works (HYPPO's findfile only finds upper-case long names).
 ;
 ;   storage_frame   from the main loop: sends the upload, if one is going
+;
+; Overlay OVL_FILES with sdwrite.asm (overlays.asm): the resident part reaches the handlers
+; and st_frame (storage_frame's work) through #FAR stubs, and keeps st_mode.
 ;=======================================================================================
 
 ST_ATTIC        = $8300000              ; staging: 1 MB (protocol.LOCAL_MAX)
@@ -38,7 +41,8 @@ C_LOCAL_DONE    = $8e
 C_UP_BEGIN      = $90
 C_UP_DATA       = $91
 C_UP_END        = $92
-CLIENT_CAPS     = 15                    ; protocol.Caps: DRIVES | SD_READ | SD_WRITE | GRID
+CLIENT_CAPS     = 127                   ; protocol.Caps: DRIVES | SD_READ | SD_WRITE | GRID |
+                                        ; PICTURE | CANVAS | SPRITES
 
 ; protocol.Local
 LK_HEADER       = 0
@@ -78,7 +82,7 @@ H_READFILE      = $1A
 H_CLOSEFILE     = $20
 H_CDROOTDIR     = $3C
 
-st_mode:        .byte 0                 ; 0 idle, 1 a download arriving, 2 an upload going
+                                        ; (st_mode: resident, overlays.asm)
 st_req:         .byte 0
 st_dev:         .byte 0
 st_kind:        .byte 0
@@ -1460,7 +1464,7 @@ sd_close_both:
 ;---------------------------------------------------------------------------------------
 ; the upload going out: from the main loop, a few C.UP_DATA frames a pass
 ;---------------------------------------------------------------------------------------
-storage_frame:
+st_frame:                               ; (overlays.asm storage_frame: an upload, or the test)
         .if BRIDGE_NET                  ; (a test: write what's staged to st_path on the SD
         lda dbg_sdw                     ; card, as a download would: bridge_test.py
         beq +                           ; filessdw)
@@ -1564,8 +1568,5 @@ _end:   lda #C_UP_END
 _gone:  lda #0
         sta st_mode
         rts
-        .if BRIDGE_NET
-dbg_sdw:        .byte 0, 0, 0           ; poke 1: write; then the status, and a count
-        .endif
 sf_n:           .byte 0
 sf_left:        .word 0

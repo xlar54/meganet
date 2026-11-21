@@ -618,6 +618,9 @@ login_done:
 
 ; the connection dropped: back to the Connect window, with the reason
 login_lost:
+        jsr far_pic_off                 ; (a picture showing: the desktop back)
+        jsr far_cv_off                  ; (Paint: the same)
+        jsr sprites_off                 ; (the server's sprites)
         jsr gui_close_all
         lda #NS_READY                   ; (DHCP is still good)
         sta net_state

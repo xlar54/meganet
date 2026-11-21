@@ -12,6 +12,7 @@ Fixed window ids (all below session.FIRST_DYNAMIC_WIN):
     50 = chat's Delete Room confirmation, 51-54 = a game's lobby and chess dialogs
     (games/challenge.py, games/chess.py), 55 = "Loading Chess" (session.send_resource),
     56 = Internet (internet/__init__.py), 57 = its Web Browser (internet/web.py),
+    58-63 = Art Gallery (gallery/__init__.py),
     20 = the New User sign-up wizard (signup.py, before sign-on);
     private chats with an admin take dynamic ids
 
@@ -34,6 +35,7 @@ from .news import News
 from .filelib import FileLibrary
 from .serverlog import LogWindows
 from .internet import InternetArea
+from .gallery import Gallery
 from .im import IMs
 from .presence import Presence, STATUSES, LABELS
 from . import karma
@@ -41,7 +43,7 @@ from .mail import Mail
 from .pages import Pages
 from .signup import Signup
 from .protocol import (WFlag, GFlag, MENU_SEPARATOR, VERSION, SLOT_STATUS, SLOT_PAGE, SLOT_ADMIN_MAIL,
-                       SLOT_MAIL, SLOT_NEW_USER, SLOT_IM, MENU_MY_ACCOUNT, MENU_LATE, Icon,
+                       SLOT_MAIL, SLOT_NEW_USER, SLOT_IM, SLOT_NEWS, MENU_MY_ACCOUNT, MENU_LATE, Icon,
                        S, Writer, clean_text, BROADCAST_MAX, BROADCAST_SECS)
 from .ui import Window, Button, Label, TextBox, ListBox, TextView, Menu, add_buttons, closer
 
@@ -79,7 +81,7 @@ MENU_TREE = [
         (M_BOARDS, "Message Boards", "boards.read", "open_boards"),
         (M_CHAT, "Chat Rooms", "chat.use", "open_chat"),
         (M_MAIL, "Private Messages", perms.MAIL_USE, "open_mail"),
-        (M_GALLERY, "Art Gallery", "gallery.view", "coming_soon"),
+        (M_GALLERY, "Art Gallery", perms.GALLERY_VIEW, "open_gallery"),
         (M_MUSIC, "SID Music", "music.listen", "coming_soon"),
         (M_FILES, "File Library", "files.download", "open_files"),
         (M_GAMES, "Games", "games.play", "open_games"),
@@ -160,6 +162,7 @@ class Screens:
         self.files = FileLibrary(server)
         self.logs = LogWindows(server)
         self.internet = InternetArea(server)
+        self.gallery = Gallery(server)
 
     def signed_on(self, session, welcome=True, after=None):
         """Everything a session gets on signing on. The desktop icons come first, under a
@@ -171,6 +174,7 @@ class Screens:
         self.desktop.start(session, then)
         self.pages.signed_on(session)
         self.mail.signed_on(session)
+        self.news.signed_on(session)          # (the newspaper icon, if there's unread news)
         self.new_users_changed()          # (a new account is a new user for the admins)
         karma.earn(self.server, session.user_id, "signed on")
         self.refresh_who()
@@ -185,6 +189,8 @@ class Screens:
             return self.mail.notify_click(session, slot)
         if slot == SLOT_IM:
             return self.ims.notify_click(session, slot)
+        if slot == SLOT_NEWS:
+            return self.news.notify_click(session, slot)
         if slot == SLOT_NEW_USER:
             new = self.server.db.new_users()
             return self.admin.open_users(session, new[0]["id"] if new else None)
@@ -274,6 +280,9 @@ class Screens:
 
     def open_internet(self, session, item=None):
         return self.internet.open(session)
+
+    def open_gallery(self, session, item=None):
+        return self.gallery.open(session)
 
     def status_changed(self, session):
         """Someone's status changed: their Status menu and dot, and everyone's Who's Online."""
@@ -507,6 +516,7 @@ class Screens:
         self.files.permissions_changed(session)
         self.logs.permissions_changed(session)
         self.internet.permissions_changed(session)
+        self.gallery.permissions_changed(session)
         self.new_users_changed()
         self.im_rules_changed()
         self.desktop.refresh(session)
@@ -530,6 +540,7 @@ class Screens:
         self.files.disconnected(session)
         self.logs.disconnected(session)
         self.internet.disconnected(session)
+        self.gallery.disconnected(session)
         self.ims.disconnected(session)
         self.pages.disconnected(session)
         self.who.pop(session, None)

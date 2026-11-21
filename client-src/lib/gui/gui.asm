@@ -8,6 +8,16 @@
 ; gadgets, calls gui_update once a frame, and acts on the events it returns.
 ;
 ;   gui_init        palette entries 0-15 (GC_*), pointer sprites, mouse, empty tables
+;   gui_palette     palette entries 0-15 again (after something else used them)
+;   gui_desk_input  (word) a routine for presses on the desktop instead of its icons (the
+;                   icons aren't drawn then): jumped to with A = GUI_DK_*, ev_x / ev_y;
+;                   it returns as gui_update does (carry set = an event in ge_*)
+;   gui_hide_all    every open window hidden (not drawn or clicked) until gui_show_all;
+;                   windows opened in between show as usual
+;   gui_win_rects / gui_covered   the shown windows' rectangles, once; then for a point
+;                   (d6_x, d6_y): carry set if a window or the menu bar covers it
+;   gui_hold        1 while the program has the whole screen: nothing drawn at once (the
+;                   program doesn't call gui_update then); gui_redraw_later when it's back
 ;   gui_update      once a frame: mouse, keys -> windows and gadgets. Carry set = an
 ;                   event for the program: ge_type (GE_*), ge_win, ge_gid, ge_key
 ;   gui_redraw      the desktop (gui_desk_hook, or GC_DESK) and every window
@@ -164,6 +174,10 @@ EV_DOWN         = 2
 EV_UP           = 3
 EV_MOVE         = 4
 EV_RDOWN        = 5
+GUI_DK_DOWN     = 1                     ; gui_desk_input's A: a press, a move while held,
+GUI_DK_MOVE     = 2                     ; the release, a right click (ev_x / ev_y: where)
+GUI_DK_UP       = 3
+GUI_DK_RIGHT    = 4
 GUI_DBG_MAX     = 16
 
 GUI_TITLE_H     = 11                    ; title bar rows
@@ -271,6 +285,11 @@ gw_focus:       .fill GUI_MAXWIN        ; gadget slot with the keyboard, $ff non
 gw_z:           .fill GUI_MAXWIN
 gw_shown:       .fill GUI_MAXWIN        ; gui_win_show'n: complete, so it's drawn
 gw_min:         .fill GUI_MAXWIN        ; 1 = minimized (gw_s*: its place to restore)
+gw_hid:         .fill GUI_MAXWIN        ; 1 = hidden by gui_hide_all (out of gw_z)
+l_hz:           .fill GUI_MAXWIN        ; gw_z as gui_hide_all found it
+l_hn:           .byte 0
+gui_desk_input: .word 0                 ; presses on the desktop go here instead (0: icons)
+l_dk_held:      .byte 0                 ; a press on it is held
 gw_sxl:         .fill GUI_MAXWIN
 gw_sxh:         .fill GUI_MAXWIN
 gw_sy:          .fill GUI_MAXWIN
@@ -323,6 +342,9 @@ l_gwt_hi:       .byte >(l_gui_wbuf + range(GUI_MAXWIN) * GUI_TITLEMAX)
 
 ; ---- the menu bar ----
 gui_menubar:    .byte 0                 ; 1 = shown: windows stay below it
+gui_hold:       .byte 0                 ; 1 = the program has the whole screen (a picture):
+                                        ; the GUI draws nothing at once (gui_update isn't
+                                        ; called then either); gui_redraw_later afterwards
 gui_menu_late:  .byte 0                 ; titles with ids from this to this + 15 go right
                                         ; of the Window menu (0: none do)
 l_mn_pass:      .byte 0
@@ -397,6 +419,11 @@ gui_dbg_evp:    .byte 0
 ; set-up
 ;=======================================================================================
 gui_init:
+        jsr gui_palette
+        jmp l_gui_init2
+
+; palette entries 0-15: the GUI's colours (again after a full-screen picture used them)
+gui_palette:
         ldx #0
 -       lda l_gui_pal_r,x
         jsr gui_swap
@@ -410,9 +437,13 @@ gui_init:
         inx
         cpx #16
         bne -
+        rts
+
+l_gui_init2:
         jsr gui_close_all
         lda #0
         sta mn_n
+        sta gui_hold
         sta gui_dbg_evn
         sta gui_dbg_evp
         sta l_ev_held
@@ -1157,7 +1188,9 @@ _new:   lda #0
         bne -
         sec
         rts
-+       lda #1
++       lda #0
+        sta gw_hid,x
+        lda #1
         sta gw_used,x
         ldy gw_n
         txa
@@ -1268,10 +1301,13 @@ gui_win_close:
         stx l_gd_ws
         jsr l_gg_free
         ldx l_gd_ws
+        lda gw_hid,x                    ; (hidden: it isn't in gw_z)
+        bne _gone
         jsr l_gw_raise                  ; to the front, then off the end of gw_z
         dec gw_n
-        ldx l_gd_ws
+_gone:  ldx l_gd_ws
         lda #0
+        sta gw_hid,x
         sta gw_used,x
         lda #$ff
         sta l_gu_press
@@ -1291,10 +1327,13 @@ gui_close_all:
         ldx #0
         lda #0
 -       sta gw_used,x
+        sta gw_hid,x
         inx
         cpx #GUI_MAXWIN
         bne -
         sta gw_n
+        sta l_hn
+        sta l_dk_held
         ldx #0
 -       sta gb_used,x
         inx
@@ -1314,6 +1353,153 @@ gui_close_all:
         sta l_gu_press
         sta l_gu_drag
         rts
+
+; every window open now hidden: not drawn, not clicked, its gadgets not drawn (they still
+; change); windows opened afterwards show as usual. gui_show_all brings them back
+gui_hide_all:
+        ldy #0
+-       cpy gw_n
+        beq +
+        ldx gw_z,y
+        txa
+        sta l_hz,y
+        lda #1
+        sta gw_hid,x
+        iny
+        bra -
++       sty l_hn
+        lda #0
+        sta gw_n
+        lda #$ff
+        sta l_gu_press
+        sta l_gu_drag
+        jsr l_drag_hide
+        jmp gui_redraw_later
+
+; the hidden windows back, behind the ones opened since, in their old order
+gui_show_all:
+        ldy gw_n                        ; the new ones up by however many come back
+        ldx #0
+-       cpx l_hn
+        beq +
+        phx
+        lda l_hz,x
+        tax
+        lda gw_used,x
+        and gw_hid,x
+        plx                             ; (plx sets the flags from X: test A again)
+        cmp #0
+        beq _skip
+        iny
+_skip:  inx
+        bra -
++       sty l_gu_t                      ; (the new count)
+        ldx gw_n                        ; move the new ones up
+        ldy l_gu_t
+-       cpx #0
+        beq +
+        dex
+        dey
+        lda gw_z,x
+        sta gw_z,y
+        bra -
++       ldx #0                          ; the hidden ones into the gap, in order
+        ldy #0
+-       cpx l_hn
+        beq _done
+        stx l_gu_t+1
+        lda l_hz,x
+        tax
+        lda gw_used,x
+        and gw_hid,x
+        beq +
+        lda #0
+        sta gw_hid,x
+        txa
+        sta gw_z,y
+        iny
++       ldx l_gu_t+1
+        inx
+        bra -
+_done:  lda l_gu_t
+        sta gw_n
+        lda #0
+        sta l_hn
+        ldx #GUI_MAXWIN - 1             ; (anything else still marked: not any more)
+-       sta gw_hid,x
+        dex
+        bpl -
+        jmp gui_redraw_later
+
+; d6_x / d6_y (a screen point): carry set if a window (shown, not hidden) or the menu
+; bar covers it. gui_win_rects first, once, for the windows as they are
+gui_win_rects:
+        ldy #0
+        sty gui_wr_n
+-       cpy gw_n
+        beq _out
+        phy
+        ldx gw_z,y
+        lda gw_shown,x
+        beq _nx
+        jsr l_gw_rect
+        ldx gui_wr_n
+        cpx #GUI_MAXWIN
+        bcs _nx
+        lda gr_x0
+        sta l_wr_x0l,x
+        lda gr_x0+1
+        sta l_wr_x0h,x
+        lda gr_x1
+        sta l_wr_x1l,x
+        lda gr_x1+1
+        sta l_wr_x1h,x
+        lda gr_y0
+        sta l_wr_y0,x
+        lda gr_y1
+        sta l_wr_y1,x
+        inc gui_wr_n
+_nx:    ply
+        iny
+        bra -
+_out:   rts
+
+gui_covered:
+        lda gui_menubar
+        beq +
+        lda d6_y
+        cmp #GUI_MENU_H
+        bcc _yes
++       ldx gui_wr_n
+-       dex
+        bmi _no
+        lda d6_y
+        cmp l_wr_y0,x
+        bcc -
+        lda l_wr_y1,x
+        cmp d6_y
+        bcc -
+        lda d6_x
+        cmp l_wr_x0l,x
+        lda d6_x+1
+        sbc l_wr_x0h,x
+        bcc -
+        lda l_wr_x1l,x
+        cmp d6_x
+        lda l_wr_x1h,x
+        sbc d6_x+1
+        bcc -
+_yes:   sec
+        rts
+_no:    clc
+        rts
+gui_wr_n:       .byte 0
+l_wr_x0l:       .fill GUI_MAXWIN
+l_wr_x0h:       .fill GUI_MAXWIN
+l_wr_x1l:       .fill GUI_MAXWIN
+l_wr_x1h:       .fill GUI_MAXWIN
+l_wr_y0:        .fill GUI_MAXWIN
+l_wr_y1:        .fill GUI_MAXWIN
 
 ; the whole screen again, at the start of the next gui_update: many changes in one frame
 ; (a server sending a window, its rows, an alert...) cost one redraw, with no flicker
@@ -1356,7 +1542,10 @@ _plain: lda #0
         sta gr_y1
         lda #GUI_DESK
         jsr l_gd_fill
-_wins:  jsr l_dk_draw                     ; the desktop icons
+_wins:  lda gui_desk_input+1             ; the desktop icons (unless the program has the
+        bne +                           ; desktop: its input hook)
+        jsr l_dk_draw
++
         jsr l_gw_draw_mins                ; minimized windows: behind every other one
         ldy #0
 -       cpy gw_n
@@ -2442,6 +2631,8 @@ l_gg_redraw:
         lda l_gui_later                 ; a whole redraw is coming anyway
         bne _skip
         ldy gg_win,x                    ; not drawn yet: it waits for gui_win_show
+        lda gw_hid,y                    ; (hidden: not drawn at all)
+        bne _skip
         lda gw_shown,y
         bne +
 _skip:  rts
@@ -2491,6 +2682,7 @@ l_gg_flush:
 l_gui_draw_gad:
         ldy gg_win,x
         lda gw_min,y
+        ora gw_hid,y
         bne _r
         jmp l_gui_draw_gad0
 _r:     rts
@@ -3064,6 +3256,28 @@ gui_update:
         cmp #$ff
         beq +
         jmp l_mn_update
++       lda l_dk_held                   ; a press held on the desktop's input hook: its
+        beq _nodk                       ; moves and its release go there too
+        lda ev_type
+        cmp #EV_MOVE
+        beq _dkmv
+        cmp #EV_UP
+        bne _nodk
+        lda #0
+        sta l_dk_held
+        lda #GUI_DK_UP
+        jmp (gui_desk_input)
+_dkmv:  lda #GUI_DK_MOVE
+        jmp (gui_desk_input)
+_nodk:  lda ev_type
+        cmp #EV_RDOWN                   ; a right click on the desktop: the hook's
+        bne +
+        lda gui_desk_input+1
+        beq _none
+        jsr l_gw_at
+        bcs _none
+        lda #GUI_DK_RIGHT
+        jmp (gui_desk_input)
 +       lda ev_type
         cmp #EV_DOWN
         bne _notdown
@@ -3127,6 +3341,8 @@ _m:     lda gw_used,x
         beq _mn
         lda gw_shown,x
         beq _mn
+        lda gw_hid,x
+        bne _mn
         phx
         jsr l_gw_rect
         jsr l_pt_in
@@ -3157,7 +3373,20 @@ _no:    clc
 l_gu_down:
         jsr l_gw_at
         bcs +
-        jmp l_gu_desk                   ; the desktop: its icons
+        lda gui_desk_input+1            ; the desktop: the program's hook, or its icons
+        beq _icons
+        jsr l_gw_front                  ; (a modal window in front: nothing)
+        cmp #$ff
+        beq _hook
+        tax
+        lda gw_flags,x
+        and #GWF_MODAL
+        bne l_gu_none
+_hook:  lda #1
+        sta l_dk_held
+        lda #GUI_DK_DOWN
+        jmp (gui_desk_input)
+_icons: jmp l_gu_desk
 +
         stx l_gu_ws
         jsr l_gw_front
@@ -5527,12 +5756,13 @@ l_ts_buf:       .fill GUI_TOAST_MAX + 1
 ; icon with the lowest slot is rightmost, and empty slots leave no gap. Icon 1 = an alert
 ; (flashes), 2 = an envelope, 3 = a Wi-Fi fan (connected), 4 = the fan greyed with a red X
 ; (not connected), 5 = a person (a black board-game pawn), 6 = a speech bubble, 7 / 8 / 9 =
-; a green / yellow / dark grey dot with a black edge (a status). A click gives GE_NOTIFY,
-; ge_val = the slot
+; a green / yellow / dark grey dot with a black edge (a status), 10 = a newspaper. A click
+; gives GE_NOTIFY, ge_val = the slot
 ;---------------------------------------------------------------------------------------
-GUI_NSLOTS      = 7
+GUI_NSLOTS      = 8
 GUI_NICON_W     = 22                    ; an icon's width
-GUI_NSPACE      = 26                    ; and the step from one slot to the next
+GUI_NSPACE      = 24                    ; and the step from one slot to the next (8 of them
+                                        ; stay right of a 7-title menu bar)
 
 ; A = slot, X = icon (0 = none): set it and draw it
 gui_notify:
@@ -5543,6 +5773,8 @@ gui_notify:
         sta nt_icon,y
         lda gui_menubar
         beq _out
+        lda gui_hold                    ; (something else has the screen: drawn later)
+        bne _out
         jmp l_nt_all                    ; (the others may move along)
 _out:   rts
 
@@ -5595,7 +5827,7 @@ l_nt_draw:
         rts                             ; none (l_nt_all clears the row first)
 +       cmp #3
         bcc +
-        jmp l_nt_wifi                   ; 3-9
+        jmp l_nt_wifi                   ; 3-10
 +       cmp #1
         bne _env
         jsr l_gd_raised                 ; 1: an alert button
@@ -5668,9 +5900,9 @@ _alert: ldx #GC_BLACK                   ; 1: "!" - red on the flash, grey betwee
         jmp gui_text
 s_nt_bang:      .null "!"
 
-; icon 3 (A = 3) to 9 in gr: a 21x9 bitmap, "#" in the icon's colour (black; 4 grey; the
-; dots theirs), "+" black: the fan (l_nw_bm), for 4 with a red X; 5 the pawn (l_np_bm);
-; 6 the bubble (l_nb_bm); 7-9 the dot (l_nd_bm)
+; icon 3 (A = 3) to 10 in gr: a 21x9 bitmap, "#" in the icon's colour (black; 4 grey; the
+; dots theirs; 10 white), "+" black: the fan (l_nw_bm), for 4 with a red X; 5 the pawn
+; (l_np_bm); 6 the bubble (l_nb_bm); 7-9 the dot (l_nd_bm); 10 the newspaper (l_nn_bm)
 l_nt_wifi:
         sta l_nw_i
         lda #<l_nw_bm
@@ -5688,6 +5920,10 @@ l_nt_wifi:
         bcc +
         lda #<l_nd_bm
         ldx #>l_nd_bm
++       cpy #10
+        bne +
+        lda #<l_nn_bm
+        ldx #>l_nn_bm
 +       sta _px+1
         stx _px+2
         lda #GC_FACE
@@ -5835,8 +6071,19 @@ l_nd_bm:                                ; 7-9: a dot (twice as wide as tall, as 
         .text ".....++#######++....."
         .text ".......+++++++......."
         .text "....................."
+l_nn_bm:                                ; 10: a newspaper (unread news): a white page, the
+        .text "..+++++++++++++++++.."   ; masthead, two rows of columns
+        .text "..+###############+.."
+        .text "..+#+++++++++#####+.."
+        .text "..+###############+.."
+        .text "..+#+++#+++#+++++#+.."
+        .text "..+###############+.."
+        .text "..+#+++#+++#+++++#+.."
+        .text "..+###############+.."
+        .text "..+++++++++++++++++.."
 l_nw_cols:      .byte GC_BLACK, GC_SHADOW, GC_BLACK, GC_BLACK      ; icons 3-6's "#"
                 .byte GC_GREEN, GC_YELLOW, GC_DKGREY               ; 7-9
+                .byte GC_WHITE                                     ; 10
 l_nw_i:         .byte 0
 l_nw_k:         .byte 0
 l_nw_c:         .byte 0

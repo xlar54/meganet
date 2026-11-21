@@ -14,7 +14,8 @@
 ;
 ; Server messages handled so far: HELLO, LOGIN_RESULT, WIN_OPEN, WIN_CLOSE, GADGET,
 ; SET_TEXT, SET_VALUE, FOCUS, ALERT, WIN_DONE, LIST_ROWS, APPEND, MENU, the File Library's,
-; CELLS and RESOURCE (lib/gui/grid.asm). UPDATE is dropped for now (see TODO.md).
+; CELLS and RESOURCE (lib/gui/grid.asm), PICTURE, PICTURE_END and RESOURCE_PACKED
+; (picture.asm), CANVAS, CANVAS_END, CANVAS_RECT and CANVAS_PEN (canvas.asm). UPDATE is dropped for now (see TODO.md).
 ;=======================================================================================
 
         .weak
@@ -223,15 +224,44 @@ _types: .byte S_HELLO, S_LOGIN_RESULT, S_WIN_OPEN, S_WIN_CLOSE, S_GADGET, S_SET_
         .byte S_NOTIFY, S_SET_FLAGS, S_TOAST, S_DESK_ICON, S_BROADCAST, S_SOUND
         .byte S_LOCAL_DIR, S_SAVE_BEGIN, S_FILE_DATA, S_FILE_END, S_LOAD_FILE, S_LOCAL_CANCEL
         .byte S_CELLS, S_RESOURCE
+        .byte S_PICTURE, S_PICTURE_END, S_RESOURCE_PACKED
+        .byte S_CANVAS, S_CANVAS_END, S_CANVAS_RECT, S_CANVAS_PEN
+        .byte S_SPRITE, S_SPRITE_MOVE, S_SPRITE_OFF
 _n = * - _types
 _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_text
         .word pm_set_value, pm_focus, pm_alert, pm_win_done, pm_list_rows, pm_append
         .word pm_menu, pm_notify, pm_set_flags, pm_toast, pm_desk_icon, pm_broadcast
         .word pm_sound
-        .word pm_local_dir, pm_save_begin, pm_file_data, pm_file_end, pm_load_file
-        .word pm_local_cancel
+        .word far_local_dir, far_save_begin, far_file_data, far_file_end  ; (storage.asm,
+        .word far_load_file, far_local_cancel                             ; an overlay)
         .word pm_cells, pm_resource
+        .word far_picture, far_picture_end, pm_resource_packed    ; (picture.asm: overlay)
+        .word far_canvas, far_canvas_end, far_canvas_rect, far_canvas_pen ; (canvas.asm: too)
+        .word pm_sprite, pm_sprite_move, pm_sprite_off                    ; (sprites.asm)
         .cerror (_jumps - _types) != _n, "a message without its handler"
+
+; S.RESOURCE_PACKED: u8 slot, u16 offset, the rest PackBits bytes (lib/gui/grid.asm)
+S_RESOURCE_PACKED = $2c
+pm_resource_packed:
+        jsr rd_u8
+        sta gui_res_slot
+        jsr rd_u16
+        sta gui_res_off
+        stx gui_res_off+1
+        lda pr_ptr
+        sta tmp6
+        lda pr_ptr+1
+        sta tmp6+1
+        sec                             ; the bytes: the frame's length - 4
+        lda pf_len
+        sbc #4
+        sta tmp5
+        lda pf_len+1
+        sbc #0
+        sta tmp5+1
+        bcc +
+        jmp gui_resource_packed
++       rts
 
 ; u8 win, u8 gid, u8 first, u8 n, n bytes: a grid's cells (lib/gui/grid.asm)
 pm_cells:

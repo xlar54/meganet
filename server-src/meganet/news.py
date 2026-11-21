@@ -1,7 +1,9 @@
 """Areas > News (news.read): bulletins, newest first. Holders of news.post (the Sysop at first;
 an admin can give it to any role in Admin > Roles) write new bulletins, edit them and delete
 them, in the same composer as the message boards (compose.py): a headline box and the text
-area. "New" means posted or edited since the user's previous sign-on.
+area. "Unread" means not opened since it was posted or last edited (db news_reads): marked
+"*" in the list, counted by a folded-newspaper icon on the menu bar (NOTIFY slot SLOT_NEWS;
+a click opens News), and offered at sign-on.
 
     36 = News: the list of bulletins ("*" = new, the day, the headline). A click opens one
          to read. Posters also get New..., Edit... and Delete (on the last one clicked).
@@ -9,8 +11,8 @@ area. "New" means posted or edited since the user's previous sign-on.
          wide as the composer's text area, so it reads as it was written; OK
     37 = New Bulletin / Edit Bulletin (compose.py)
     38 = Delete Bulletin? (modal)
-    39 = "There are N new news bulletins. Would you like to read them now?" (modal), once
-         a sign-on, when the welcome window closes (screens.welcome)
+    39 = "There are N unread news bulletins. Would you like to read them now?" (modal),
+         once a sign-on, when the welcome window closes (screens.welcome)
 
 Every handler checks the permission again, since a client can send any CLICK.
 """
@@ -19,7 +21,7 @@ import time
 
 from . import permissions as perms
 from .compose import Composer, refuse
-from .protocol import WFlag, GFlag, clean_text
+from .protocol import WFlag, GFlag, Icon, SLOT_NEWS, clean_text
 from .ui import add_buttons, closer, Window, Button, Label, ListBox, TextView, AreaWindow
 
 READ, POST = perms.NEWS_READ, perms.NEWS_POST
@@ -57,13 +59,51 @@ class News:
         v = self.windows.get(session) or NewsWindow(self, session)
         return v.show()
 
+    def unread(self, session):
+        """The ids of the bulletins this user hasn't read (none without news.read)."""
+        if not session.user_id or not session.can(READ):
+            return []
+        return self.db.unread_news(session.user_id)
+
     def new_count(self, session):
-        s = session.previous_login or 0
-        return sum(1 for n in self.db.news() if changed_at(n) > s)
+        return len(self.unread(session))
+
+    # ---- the newspaper icon ----
+
+    def refresh_icon(self, session):
+        n = self.new_count(session)
+        if n:
+            session.set_notify(SLOT_NEWS, Icon.NEWS, "%d unread news bulletin%s" % (
+                n, "" if n == 1 else "s"))
+        else:
+            session.set_notify(SLOT_NEWS, Icon.NONE)
+
+    def signed_on(self, session):
+        self.refresh_icon(session)
+
+    def notify_click(self, session, slot):
+        if slot != SLOT_NEWS:
+            return None
+        if not session.can(READ):
+            session.warn("notify click %d refused: no %s" % (slot, READ))
+            return self.refresh_icon(session)
+        return self.open(session)
+
+    def unread_changed(self, session):
+        """This user's unread bulletins changed: their icon and News window follow."""
+        self.refresh_icon(session)
+        v = self.windows.get(session)
+        if v is not None:
+            v.refresh()
+
+    def mark_read(self, session, news_ids):
+        if news_ids and session.user_id:
+            self.db.mark_news_read(session.user_id, news_ids)
+            self.unread_changed(session)
 
     def offer(self, session):
-        """After the welcome window at sign-on: if bulletins were posted or edited since the
-        user's previous sign-on, ask whether to read them (once a sign-on)."""
+        """After the welcome window at sign-on: if there are bulletins the user hasn't read,
+        ask whether to read them (once a sign-on)."""
         if getattr(session, "news_offered", False) or not session.can(READ) or session.closed:
             return None
         session.news_offered = True
@@ -72,7 +112,7 @@ class News:
             return None
         win = Window.centred("News", 360, 50, flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE,
                              win_id=WIN_NEWS_OFFER)
-        win.add(Label(8, 4, 344, 10, "There %s %d new news bulletin%s." % (
+        win.add(Label(8, 4, 344, 10, "There %s %d unread news bulletin%s." % (
             "is" if n == 1 else "are", n, "" if n == 1 else "s"), GFlag.CENTRE))
         win.add(Label(8, 16, 344, 10, "Would you like to read %s now?" % (
             "it" if n == 1 else "them"), GFlag.CENTRE))
@@ -110,11 +150,15 @@ class News:
         add_buttons(win, [("OK", closer, GFlag.DEFAULT)], centre=True)
         self.readers[session] = win
         win.show(session)
+        self.mark_read(session, [news_id])
         return win
 
     def changed(self):
-        """A bulletin came, changed or went: every open News window follows, and so does
-        anyone reading it."""
+        """A bulletin came, changed or went: everyone's newspaper icon and open News window
+        follow, and so does anyone reading it."""
+        for s in list(self.server.sessions):
+            if s.user_id and not s.closed:
+                self.refresh_icon(s)
         for v in list(self.windows.values()):
             v.refresh()
         for session, win in list(self.readers.items()):
@@ -124,6 +168,7 @@ class News:
                 self.read(session, win.news_id, keep=win)
 
     def permissions_changed(self, session):
+        self.refresh_icon(session)
         v = self.windows.get(session)
         c = self.composers.get(session)
         if c is not None and not session.can(POST):
@@ -208,26 +253,21 @@ class NewsWindow:
     def poster(self):
         return self.session.can(POST)
 
-    def since(self):
-        return self.session.previous_login or 0
-
     # ---- what it shows ----
 
     def rows(self):
         items = self.db.news()
         self.ids = [n["id"] for n in items]
-        s = self.since()
-        return [("%s %s %s" % ("*" if changed_at(n) > s else " ", when(n["posted"], "%m-%d"),
+        unread = set(self.news.unread(self.session))
+        return [("%s %s %s" % ("*" if n["id"] in unread else " ", when(n["posted"], "%m-%d"),
                                n["headline"]))[:ROW_COLS] for n in items]
 
     def heading(self):
         items = self.db.news()
-        s = self.since()
-        new = sum(1 for n in items if changed_at(n) > s)
         if not items:
             return "No news yet."
-        return "%d bulletin%s, %d new since last time." % (
-            len(items), "" if len(items) == 1 else "s", new)
+        return "%d bulletin%s, %d unread (*)." % (
+            len(items), "" if len(items) == 1 else "s", self.news.new_count(self.session))
 
     def hint(self):
         if not self.ids:
@@ -248,6 +288,7 @@ class NewsWindow:
         if self.news_id in self.ids:
             self.list.selected = self.ids.index(self.news_id)
         self.need = [a.command("Read", self._read, default=True)]
+        self.all_b = a.command("Mark All Read", self._all_read)
         if self.poster:
             a.section("Admin Tools")
             new_b, edit_b = a.pair(("New...", self._new), ("Edit...", self._edit))
@@ -276,6 +317,7 @@ class NewsWindow:
         on = self.news_id in self.ids
         for b in self.need:
             b.enable(on)
+        self.all_b.enable(bool(self.news.unread(self.session)))
 
     def say(self, text):
         self.status.set_text(text)
@@ -291,6 +333,11 @@ class NewsWindow:
     def _closed(self, window):
         if self.news.windows.get(self.session) is self:
             del self.news.windows[self.session]
+
+    def _all_read(self, button):
+        if self._ok():
+            self.news.mark_read(self.session, self.news.unread(self.session))
+            self.say("All marked read.")
 
     def _ok(self, key=READ):
         if not self.session.can(key):

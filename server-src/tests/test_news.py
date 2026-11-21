@@ -3,7 +3,7 @@ composer; everyone with news.read reads them, newest first, and their windows fo
 
 from meganet.news import (WIN_NEWS, WIN_NEWS_EDIT, WIN_NEWS_DELETE, WIN_NEWS_OFFER,
                           WIN_NEWS_READ)
-from meganet.protocol import Kind
+from meganet.protocol import Kind, Icon, SLOT_NEWS
 from tests.test_pages import PagesBase
 from tests.test_roles import gadget_of, status_of
 
@@ -112,7 +112,7 @@ class NewsTest(PagesBase):
         carol.click_text(1, "OK")                            # (the welcome window)
         offer = await carol.wait_window("News")
         self.assertIs(carol.windows.get(WIN_NEWS_OFFER), offer)
-        offer.find("There are 2 new news bulletins.")
+        offer.find("There are 2 unread news bulletins.")
         carol.click_text(WIN_NEWS_OFFER, "Read Now")
         await carol.wait_for(lambda: WIN_NEWS in carol.windows, "News opened")
         self.assertTrue(self.rows(carol)[0].endswith("Server moved"))
@@ -132,3 +132,60 @@ class NewsTest(PagesBase):
         self.assertTrue(any(g["text"] == "New..." for g in w.gadgets.values()))
         await self.write(bob, "New...", "New Bulletin", "Hi from bob", ["Hello."], "Post")
         self.assertEqual(db.news()[0]["author_name"], "bob")
+
+    def head(self, c):
+        w = c.windows[WIN_NEWS]
+        return next(g["text"] for g in w.gadgets.values()
+                    if g["kind"] == Kind.LABEL and "bulletin" in g["text"])
+
+    async def test_unread_icon_and_marking_read(self):
+        alice, bob, db = self.alice, self.bob, self.server.db
+        self.assertEqual(bob.icon(SLOT_NEWS), Icon.NONE, "no news: no newspaper")
+        await self.open_news(alice)
+        await self.write(alice, "New...", "New Bulletin", "Party", ["Saturday."], "Post")
+        await self.write(alice, "New...", "New Bulletin", "Moved", ["Same address."], "Post")
+        await bob.wait_for(lambda: bob.hint(SLOT_NEWS) == "2 unread news bulletins", "icon")
+        self.assertEqual(bob.icon(SLOT_NEWS), Icon.NEWS)
+        # the icon opens News: the unread ones starred
+        bob.notify_click(SLOT_NEWS)
+        await bob.wait_for(lambda: WIN_NEWS in bob.windows and self.rows(bob), "News open")
+        self.assertTrue(all(r.startswith("*") for r in self.rows(bob)))
+        self.assertEqual(self.head(bob), "2 bulletins, 2 unread (*).")
+        # reading one marks it
+        await self.click_row(bob, 0)
+        await bob.wait_for(lambda: bob.hint(SLOT_NEWS) == "1 unread news bulletin", "one left")
+        await bob.wait_for(lambda: self.rows(bob)[0].startswith(" "), "unstarred")
+        # an edit makes it unread again (once closed: an open reader shows the edit, read)
+        bob.click_text(WIN_NEWS_READ, "OK")
+        await bob.wait_for(lambda: WIN_NEWS_READ not in bob.windows, "closed")
+        alice.select(WIN_NEWS, gadget_of(alice.windows[WIN_NEWS], Kind.LISTBOX), 0)
+        await self.write(alice, "Edit...", "Edit Bulletin", "Moved!", ["New address."], "Save")
+        await bob.wait_for(lambda: bob.hint(SLOT_NEWS) == "2 unread news bulletins", "again")
+        # Mark All Read: the icon goes
+        bob.click_text(WIN_NEWS, "Mark All Read")
+        await bob.wait_for(lambda: bob.icon(SLOT_NEWS) == Icon.NONE, "all read")
+        self.assertEqual(db.unread_news(db.user("bob")["id"]), [])
+        self.assertFalse(bob.enabled(WIN_NEWS, "Mark All Read"))
+        # alice's own: she hasn't read them either, but signs on to the icon next time
+        carol = await self.signed_on("carol")
+        self.assertEqual(carol.hint(SLOT_NEWS), "2 unread news bulletins")
+
+    def test_reading_began_after_old_sign_ons(self):
+        """The first start with read tracking: what each user saw by the old rule (posted
+        before their last sign-on) counts as read."""
+        import os, tempfile
+        from meganet.db import Database
+        path = os.path.join(tempfile.mkdtemp(), "old.db")
+        db = Database(path)
+        uid = db.create_user("dave", "x")
+        old = db.post_news("Old", ["seen"], uid)
+        db.conn.execute("UPDATE news SET posted = 1000 WHERE id = ?", (old,))
+        db.conn.execute("UPDATE users SET last_login = 2000 WHERE id = ?", (uid,))
+        db.conn.execute("DELETE FROM news_reads")
+        db.conn.execute("DELETE FROM settings WHERE key = 'news_reads_seeded'")
+        db.conn.commit()
+        new = db.post_news("New", ["not seen"], uid)
+        db.close()
+        db = Database(path)                       # (the start-up that seeds it)
+        self.assertEqual(db.unread_news(uid), [new])
+        db.close()

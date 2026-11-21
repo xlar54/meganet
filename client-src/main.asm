@@ -13,8 +13,13 @@
 ;   $8300000     File Library downloads and uploads, staged (storage.asm, 1 MB)
 ;   $8200000     GUI list / view rows (16 x 8 KB); $8240000 desktop icon pictures (12 x 512)
 ;   $8250000     grid cells (256 a gadget slot); $8400000 resource slots, 16 x 64 KB: a
-;                grid's tiles, sent by the server (lib/gui/grid.asm)
+;                grid's tiles, sent by the server (lib/gui/grid.asm); the Art Gallery's
+;                pictures in slots 2-5 (picture.asm); Paint's picture in slot 6 and its
+;                palette swatches in 7 (canvas.asm); chess's pieces in 1, One's cards in 8
+;   $8700000     the overlays (overlays.asm), 64 KB each; they run in the window
+;                OVL_BASE-$CCFF
 ;   $CD00-$CF05  the bridge build's rings (Xemu only)
+;   $14000       the server's sprites (sprites.asm); $15000 the art's palette after boot
 ;=======================================================================================
         .cpu "45gs02"
 
@@ -40,16 +45,25 @@ BRIDGE_NET      = 0                     ; -D BRIDGE_NET=1 (build.bat bridge): Xe
         .endweak
 UNPACK_BUF      = $40000                ; boot only
 
-        * = $2001                       ; BASIC stub: BANK 0 : SYS 8210
-        .word (+), 2026
+; the layout (lib/overlay.asm, overlays.asm): the resident part, then the overlays, each its
+; own file on the disk (build.bat OVERLAYS=0 1), all assembled to run at OVL_BASE
+        * = $1fff
+        .dsection res
+        * = $100000
+        .dsection ovl0
+        * = $110000
+        .dsection ovl1
+
+        .section res
+        .word $2001                     ; (the PRG's load address)
+        .word (+), 2026                 ; BASIC stub: BANK 0 : SYS 8210
         .byte $fe, $02, $30
         .byte ':'
         .byte $9e
         .text "8210"
         .byte 0
 +       .word 0
-
-        * = $2012
+        .fill $2012 - *
 entry:
         cld
         jsr kst_capture                 ; first: BASIC's state, for MegaNet > Exit
@@ -58,6 +72,11 @@ entry:
         bcs +
         lda #1
 +       sta logo_ok
+        jsr ovl_boot_load               ; the overlays -> attic (OVL0, OVL1)
+        lda #0
+        bcs +
+        lda #1
++       sta ovl_ok
         lda #<MIP_LOAD                  ; the TCP/IP stack, last: the unpacker used bank 4
         sta ld_dest
         lda #>MIP_LOAD
@@ -95,6 +114,8 @@ entry:
         cpx #zp_end
         bne -
         jsr dma_init
+        jsr pal_stash                   ; (first: the variables reuse the palette's bytes)
+        jsr ovl_init
         jsr net_install
         jsr irq_install
         jsr rom_save                    ; the ROM image to attic: Exit puts it back
@@ -121,10 +142,15 @@ main_loop:
         jsr link_frame                  ; (the connectivity icon; PING when it's quiet)
         jsr sound_frame                 ; (the chime's notes)
         jsr storage_frame               ; (an upload going out)
-        jsr gui_update
-        bcc +
+        jsr sprites_frame               ; (the server's sprites moving: sprites.asm)
+        lda pic_on                      ; a picture over everything: its keys only
+        beq +
+        jsr far_pic_frame
+        bra _step
++       jsr gui_update
+        bcc _step
         jsr on_event
-+       jsr login_step
+_step:  jsr login_step
         bra main_loop
 
 ; a gui event: the client's own windows ($F0-$FF) here, the server's go to the server
@@ -168,29 +194,68 @@ _win:   lda ge_win
         jmp proto_gui_event
 +       rts
 
-; palette entries 16-254: the art's (gen/palette.asm)
+; the art's palette (gen/palette.asm, 768 bytes at the program's end) -> PAL_STASH, before
+; anything uses the variables (the bss section) that share its bytes
+pal_stash:
+        ldx #3
+-       lda _src,x
+        sta ptr1,x
+        lda _dst,x
+        sta ptr2,x
+        dex
+        bpl -
+        lda #<768
+        sta tmp5
+        lda #>768
+        sta tmp5+1
+        jmp dma_copy_far
+_src:   .dword palette_rgb
+_dst:   .dword PAL_STASH
+
+; palette entries 16-254: the art's, from PAL_STASH
 art_palette:
+        ldx #3
+-       lda _p,x
+        sta ptr0,x
+        dex
+        bpl -
         ldx #16
--       lda palette_rgb,x
+-       txa
+        taz
+        lda [ptr0],z
         jsr gui_swap
         sta $d100,x
-        lda palette_rgb+256,x
+        inc ptr0+1
+        lda [ptr0],z
         jsr gui_swap
         sta $d200,x
-        lda palette_rgb+512,x
+        inc ptr0+1
+        lda [ptr0],z
         jsr gui_swap
         sta $d300,x
+        dec ptr0+1
+        dec ptr0+1
         inx
         cpx #255
         bne -
+        ldz #0
         rts
+_p:     .dword PAL_STASH
 
 frames:         .word 0
 dbg_ready:      .byte 0                 ; 1 once the sign-on screen is up (tests)
+ovl_ok:         .byte 0                 ; set at boot when the overlays loaded (tests)
 s_ethbin:       .text "ETHBIN"
 s_ethbin_end:
 s_mockrx:       .text "MOCKRX"
 s_mockrx_end:
+
+; read at boot, before the takeover banks the ROMs out: reads at $C000-$CFFF see ROM then,
+; so it must stay low (the program now reaches past $C000)
+        .include "gen/manifest.asm"
+boot_data_end:
+PAL_STASH       = $15000                ; the art's palette after boot (bank 1: see the top)
+        .cerror boot_data_end > $c000, "boot-time data (the manifest) must be below $C000"
 
         .include "login.asm"
         .include "exit.asm"
@@ -198,14 +263,17 @@ s_mockrx_end:
         .include "proto.asm"
         .include "sound.asm"
         .include "link.asm"
-        .include "storage.asm"
-        .include "sdwrite.asm"
+        .include "overlays.asm"         ; (storage, sdwrite, picture, canvas: the overlays)
+        .include "sprites.asm"
         .include "lib/kstream.asm"
         .include "lib/system.asm"
         .include "lib/dma.asm"
         .include "lib/loader.asm"
         .include "lib/unpack.asm"
         .include "lib/manifest.asm"
+        .include "lib/overlay.asm"
+boot_code_end:                          ; (the code run before the takeover: below $C000 too)
+        .cerror boot_code_end > $c000, "boot-time code must be below $C000"
         .include "lib/fcm640.asm"
         .include "lib/draw640.asm"
         .include "lib/font8.asm"
@@ -215,10 +283,34 @@ s_mockrx_end:
         .include "lib/sid.asm"
         .include "lib/gui/gui.asm"
         .include "lib/gui/grid.asm"
-        .include "gen/manifest.asm"
-        .include "gen/palette.asm"
-
+        .include "gen/palette.asm"      ; last: copied to PAL_STASH at boot (pal_stash), then
+prg_end:                                ; its bytes are the variables'
+        .send res
+        .virtual palette_rgb
         .dsection bss
+bss_end:
+        .endv
+        .cerror bss_end < prg_end, "(the bss section is smaller than the palette)"
+        .cerror bss_end > OVL_BASE, format("the resident part (to $%04x) runs into the overlay window at $%04x", bss_end, OVL_BASE)
 
-        .cerror * > $cfff, "program overflows into I/O space at $D000"
-        .cerror BRIDGE_NET && * > BR_RX, format("the program (to $%04x) runs into the bridge rings at $CD00", *)
+; ---- overlay 0 (OVL_FILES): the File Library's disk and SD-card work ----
+        .section ovl0
+        .word 0                         ; (the two bytes a LOAD skips)
+        .logical OVL_BASE
+        .include "storage.asm"
+        .include "sdwrite.asm"
+ovl0_end:
+        .cerror * > OVL_END, format("overlay 0 is too big: to $%04x", *)
+        .endlogical
+        .send ovl0
+
+; ---- overlay 1 (OVL_ART): the Art Gallery's pictures and Paint ----
+        .section ovl1
+        .word 0
+        .logical OVL_BASE
+        .include "picture.asm"
+        .include "canvas.asm"
+ovl1_end:
+        .cerror * > OVL_END, format("overlay 1 is too big: to $%04x", *)
+        .endlogical
+        .send ovl1

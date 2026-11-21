@@ -3,6 +3,8 @@
 The Games window lists every game. A player picks one and clicks Join; they wait in that
 game's queue. As soon as max_players are waiting the match starts. If a game allows fewer
 (min_players < max_players), any waiting player can click "Start now" once min_players are in.
+A game with `computer = True` asks first: "Wait for Others" (the queue) or "vs Computer..."
+(how many computer players, then the game starts at once with game.computers set).
 
 Only users whose role holds games.play may open the window, and each game is listed only for
 users who also hold its Game.permission (games.play unless the game registers its own).
@@ -11,8 +13,9 @@ users who also hold its Game.permission (games.play unless the game registers it
 import asyncio
 import logging
 
+from ..protocol import GFlag, WFlag
 from ..session import call
-from ..ui import AreaWindow
+from ..ui import AreaWindow, Window, Label, add_buttons, closer, MARGIN
 from .base import Player
 from .challenge import ChallengeLobby
 
@@ -135,16 +138,71 @@ class GameLobby:
             return session.alert("Games", "Your account can't play %s." % cls.name)
         if cls in self.challenges:             # a game with a lobby: pick an opponent there
             return self.open_lobby(session, cls)
+        caps = getattr(cls, "needs_caps", 0)
+        if caps and (session.caps & caps) != caps:
+            session.warn("%s refused: client caps $%02X" % (cls.name, session.caps))
+            return session.alert("Games", "Your MegaNet client is too old for %s. Start "
+                                 "the latest client and try again." % cls.name)
         if self.waiting_for(session) is cls:
             return None
+        if cls.computer:                       # wait for people, or play the computer now
+            return self.ask_mode(session, cls)
+        return self.queue(session, cls)
+
+    def queue(self, session, cls):
+        """Into cls's queue: the match starts when it's full (or on Start Now)."""
+        if session.game:
+            return session.alert("Games", "You are already playing.")
         self._dequeue(session)
         queue = self.queues[cls]
         queue.append(session)
-        win.status.set_text("Waiting for players for %s..." % cls.name)
+        win = self.windows.get(session)
+        if win is not None:
+            win.status.set_text("Waiting for players for %s..." % cls.name)
         if len(queue) >= cls.max_players:
             return self.start(cls, queue[:cls.max_players])
         self.refresh()
         return None
+
+    # ---- a game with computer players: how to play (dynamic window ids) ----
+
+    def ask_mode(self, session, cls):
+        """"Wait for Others" (the queue, Start Now with 2 or more) or "vs Computer...": then
+        how many computer players, and the game starts at once."""
+        def wait(button):
+            button.window.close()
+            if self.may_play(session, cls) and not session.game:
+                return self.queue(session, cls)
+            return None
+        win = Window.centred("Play %s" % cls.name, 384, 40,
+                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE)
+        win.add(Label(MARGIN, 4, 368, 10, "How do you want to play %s?" % cls.name,
+                      flags=GFlag.CENTRE))
+        add_buttons(win, [("Wait for Others", wait, GFlag.DEFAULT),
+                          ("vs Computer...", lambda b: self.ask_computers(b, session, cls), 0),
+                          ("Cancel", closer, 0)], centre=True)
+        win.show(session)
+
+    def ask_computers(self, button, session, cls):
+        button.window.close()
+        most = cls.max_players - 1
+
+        def go(b, n):
+            b.window.close()
+            if session.game:
+                return session.alert("Games", "You are already playing.")
+            if not self.may_play(session, cls):
+                return None
+            self._dequeue(session)
+            session.log("games: %s against %d computer player%s"
+                        % (cls.name, n, "" if n == 1 else "s"))
+            return self.start(cls, [session], queued=False, computers=n)
+        win = Window.centred("vs Computer", 336, 40,
+                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE)
+        win.add(Label(MARGIN, 4, 320, 10, "How many computer players?", flags=GFlag.CENTRE))
+        add_buttons(win, [(str(n), (lambda b, n=n: go(b, n)), GFlag.DEFAULT if n == 1 else 0)
+                          for n in range(1, most + 1)] + [("Cancel", closer, 0)], centre=True)
+        win.show(session)
 
     def _start_now(self, gadget):
         session = gadget.session
@@ -177,7 +235,7 @@ class GameLobby:
             win.close()
         return self.challenges[cls].open(session)
 
-    async def start(self, cls, sessions, queued=True):
+    async def start(self, cls, sessions, queued=True, computers=0):
         for s in sessions:
             if queued:
                 self.queues[cls].remove(s)
@@ -187,6 +245,7 @@ class GameLobby:
         self.refresh()
         game = cls()
         game._lobby = self
+        game.computers = computers
         game.players = [Player(s) for s in sessions]
         for p in game.players:
             p.game = game

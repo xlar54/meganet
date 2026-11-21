@@ -37,9 +37,11 @@ class Game:
     max_players = 2
     tick_interval = 0         # seconds between tick() calls; 0 = no ticks
     permission = "games.play" # who may play: a key from permissions.py (register your own)
+    computer = False          # True: Join offers "vs Computer..." (the game plays the seats)
 
     def __init__(self):
         self.players = []     # Player objects still in the game
+        self.computers = 0    # computer players asked for (set before start(); computer games)
         self.over = False
         self._lobby = None    # set by the framework
 

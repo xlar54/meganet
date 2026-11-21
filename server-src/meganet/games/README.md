@@ -50,6 +50,7 @@ Class attributes:
 | `permission` | The permission key needed to see and join the game: `"games.play"` (the default), or your own (below). Everyone also needs `games.play` to open the Games window. |
 | `challenge` | `True` for a two-player game with a lobby (`challenge.py`): Join opens "*Name* Lobby", where players wait, pick an opponent and Challenge; the other Accepts or Declines. The challenger is `players[0]`. Default `False`: the first players to join are matched. |
 | `needs_caps` | `protocol.Caps` bits the client must have (`Caps.GRID` for a `Grid` board); the lobby refuses older clients with a message. |
+| `computer` | `True`: Join asks "Wait for Others" (the queue) or "vs Computer..." (how many computer players, up to `max_players - 1`; the game starts at once with one person). `self.computers` says how many were asked for; the game plays those seats itself, usually from `tick()`. `one.py` is the example. |
 
 Hooks (override what you need; any of them may be `async def`):
 
@@ -131,4 +132,10 @@ Roles window. The game is then listed, and can be joined, only by users who hold
 rematch and quit. `chess.py` is a bigger one: the lobby, a `Grid` board with its tiles, the
 rules (`chess_rules.py`, checked against the published perft counts in
 `tests/test_chess_rules.py`), chat beside the board, a promotion dialog, draw offers,
-resigning and rematches.
+resigning and rematches. `one.py` is a card game for 2-4 with computer players: rules
+apart in `one_rules.py` (tested on their own), two `Grid`s (the piles and the hand), modal
+questions for a Wild's colour and a challenge, and seats the computer takes over when a
+person leaves.
+
+Don't give a game a method called `challenge`: the lobby reads that name as the class flag
+above, and the game gets a challenge lobby.

@@ -10,6 +10,7 @@
 ;
 ;   gui_resource    ptr0 = where in the slot (gui_res_slot, gui_res_off), tmp6 = the bytes
 ;                   (chip RAM), tmp5 = how many: copied in
+;   gui_resource_packed   the same, but tmp6 / tmp5 are PackBits bytes, unpacked in
 ;   gui_grid_cells  A = window, X = gadget id, gp_x = first cell, gp_w = how many, tmp6 =
 ;                   the values: set, and the grid drawn again at the next frame
 ;   A click on a cell gives GE_SELECT with ge_val = the cell (row * cols + col).
@@ -28,16 +29,7 @@ gui_resource:
         lda gui_res_slot
         cmp #GUI_RES_SLOTS
         bcs _out
-        lda gui_res_off
-        sta ptr0
-        lda gui_res_off+1
-        sta ptr0+1
-        clc
-        lda gui_res_slot
-        adc #`GUI_RES_MEM
-        sta ptr0+2
-        lda #GUI_RES_MEM >> 24
-        sta ptr0+3
+        jsr l_gr_dest
         ldy #0
         ldz #0
 _lp:    lda tmp5
@@ -54,6 +46,75 @@ _lp:    lda tmp5
         bra _lp
 _done:  ldz #0
 _out:   rts
+
+; gui_resource_packed: tmp5 bytes of PackBits (ByteRun1) from tmp6, unpacked into slot
+; gui_res_slot from gui_res_off on (wrapping inside the slot): n < 128 = the next n + 1
+; bytes as they are, n > 128 = the next byte 257 - n times, 128 = nothing
+gui_resource_packed:
+        lda gui_res_slot
+        cmp #GUI_RES_SLOTS
+        bcs _out
+        jsr l_gr_dest
+        ldz #0
+_cmd:   jsr l_gr_next
+        bcs _done
+        cmp #128
+        beq _cmd
+        bcs _run
+        inc a                           ; n + 1 bytes as they are (1-128)
+        sta l_gr_pn
+_lit:   jsr l_gr_next
+        bcs _done
+        sta [ptr0],z
+        inw ptr0
+        dec l_gr_pn
+        bne _lit
+        bra _cmd
+_run:   eor #$ff                        ; 257 - n = (255 - n) + 2: 2-128 times
+        clc
+        adc #2
+        sta l_gr_pn
+        jsr l_gr_next
+        bcs _done
+-       sta [ptr0],z
+        inw ptr0
+        dec l_gr_pn
+        bne -
+        bra _cmd
+_done:  ldz #0
+_out:   rts
+l_gr_pn:        .byte 0
+
+; the next packed byte -> A (from tmp6, tmp5 left), carry set when there are none
+l_gr_next:
+        lda tmp5
+        ora tmp5+1
+        bne +
+        sec
+        rts
++       lda tmp5
+        bne +
+        dec tmp5+1
++       dec tmp5
+        ldy #0
+        lda (tmp6),y
+        inw tmp6
+        clc
+        rts
+
+; ptr0 = slot gui_res_slot at offset gui_res_off
+l_gr_dest:
+        lda gui_res_off
+        sta ptr0
+        lda gui_res_off+1
+        sta ptr0+1
+        clc
+        lda gui_res_slot
+        adc #`GUI_RES_MEM
+        sta ptr0+2
+        lda #GUI_RES_MEM >> 24
+        sta ptr0+3
+        rts
 
 ; ptr2 = gadget slot X's cells (X kept)
 l_gr_cells:

@@ -87,7 +87,7 @@ Edit gadgets first, as the real client does).
 | `meganet/compose.py` | The message composer (To, Subject, a text area, Send / Cancel) used by pages.py and mail.py |
 | `meganet/updates.py` | Forced client updates from `updates/manifest.json` |
 | `meganet/serverlog.py` | The server log: every line kept in the database too, and Admin > Server Log to read it |
-| `meganet/games/` | The games framework (`base.py`, `lobby.py`, `challenge.py`: a game's lobby for picking an opponent) and the games themselves (`tictactoe.py`; `chess.py` with `chess_rules.py` and the piece art `chess_art.py`) |
+| `meganet/games/` | The games framework (`base.py`, `lobby.py`, `challenge.py`: a game's lobby for picking an opponent) and the games themselves (`tictactoe.py`; `chess.py` with `chess_rules.py` and the piece art `chess_art.py`; `one.py` with `one_rules.py` and the card art `one_art.py`) |
 | `tests/` | unittest tests and the fake client |
 
 ## Sign-on
@@ -206,6 +206,9 @@ for a button or a MENU_PICK for an item it was never given.
 | `news.post` | Post, edit and delete news bulletins (Areas > News) | | | | x |
 | `files.upload` | Upload files to the File Library | | | x | x |
 | `files.moderate` | Manage file libraries: libraries, file entries, access, approvals | | | x | x |
+| `gallery.view` | Look at the Art Gallery (View, Slideshow) | x | x | x | x |
+| `gallery.upload` | Upload IFF pictures to the Art Gallery | | x | x | x |
+| `gallery.moderate` | Manage galleries; edit and delete anyone's pictures | | | x | x |
 | `admin.users` | Assign users to roles | | | | x |
 | `admin.roles` | Edit roles and their permissions | | | | x |
 | `admin.motd` | Edit the message of the day | | | | x |
@@ -387,6 +390,7 @@ there after a click: the server removes it when it's done.
 | 3 | 2 (mail) | "1 unread private message" | `mail.use` | the Private Messages inbox |
 | 4 | 5 (person) | "2 new users" | `admin.users` | the User Editor at the oldest new user |
 | 5 | 6 (speech bubble) | "2 new messages from bob" | anyone | the conversation with unread messages |
+| 6 | 10 (newspaper) | "2 unread news bulletins" | `news.read` | Areas > News |
 
 The slots are the `protocol.SLOT_*` constants; use those, not the numbers.
 
@@ -465,8 +469,15 @@ Areas > Private Messages (`meganet/mail.py`, `mail.use`):
 ## News
 
 **Areas > News** (`meganet/news.py`; `news.read`, everyone from New User up):
-- **The News window** (36) lists the bulletins, newest first: "*" if one was posted or edited
-  since your previous sign-on, then the day and the headline.
+- **Unread news:** a bulletin is unread until you open it, and again after it's edited (the
+  `news_reads` table keeps the version each user read). While any are unread you have the
+  newspaper icon (slot 6, "2 unread news bulletins"; a click opens News), and closing the
+  welcome window at sign-on asks "There are 2 unread news bulletins. Would you like to read
+  them now?" (window 39: Read Now opens News, Later). When read tracking first started, each
+  user's bulletins from before their last sign-on were counted as read; new users start with
+  everything unread.
+- **The News window** (36) lists the bulletins, newest first: "*" if it's unread, then the
+  day and the headline; the heading counts them. **Mark All Read** marks them all.
 - **Read** (or a double-click) opens the picked one to read (window 40, modal): the headline
   and who posted it (and who edited it last) centred at the top, then the text in a view
   exactly as wide as the composer's text area, so every line reads as it was written; OK
@@ -814,6 +825,60 @@ key with `permissions.register(..., like="internet.use")`.
   verified with Python's certificate list, or `--cafile`.
 - Not yet: forms (only the address box searches), cookies and sign-ins, pictures.
 
+## Art Gallery
+
+**Areas > Art Gallery** (`gallery.view`; `meganet/gallery/`, windows 58-63) has two views in
+one area window (58), like the File Library:
+- **The galleries:** title and pictures; the picked one's description under the list; Open
+  (or double-click). Holders of `gallery.moderate` (Moderators and up) get Admin Tools: New...
+  and Edit... (window 59: Title, Description) and Delete (window 63: the pictures go too).
+- **A gallery's pictures:** title, artist, date added; under the list the picked one's size,
+  colours, views and description. View (or double-click) and Slideshow for everyone;
+  Upload and Paint with `gallery.upload` (Members and up); Back. Edit... (window 60: Title,
+  Description) and Delete for moderators (Admin Tools) and for a picture's own artist (Your
+  Pictures).
+- **View** shows the picture over the whole screen; any key or click goes back.
+  **Slideshow** starts at the picked picture: Space or a click shows the next, Esc (or a
+  right click) goes back, and so does Space on the last one ("That was the last picture.").
+  While a picture shows, the next one goes to the client in the background; if it isn't all
+  there when Space comes, the desktop comes back with a Loading window (62: what, a progress
+  bar, Cancel) until it is. A picture the client still holds from before isn't sent again.
+- **Upload** (window 61): a drive (8-11), an IFF file from its directory (PRG, SEQ or USR),
+  a Title (from the file name) and a Description. It comes over like a File Library upload
+  (the transfer window, 45), then the server reads it: anything that isn't a picture it can
+  show is refused with the reason, nothing kept. Up to 512 KB.
+- **On the server:** each picture is the uploaded IFF, `galleries/<gallery id>/<picture
+  id>.iff` (`--galleries` moves the folder), with its row in `gallery_pictures`. Shown, it's
+  converted (`gallery/picture.py`; 8 kept): ILBM or PBM, 1-8 planes, ByteRun1 or not, EHB,
+  HAM6 / HAM8 (median cut to 255 colours); fitted to 320x200 (shown doubled across: a lores
+  picture) or 640x200 (wider ones), keeping its shape (from the size and CAMG; BMHD's aspect
+  only when it's far from that, as many programs write 1:1), centred on its darkest colour,
+  which is also the border; colour 255 (the client's colour-RAM colour) is moved to the
+  nearest other. The pixels go in the client's framebuffer order, PackBits-packed
+  (`S.RESOURCE_PACKED`) into resource slots 2-3 or 4-5 (two pictures; a hires one takes both
+  of its pair), paced 4 KB ahead of the network. Clients without `Caps.PICTURE` are told
+  they can't show pictures.
+- **Paint** (`gallery/paint.py`; with `gallery.upload`, clients with `Caps.CANVAS`): the
+  server keeps the picture (320x200, 32 colours) and does all the painting; the client shows
+  it as its desktop (`S.CANVAS`: the windows open then are hidden, and the menu bar), sends
+  the mouse on it (`C.CANVAS`), and gets back the pixels that changed (`S.CANVAS_RECT`,
+  packed). While the button is held the client draws a freehand stroke, or a line's or a
+  box's 1-pixel outline, at once (`S.CANVAS_PEN`); the server's answer then covers it.
+  - Paint (next to Upload) starts a new picture, or asks "This One" / "New" when the picked
+    picture is yours (or you're a moderator). Painting on one needs it to be 320x200 with
+    up to 32 colours.
+  - The tool window (over the picture: drag it, or minimize it to see everything): Draw,
+    Line, Box, Oval, Fill, Pick; Solid (filled boxes and ovals); Size (a square brush of
+    1-8); the 32-colour palette (a GRID, the colour framed; a right click on the picture
+    picks the colour under it); Undo (8 steps), Clear, Save..., Done.
+  - Save... (title, description) writes an ILBM into the gallery: a new picture, or the one
+    you're painting on again (clients that held it get it again: the cache key has the
+    file's time). Done or the close box asks "Leave Paint?" if there are changes not saved.
+  - The picture goes to resource slot 6, the palette swatches to slot 7. Palette entries
+    16-47 hold its colours (`CANVAS_FIRST`), so the GUI's 0-15 stay for the tool window.
+- Not yet: editing a palette's colours, text, brushes cut from the picture, magnify,
+  painting on pictures of more than 32 colours; uploads from the SD card; thumbnails.
+
 ## Adding a game
 
 Drop a Python file into `meganet/games/` with a `Game` subclass and restart the server. See
@@ -836,11 +901,61 @@ Drop a Python file into `meganet/games/` with a `Game` subclass and restart the 
   frame. Moves out of turn, illegal moves and clicks on the other side's pieces do nothing.
 - The tiles (28 of 32 x 16 bytes, 14 KB) go to resource slot 1 once a connection
   (`session.send_resource`), under a "Loading Chess" window (55, modal) whose progress bar
-  moves as they arrive; clients without `Caps.GRID` are refused at the lobby.
+  moves as they arrive; clients without `Caps.GRID` are refused at the lobby. Clients with
+  `Caps.PICTURE` get them packed (`S.RESOURCE_PACKED`, PackBits): 3 KB instead of 14.
+
+**One** (`games/one.py`, rules in `one_rules.py`, the cards in `one_art.py`) is the card game
+for 2-4, by the usual official rules: 108 cards; match the colour, number or symbol, or play
+a Wild; Skip, Reverse (a Skip with two), Draw Two, Wild, and Wild Draw Four (only with
+nothing of the colour, but you may bluff: the next player may challenge; guilty draws 4,
+otherwise the challenger draws 6); draw one, and play it at once if it goes or Pass; call
+One! on your last card or be caught for 2; the round's winner scores the others' cards
+(numbers face value, actions 20, Wilds 50) and the first to 500 wins.
+- Areas > Games > One > Join asks (a dynamic window) **Wait for Others** (the queue: four
+  start at once; Start Now with two or three) or **vs Computer...** (1-3 computer players,
+  and the game starts). Any game with `computer = True` gets this question.
+- The table (a dynamic id, 624x134): the others in the order they play next (">" whose turn,
+  their cards and scores), the draw pile and the top card (a Wild shows the colour named), the
+  colour to match, two status lines, your hand (12 x 2 cards, sorted, cyan-framed when they
+  can be played; "<" / ">" page through more than 24), Draw / Pass / One! / Catch! / Next
+  Round, the play-by-play and chat, and Leave (back to the Games window). A Wild asks for its
+  colour; a Wild Draw Four played at you asks Challenge / Draw 4 (both modal, dynamic ids).
+- The computer waits 1.5 s before each move (`tick()`), names its best colour, plays a Wild
+  Draw Four only honestly, attacks a player down to two cards, challenges a quarter of the
+  time, and catches a forgotten One! half the time. A person who leaves is replaced by the
+  computer; the game ends when no people are left.
+- The cards: 64 tiles of 32 x 22 (45 KB, 17 KB packed) in resource slot 8. Every pixel is
+  doubled across (checked when the module loads), so a card is exactly one 16-colour hardware
+  sprite.
+- Cards fly (`Caps.SPRITES` clients, `session.fly`, the two sprites in turn): a card played lifts out of the
+  hand (or from that player's row) and flies to the pile, which keeps showing the card under
+  it until it lands; a card drawn flies from the deck, face up into your hand (to the cell it
+  will take, left empty till then) or face down to the other player's row; several drawn fly
+  one after another. 14 frames a flight (`MEGANET_ONE_FLY_FRAMES` slows them down for tests).
+
+## Sprites over the GUI
+
+Clients with `Caps.SPRITES` (`client-src/sprites.asm`) have two sprites the server can make
+from any picture it has sent to a resource slot (a grid's tiles, say), and move over the
+screen above every window (below the pointer):
+
+| Call | Does |
+|---|---|
+| `session.sprite_show(n, window, slot, offset, w, h, pos, colours, stride=None, step=1)` | Sprite n (0-1) becomes the picture at byte `offset` of resource slot `slot`: `w` pixels across (up to 16) `step` bytes apart, `h` rows (up to 64) `stride` bytes apart. `colours` lists the palette indexes it shows (up to 15, `protocol.palette_rgb` knows them); every other byte is see-through. It shows at `pos` in `window`'s client area and stays. |
+| `session.sprite_move(n, start, end, frames, hide=False)` | It glides from `start` to `end` in `frames` frames (50 a second), then goes if `hide`. |
+| `session.sprite_off(n=0xFF)` | Gone (0xFF: both). |
+| `session.fly(window, slot, offset, w, h, start, end, frames, colours, step=1, n=0)` | Show, glide and go: a card played, a piece taken. |
+
+Each returns False, sending nothing, to a client without the capability, so a game works the
+same without it. A sprite is 16 pixels across in 320-wide units, so 32 screen pixels: art
+drawn with every pixel doubled across (as One's cards and chess's pieces are) is one sprite at
+full detail with `step=2`. One's flights (`games/one.py`) are the example.
 
 ## Publishing a client update
 
-Copy the built client files into `updates/` and write `updates/manifest.json`:
+Copy the built client files into `updates/` and write `updates/manifest.json`. The client is
+the program and its overlays (`MEGANET`, `OVL0`, `OVL1`: `client-src/overlays.asm`); send them
+all, since they are built together:
 
 ```json
 {"build": 3, "message": "New version", "files": ["CLIENT", "OVL0"]}

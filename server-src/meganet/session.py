@@ -27,7 +27,9 @@ from . import karma
 from . import serverlog
 from .protocol import (TOAST_NO_SLOT, clean_text, S, C, Writer, Deframer, ProtocolError, VERSION, LOGIN_NEW_USER,
                        SELECT_DOUBLE, SERVER_WIN_FIRST, SERVER_WIN_LAST, NOTIFY_SLOTS,
-                       NOTIFY_HINT_MAX, SLOT_STATUS, Icon, WFlag, RESOURCE_SLOTS, RESOURCE_SIZE,
+                       NOTIFY_HINT_MAX, SLOT_STATUS, Icon, WFlag, Caps, palette_rgb, SPRITES,
+                       SPRITE_W, SPRITE_H, SPRITE_COLOURS,
+                       RESOURCE_SLOTS, RESOURCE_SIZE,
                        RESOURCE_CHUNK)
 
 log = logging.getLogger("meganet")
@@ -63,6 +65,8 @@ class Session:
         self.notify = {}             # menu-bar icons shown: slot -> (icon, hint)
         self.desk = []               # desktop icons sent (desktop.py), slot order
         self.resources = {}          # S.RESOURCE slot -> the key of what this client holds
+        self.picture = None          # the S.PICTURE showing (gallery.Show): gets C.PIC_KEY
+        self.canvas = None           # Paint running (gallery.paint.Paint): gets C.CANVAS
         self.previous_login = None   # the sign-on before this one (My Account's Last Login)
         self.chat_lines = 0          # lines said in chat (karma: CHAT_LINES make a point)
         self.status = "available"    # Status menu: available / away / offline (presence.py)
@@ -161,7 +165,8 @@ class Session:
 
     def send_resource(self, slot, key, data, title=None):
         """Put `data` (at most RESOURCE_SIZE bytes: a grid's tiles, say) in the client's
-        resource slot `slot` (S.RESOURCE, RESOURCE_CHUNK at a time), unless this connection
+        resource slot `slot` (S.RESOURCE, RESOURCE_CHUNK at a time; S.RESOURCE_PACKED to
+        Caps.PICTURE clients, which unpack PackBits), unless this connection
         already holds `key` there. The client keeps it in attic RAM until the slot is
         overwritten; nothing goes to its disks. With `title` ("Chess"), a "Loading Chess"
         window with a progress bar shows while it comes: its updates go between the chunks,
@@ -179,16 +184,64 @@ class Session:
             win.add(Label(MARGIN, 4, 260 - 2 * MARGIN, 10, "Loading the game's pictures..."))
             bar = win.add(Progress(MARGIN, 20, 260 - 2 * MARGIN))
             win.show(self)
-        for offset in range(0, len(data), RESOURCE_CHUNK):
-            self.send(S.RESOURCE, Writer().u8(slot).u16(offset)
-                      .bytes(data[offset:offset + RESOURCE_CHUNK]))
+        packed = bool(self.caps & Caps.PICTURE)  # (clients that unpack: about a third)
+        for done, msg_type, w in resource_messages(slot, data, packed):
+            self.send(msg_type, w)
             if bar is not None:
-                bar.set_percent(100 * min(len(data), offset + RESOURCE_CHUNK) // len(data))
+                bar.set_percent(100 * done // len(data))
         if win is not None:
             win.close()
         self.resources[slot] = key
         self.log("resource %r: %d bytes to slot %d" % (key, len(data), slot))
         return True
+
+    # ---- the server's sprites (Caps.SPRITES): pictures from a resource slot over the GUI ----
+
+    def sprite_show(self, n, window, slot, offset, w, h, pos, colours, stride=None, step=1):
+        """S.SPRITE: sprite n (0 .. SPRITES-1) becomes the picture at byte `offset` of resource
+        slot `slot`: w pixels across (at most 16), `step` bytes apart (2: every second, for art
+        drawn 2 screen pixels to 1), h rows (at most 64), `stride` bytes apart (default
+        w * step). `colours` = the palette indexes it shows (at most 15: the rest is
+        see-through). It shows at `pos` (x, y) in `window`'s client area and stays there.
+        False (nothing sent) for clients without Caps.SPRITES or a window not shown."""
+        if not self.caps & Caps.SPRITES or not window.shown:
+            return False
+        if not (0 <= n < SPRITES and 1 <= w <= SPRITE_W and 1 <= h <= SPRITE_H
+                and 1 <= step and len(colours) <= SPRITE_COLOURS):
+            raise ValueError("bad sprite %r: %dx%d, step %d, %d colours"
+                             % (n, w, h, step, len(colours)))
+        stride = w * step if stride is None else stride
+        msg = (Writer().u8(n).u8(window.win_id).u8(slot).u16(offset).u8(w).u8(h).u16(stride)
+               .u8(step).u16(pos[0]).u8(pos[1]).u8(len(colours)))
+        for c in colours:
+            r, g, b = palette_rgb(c)
+            msg.u8(c).u8(r).u8(g).u8(b)
+        self.send(S.SPRITE, msg)
+        return True
+
+    def sprite_move(self, n, start, end, frames, hide=False):
+        """S.SPRITE_MOVE: sprite n (shown at `start`) glides to `end` in `frames` frames (50 a
+        second), then goes if `hide`. Positions in the same window's client area."""
+        if not self.caps & Caps.SPRITES or frames < 1:
+            return False
+
+        def step(a, b):
+            return max(-32768, min(32767, round((b - a) * 256 / frames))) & 0xFFFF
+        self.send(S.SPRITE_MOVE, Writer().u8(n).u16(step(start[0], end[0]))
+                  .u16(step(start[1], end[1])).u8(frames).u8(1 if hide else 0))
+        return True
+
+    def sprite_off(self, n=0xFF):
+        """S.SPRITE_OFF: sprite n gone (0xFF: all)."""
+        if self.caps & Caps.SPRITES:
+            self.send(S.SPRITE_OFF, Writer().u8(n))
+
+    def fly(self, window, slot, offset, w, h, start, end, frames, colours, step=1, n=0):
+        """A picture flies from `start` to `end` in `frames` frames, then goes: sprite_show
+        then sprite_move(hide). False for clients without Caps.SPRITES."""
+        if not self.sprite_show(n, window, slot, offset, w, h, start, colours, step=step):
+            return False
+        return self.sprite_move(n, start, end, frames, hide=True)
 
     def set_notify(self, slot, icon, hint=""):
         """Show icon `icon` in menu-bar slot `slot` (S.NOTIFY), or remove it with Icon.NONE.
@@ -311,6 +364,18 @@ class Session:
                 karma.suspicious(self, "desk open %d: no icon there" % slot)
             else:
                 await call(self.server.screens.desktop.open(self, slot))
+        elif msg_type == C.PIC_KEY:
+            key = r.u8()
+            if self.picture is None:
+                self.log("picture key %d ignored: no picture showing" % key)
+            else:
+                await call(self.picture.on_key(key))
+        elif msg_type == C.CANVAS:
+            event, x, y = r.u8(), r.u16(), r.u8()
+            if self.canvas is None:
+                self.log("canvas event %d ignored: not painting" % event)
+            else:
+                await call(self.canvas.on_mouse(event, x, y))
         elif msg_type in LOCAL_REPLIES:      # the client's storage (filelib.Storage)
             from .filelib import Storage
             Storage.of(self).handle(msg_type, r)
@@ -401,6 +466,23 @@ class Session:
         if self.server.find_user(name):
             return False, "%s is already signed on." % db.canonical_name(name)
         return True, "Welcome back, %s." % db.canonical_name(name)
+
+
+def resource_messages(slot, data, packed=False):
+    """The messages that put `data` in resource slot `slot`: [(bytes done after it, type,
+    Writer)]. `packed`: S.RESOURCE_PACKED (Caps.PICTURE clients), else S.RESOURCE."""
+    out = []
+    if packed:
+        from .gallery.picture import packed_chunks
+        chunks = packed_chunks(data)
+        for i, (offset, part) in enumerate(chunks):
+            done = chunks[i + 1][0] if i + 1 < len(chunks) else len(data)
+            out.append((done, S.RESOURCE_PACKED, Writer().u8(slot).u16(offset).bytes(part)))
+        return out
+    for offset in range(0, len(data), RESOURCE_CHUNK):
+        out.append((min(len(data), offset + RESOURCE_CHUNK), S.RESOURCE,
+                    Writer().u8(slot).u16(offset).bytes(data[offset:offset + RESOURCE_CHUNK])))
+    return out
 
 
 async def call(result):

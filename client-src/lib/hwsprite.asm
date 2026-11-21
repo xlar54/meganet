@@ -24,6 +24,16 @@
 ;   hws_pal_bank   A = palette bank 0-3 the sprites take their colours from
 ;   hws_pal_edit   A = palette bank that writes to $D100-$D3FF go to. Put it back to the
 ;                  screen's bank afterwards (hws_screen_bank, read by hws_init).
+;   hws_from_bitmap  16-colour sprite data from 256-colour pixels anywhere (a tile, a part
+;                  of a framebuffer, art in attic): ptr0 = the first pixel (28 bits), ptr1 =
+;                  the sprite data (HWS_BM_ROWS rows of 8 bytes are written), ptr2 = a
+;                  256-byte table, palette index -> sprite colour (0-15; 0 see-through).
+;                  hws_bm_w pixels (1-16) across, hws_bm_h rows, hws_bm_step bytes from one
+;                  pixel to the next (2: every second, for art drawn 2 screen pixels to 1 in
+;                  H640), hws_bm_stride (word) bytes from one row to the next. Pixels past
+;                  the width and rows past the height are see-through, so sprites of
+;                  different heights can share the one tall-sprite height. Changes ptr0,
+;                  ptr1, tmp0-tmp3; Z is 0 after.
 ;
 ; Multicolour, expansion and priority: set SPR_MC / SPR_XEXP / SPR_YEXP / SPR_PRIO bits
 ; directly.
@@ -148,6 +158,86 @@ hws_pal_edit:
         and #%00111111
         ora tmp0
         sta VIC4_PALSEL
+        rts
+
+hws_bm_w:       .byte 16
+hws_bm_h:       .byte 21
+hws_bm_step:    .byte 1
+hws_bm_stride:  .word 16
+        .weak
+HWS_BM_ROWS     = 64                    ; rows hws_from_bitmap writes (the tallest sprite)
+        .endweak
+
+hws_from_bitmap:
+        lda #HWS_BM_ROWS
+        sta tmp2                        ; rows to write
+        lda hws_bm_h
+        sta tmp3                        ; rows of the bitmap left
+l_hfb_row:
+        ldx #0                          ; the pixel across
+        ldy #0                          ; the sprite byte across
+        lda #0
+        sta tmp1                        ; the bitmap byte across
+l_hfb_byte:
+        jsr l_hfb_px                    ; the left pixel: the high nibble
+        asl
+        asl
+        asl
+        asl
+        sta tmp0
+        jsr l_hfb_px
+        ora tmp0
+        sta tmp0
+        tya
+        taz
+        lda tmp0
+        sta [ptr1],z
+        iny
+        cpy #8
+        bne l_hfb_byte
+        clc                             ; the next sprite row
+        lda ptr1
+        adc #8
+        sta ptr1
+        bcc +
+        inc ptr1+1
+        bne +
+        inc ptr1+2
++       lda tmp3                        ; the next bitmap row
+        beq +
+        dec tmp3
+        clc
+        lda ptr0
+        adc hws_bm_stride
+        sta ptr0
+        lda ptr0+1
+        adc hws_bm_stride+1
+        sta ptr0+1
+        bcc +
+        inc ptr0+2
++       dec tmp2
+        bne l_hfb_row
+        ldz #0
+        rts
+; the next pixel's sprite colour -> A (0 past the bitmap's width or height); X, tmp1 move on
+l_hfb_px:
+        lda tmp3
+        beq l_hfb_0
+        cpx hws_bm_w
+        bcs l_hfb_0
+        inx
+        lda tmp1
+        taz
+        clc
+        adc hws_bm_step
+        sta tmp1
+        lda [ptr0],z
+        taz
+        lda [ptr2],z
+        and #$0f
+        rts
+l_hfb_0:
+        lda #0
         rts
 
 hws_on:

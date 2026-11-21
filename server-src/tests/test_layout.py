@@ -7,8 +7,8 @@ from meganet import ui
 from meganet.protocol import Kind, GFlag
 from tests.test_server import ServerTest
 
-AREAS = ["News", "Message Boards", "Chat Rooms", "Private Messages", "File Library", "Games",
-         "Internet", "Voting"]
+AREAS = ["News", "Message Boards", "Chat Rooms", "Private Messages", "Art Gallery",
+         "File Library", "Games", "Internet", "Voting"]
 
 
 class LayoutTest(ServerTest):
@@ -64,6 +64,18 @@ class LayoutTest(ServerTest):
         await a.wait_for(lambda: any(w.done and w.title == "Message Boards: General"
                                      for w in a.windows.values()), "the forum")
         self.check(a, "Message Boards: General")
+        # and a gallery's pictures
+        self.server.db.create_gallery("Paintings")
+        a.windows = {k: w for k, w in a.windows.items() if w.title != "Art Gallery"}
+        await self.open(a, "Art Gallery")
+        art = next(w for w in a.windows.values() if w.title == "Art Gallery")
+        lb = next(gid for gid, g in art.gadgets.items() if g["kind"] == Kind.LISTBOX)
+        await a.wait_for(lambda: art.gadgets[lb]["rows"], "the gallery row")
+        a.select(art.id, lb, 0)
+        a.click_text(art.id, "Open")
+        await a.wait_for(lambda: any(w.done and w.title == "Art Gallery: Paintings"
+                                     for w in a.windows.values()), "the gallery")
+        self.check(a, "Art Gallery: Paintings")
 
     async def test_no_admin_tools_for_new_users(self):
         await self.signed_on("alice")
