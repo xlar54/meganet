@@ -174,6 +174,7 @@ class Boards:
             session.log("reply in topic %d" % topic_id)
         composer.close()
         karma.earn(self.server, session.user_id, "board post")
+        self.server.screens.bank.earn(session.user_id, "board post")
         b = self.browsers.get(session)
         if b is not None:                # show the topic, at the new post
             b.view, b.forum_id, b.topic_id = "topic", forum_id, topic_id

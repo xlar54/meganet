@@ -15,7 +15,8 @@ import logging
 
 from ..protocol import GFlag, WFlag
 from ..session import call
-from ..ui import AreaWindow, Window, Label, add_buttons, closer, MARGIN
+from ..ui import (AreaWindow, Window, Label, add_buttons, closer, button_width,
+                  MARGIN, BUTTON_W, BUTTON_GAP)
 from .base import Player
 from .challenge import ChallengeLobby
 
@@ -143,6 +144,9 @@ class GameLobby:
             session.warn("%s refused: client caps $%02X" % (cls.name, session.caps))
             return session.alert("Games", "Your MegaNet client is too old for %s. Start "
                                  "the latest client and try again." % cls.name)
+        problem = cls.join_problem(session)
+        if problem:
+            return session.alert(cls.name, problem)
         if self.waiting_for(session) is cls:
             return None
         if cls.computer:                       # wait for people, or play the computer now
@@ -154,6 +158,9 @@ class GameLobby:
         if session.game:
             return session.alert("Games", "You are already playing.")
         self._dequeue(session)
+        for game in self.running:              # a game with a free seat takes them now
+            if type(game) is cls and not game.over and game.open_seat(session):
+                return self.join_running(game, session)
         queue = self.queues[cls]
         queue.append(session)
         win = self.windows.get(session)
@@ -193,15 +200,29 @@ class GameLobby:
                 return session.alert("Games", "You are already playing.")
             if not self.may_play(session, cls):
                 return None
+            problem = cls.join_problem(session)
+            if problem:
+                return session.alert(cls.name, problem)
             self._dequeue(session)
             session.log("games: %s against %d computer player%s"
                         % (cls.name, n, "" if n == 1 else "s"))
             return self.start(cls, [session], queued=False, computers=n)
-        win = Window.centred("vs Computer", 336, 40,
+        specs = [(str(n), (lambda b, n=n: go(b, n)), GFlag.DEFAULT if n == 1 else 0)
+                 for n in range(1, most + 1)] + [("Cancel", closer, 0)]
+        small = 40 if most > 3 else BUTTON_W             # (1-5 and Cancel fit across)
+        w = max(336, small * most + button_width("Cancel") + BUTTON_GAP * most + 2 * MARGIN)
+        win = Window.centred("vs Computer", w, 40,
                              flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE)
-        win.add(Label(MARGIN, 4, 320, 10, "How many computer players?", flags=GFlag.CENTRE))
-        add_buttons(win, [(str(n), (lambda b, n=n: go(b, n)), GFlag.DEFAULT if n == 1 else 0)
-                          for n in range(1, most + 1)] + [("Cancel", closer, 0)], centre=True)
+        win.add(Label(MARGIN, 4, w - 2 * MARGIN, 10, "How many computer players?",
+                      flags=GFlag.CENTRE))
+        buttons = add_buttons(win, specs, centre=True)
+        if small != BUTTON_W:                            # narrower number buttons
+            x = (w - (small * most + button_width("Cancel") + BUTTON_GAP * most)) // 2
+            for b in buttons:
+                b.x = x
+                if b.text != "Cancel":
+                    b.w = small
+                x += b.w + BUTTON_GAP
         win.show(session)
 
     def _start_now(self, gadget):
@@ -234,6 +255,19 @@ class GameLobby:
             win.on_close = None
             win.close()
         return self.challenges[cls].open(session)
+
+    def join_running(self, game, session):
+        """Into a game that's already running (Game.open_seat said yes)."""
+        win = self.windows.pop(session, None)
+        if win:
+            win.close()
+        p = Player(session)
+        p.game = game
+        session.game = p
+        game.players.append(p)
+        log.info("games: %s joins %s", session.user, game.name)
+        self.refresh()
+        return game.sit_down(p)
 
     async def start(self, cls, sessions, queued=True, computers=0):
         for s in sessions:

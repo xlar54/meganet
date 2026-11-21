@@ -190,9 +190,16 @@ class One(Game):
             self.scored = True
             won = self.seats[r.winner]
             won.score += r.points
+            for t in self.people():             # (the bank: a round played)
+                if t.player in self.players:
+                    self.credit(t.player.session, "game played")
             if won.score >= TARGET:
                 self.winner = won
                 self.tell("* %s wins the game with %d points!" % (won.name, won.score))
+                if won.player is not None and won.player in self.players:
+                    beaten = [t.player.session for t in self.people() if t is not won]
+                    self.credit(won.player.session, "game won",
+                                beat=beaten[0] if len(beaten) == 1 else None)
             self.tell("* Scores: " + ", ".join("%s %d" % (s.name, s.score) for s in self.seats))
             if self.people():
                 self.people()[0].player.session.log(

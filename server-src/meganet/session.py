@@ -69,6 +69,8 @@ class Session:
         self.canvas = None           # Paint running (gallery.paint.Paint): gets C.CANVAS
         self.previous_login = None   # the sign-on before this one (My Account's Last Login)
         self.chat_lines = 0          # lines said in chat (karma: CHAT_LINES make a point)
+        self.last_chat = ""          # the last one (the bank pays only for a new line)
+        self.active_minutes = 0      # towards the bank's "hour online" (bank.check_online)
         self.status = "available"    # Status menu: available / away / offline (presence.py)
         self.auto_away = False       # away because of no activity (back with the next one)
         self.last_active = time.time()   # the last message that wasn't a PING
@@ -194,6 +196,16 @@ class Session:
         self.resources[slot] = key
         self.log("resource %r: %d bytes to slot %d" % (key, len(data), slot))
         return True
+
+    def send_resource_at(self, slot, offset, data):
+        """Write `data` into resource slot `slot` at `offset` (a tile drawn for this viewer
+        alone: a card on the poker table). What send_resource thinks the slot holds stays:
+        the table writes only past the tiles it sent that way."""
+        if not 0 <= slot < RESOURCE_SLOTS or offset + len(data) > RESOURCE_SIZE:
+            raise ValueError("bad resource slot %r or range" % slot)
+        for _, msg_type, w in resource_messages(slot, data, bool(self.caps & Caps.PICTURE),
+                                                base=offset):
+            self.send(msg_type, w)
 
     # ---- the server's sprites (Caps.SPRITES): pictures from a resource slot over the GUI ----
 
@@ -468,20 +480,23 @@ class Session:
         return True, "Welcome back, %s." % db.canonical_name(name)
 
 
-def resource_messages(slot, data, packed=False):
-    """The messages that put `data` in resource slot `slot`: [(bytes done after it, type,
-    Writer)]. `packed`: S.RESOURCE_PACKED (Caps.PICTURE clients), else S.RESOURCE."""
+def resource_messages(slot, data, packed=False, base=0):
+    """The messages that put `data` in resource slot `slot` (from byte `base` on): [(bytes
+    done after it, type, Writer)]. `packed`: S.RESOURCE_PACKED (Caps.PICTURE clients), else
+    S.RESOURCE."""
     out = []
     if packed:
         from .gallery.picture import packed_chunks
         chunks = packed_chunks(data)
         for i, (offset, part) in enumerate(chunks):
             done = chunks[i + 1][0] if i + 1 < len(chunks) else len(data)
-            out.append((done, S.RESOURCE_PACKED, Writer().u8(slot).u16(offset).bytes(part)))
+            out.append((done, S.RESOURCE_PACKED,
+                        Writer().u8(slot).u16(base + offset).bytes(part)))
         return out
     for offset in range(0, len(data), RESOURCE_CHUNK):
         out.append((min(len(data), offset + RESOURCE_CHUNK), S.RESOURCE,
-                    Writer().u8(slot).u16(offset).bytes(data[offset:offset + RESOURCE_CHUNK])))
+                    Writer().u8(slot).u16(base + offset)
+                    .bytes(data[offset:offset + RESOURCE_CHUNK])))
     return out
 
 

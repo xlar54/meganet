@@ -29,6 +29,7 @@ import time
 
 from . import db as dbmod
 from . import karma
+from .bank import CHAT_MIN
 from . import permissions as perms
 from .protocol import WFlag, GFlag, clean_text, CLIENT_MAX_H
 from .ui import (add_buttons, closer, confirm, Window, Button, Label, TextBox, ListBox,
@@ -362,6 +363,9 @@ class RoomWindow:
         s.chat_lines += 1
         if s.chat_lines % karma.CHAT_LINES == 0:
             karma.earn(self.chat.server, s.user_id, "chat")
+        if len(text) >= CHAT_MIN and text.lower() != s.last_chat:    # (the bank: a new line)
+            self.chat.server.screens.bank.earn(s.user_id, "chat")
+        s.last_chat = text.lower()
         return None
 
     def _pick(self, listbox, index, double):

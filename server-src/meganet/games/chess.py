@@ -38,6 +38,7 @@ MARK_SELECT, MARK_LAST = 251, 253     # red: the piece picked and what it can ta
 T_DOT = 26
 N_TILES = 28
 CHAT_MAX = 120                   # characters a chat line
+PAID_MOVES = 5                   # a game this long (or longer) earns credits (games.base.credit)
 
 WIN_W, WIN_H = 624, 156
 BOARD_X, BOARD_Y = 12, 4
@@ -330,7 +331,21 @@ class Chess(Game):
             white, black = self.side_view(WHITE), self.side_view(BLACK)
             self.players[0].session.log("chess: %s v %s, %s %s after %d moves" % (
                 white.player.name, black.player.name, score, text, self.pos.fullmove))
+        self.pay(score)
         self.redraw()
+
+    def pay(self, score):
+        """The bank: both play (a game of at least PAID_MOVES moves); the winner wins."""
+        if self.pos.fullmove < PAID_MOVES:
+            return
+        white, black = self.side_view(WHITE), self.side_view(BLACK)
+        w, b = white.player.session, black.player.session
+        for s in (w, b):
+            self.credit(s, "game played")
+        if score == "1-0":
+            self.credit(w, "game won", beat=b)
+        elif score == "0-1":
+            self.credit(b, "game won", beat=w)
 
     # ---- the buttons ----
 

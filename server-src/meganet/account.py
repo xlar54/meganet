@@ -5,7 +5,8 @@ protocol.MENU_MY_ACCOUNT), and the Reset Password dialog.
          Email Address, Location (63-character text boxes that scroll), Birthdate (Month / Day /
          Year drop-downs, "--" = not set), About Me (an EDIT text area, up to db.ABOUT_LINES
          lines), Last Login (the sign-on before this one), Karma Points (karma.describe:
-         "42 (OK)", shown, not edited); a status line; Reset Password at the bottom left, OK (default) and Cancel at the
+         "42 (OK)", shown, not edited) and the Credits beside it (bank.py: it follows the
+         balance while the window is open); a status line; Reset Password at the bottom left, OK (default) and Cancel at the
          bottom right
     19 = Reset Password (modal): Current password, New password, Confirm; OK, Cancel
 
@@ -64,6 +65,15 @@ def year_rows(today=None, stored=None):
         years.append(stored)
         years.sort(reverse=True)
     return [str(y) for y in years]
+
+
+KARMA_W = 120                    # "Karma Points:" "42 (Excellent)", then the credits beside it
+
+
+def credits_text(n):
+    """(17 characters at most: millions go without commas)"""
+    text = " Credits: {:,}".format(n)
+    return text if len(text) <= (FIELD_W - KARMA_W) // 8 else " Credits: %d" % n
 
 
 def role_text(session):
@@ -166,7 +176,9 @@ class Account:
                       when(last) if last else "This is your first sign-on."))
         y += ROW
         label("Karma Points:", y)                # (as the User Editor says it)
-        win.karma = win.add(Label(FIELD_X, y + 2, FIELD_W, 10, karma.describe(user["karma"])))
+        win.karma = win.add(Label(FIELD_X, y + 2, KARMA_W, 10, karma.describe(user["karma"])))
+        win.credits = win.add(Label(FIELD_X + KARMA_W, y + 2, FIELD_W - KARMA_W, 10,
+                                    credits_text(user["credits"])))
         y += ROW - 2                            # (right under it: the buttons come next)
         win.status = win.add(Label(LABEL_X, y, W - 2 * LABEL_X, 10, status or ""))
         y = H - 2 - BUTTON_H
@@ -178,6 +190,12 @@ class Account:
                        on_click=lambda b: b.window.close()))
         win.show(session)
         return win
+
+    def credits_changed(self, session):
+        """The bank changed this user's balance: My Account shows it (bank.changed)."""
+        win = session.windows.get(WIN_ACCOUNT)
+        if win is not None and hasattr(win, "credits"):
+            win.credits.set_text(credits_text(self.db.credits(session.user_id) or 0))
 
     def role_changed(self, session):
         win = session.windows.get(WIN_ACCOUNT)

@@ -9,7 +9,7 @@ from .base import Game, Player
 
 log = logging.getLogger("meganet")
 FRAMEWORK_MODULES = {"base", "lobby", "challenge", "chess_rules", "chess_art", "one_rules",
-                     "one_art"}
+                     "one_art", "poker_rules", "poker_art"}
 
 
 def discover():

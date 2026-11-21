@@ -86,6 +86,13 @@ class TicTacToe(Game):
             self.result = "draw"
         else:
             self.turn = "O" if me == "X" else "X"
+        if self.result:                          # (the bank)
+            for p in self.players:
+                self.credit(p.session, "game played")
+            if self.result != "draw":
+                other = next((p for p in self.players if p is not player), None)
+                self.credit(player.session, "game won",
+                            beat=other.session if other is not None else None)
         self.update_status()
 
     def ask_rematch(self, player):

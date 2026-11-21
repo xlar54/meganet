@@ -99,6 +99,8 @@ ADMIN_LOG = register("admin.log", "Admin: read the log")
 INTERNET_USE = register("internet.use", "Use the Internet area", like="files.download")
 GALLERY_MODERATE = register("gallery.moderate", "Manage art galleries", like="boards.moderate")
 ADMIN_TOS = register("admin.tos", "Admin: terms of service", like=ADMIN_MOTD)
+BANK_USE = register("bank.use", "Use the bank", like="chat.use")
+ADMIN_BANK = register("admin.bank", "Admin: the bank")
 GALLERY_VIEW, GALLERY_UPLOAD = "gallery.view", "gallery.upload"
 FILES_DOWNLOAD, FILES_UPLOAD = "files.download", "files.upload"
 IM_SEND = "im.send"
@@ -107,7 +109,7 @@ NEWS_READ, NEWS_POST = "news.read", "news.post"     # (Sysop only at first: Role
 # The roles a fresh database starts with: (name, level, permission keys). A higher level sorts
 # lower in the lists. The last one gets every permission, admin ones included.
 NEW_USER = ["chat.use", "games.play", "boards.read", "news.read", "gallery.view",
-            "music.listen", MAIL_USE, POLLS_VOTE]
+            "music.listen", MAIL_USE, POLLS_VOTE, BANK_USE]
 MEMBER = NEW_USER + ["boards.post", "files.download", "im.send", "gallery.upload",
                      CHAT_ROOMS, INTERNET_USE]
 MODERATOR = MEMBER + ["chat.moderate", "boards.moderate", ADMIN_PAGES, POLLS_MANAGE,

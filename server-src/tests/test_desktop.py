@@ -11,20 +11,21 @@ from tests.test_pages import PagesBase
 class DesktopTest(PagesBase):
     async def test_icons_open_and_follow_permissions(self):
         bob = self.bob
-        await bob.wait_for(lambda: len(bob.desk) == 6, "icons")
+        await bob.wait_for(lambda: len(bob.desk) == 7, "icons")
         # "One moment..." (modal, no close box, a progress bar) while they come, then the
         # welcome window
         await bob.wait_window("Welcome, bob")
         ev = [e for e in bob.events if e[0] != "open" or e[1] in ("One moment...", "Welcome, bob")]
-        self.assertEqual(ev[:9], [("open", "One moment..."), ("icon", 0), ("icon", 1),
+        self.assertEqual(ev[:10], [("open", "One moment..."), ("icon", 0), ("icon", 1),
                                   ("icon", 2), ("icon", 8), ("icon", 9), ("icon", 10),
+                                  ("icon", 11),
                                   ("close", "One moment..."), ("open", "Welcome, bob")])
         self.assertNotIn(WIN_LOADING, bob.windows)
         # a New User has no files.download: no File Library. On the right (slots 8 up):
-        # Who's Online, News, Voting
+        # Who's Online, News, Voting, Bank
         self.assertEqual(bob.desk_labels(), ["Chat", "Message Boards", "Games",
-                                             "Who's Online", "News", "Voting"])
-        self.assertEqual(sorted(bob.desk), [0, 1, 2, 8, 9, 10])
+                                             "Who's Online", "News", "Voting", "Bank"])
+        self.assertEqual(sorted(bob.desk), [0, 1, 2, 8, 9, 10, 11])
         self.assertEqual(bob.desk[1][:2], ("Message", "Boards"))      # two lines
         bob.desk_open("Who's Online")
         await bob.wait_window("Who's Online")
@@ -32,6 +33,8 @@ class DesktopTest(PagesBase):
         await bob.wait_window("News")
         bob.desk_open("Voting")
         await bob.wait_window("Voting")
+        bob.desk_open("Bank")
+        await bob.wait_window("Bank")
         await bob.enter_room("Lobby", via=lambda: bob.desk_open("Chat"))   # (the list first)
         self.assertIn(WIN_ROOM, bob.windows)
         bob.desk_open("Message Boards")
@@ -44,9 +47,10 @@ class DesktopTest(PagesBase):
         self.assertIsNone(d.set_role_permissions(rid, d.role_permissions(rid) - {"chat.use"}))
         self.server.permissions_changed(role_id=rid)
         await bob.wait_for(lambda: bob.desk_labels() == ["Message Boards", "Games",
-                                                         "Who's Online", "News", "Voting"],
+                                                         "Who's Online", "News", "Voting",
+                                                         "Bank"],
                            "chat gone")
-        self.assertEqual(sorted(bob.desk), [0, 1, 8, 9, 10])        # (the right ones stay put)
+        self.assertEqual(sorted(bob.desk), [0, 1, 8, 9, 10, 11])        # (the right ones stay put)
         # a slot with no icon: ignored (and suspicious)
         before = self.session("bob").suspicious
         bob.send(C.DESK_OPEN, Writer().u8(5))
@@ -62,9 +66,9 @@ class DesktopTest(PagesBase):
 
     async def test_files_icon_for_members(self):
         alice = self.alice                                  # Sysop: every icon
-        await alice.wait_for(lambda: len(alice.desk) == 7, "icons")
+        await alice.wait_for(lambda: len(alice.desk) == 8, "icons")
         self.assertEqual(alice.desk_labels(), ["Chat", "Message Boards", "File Library", "Games",
-                                               "Who's Online", "News", "Voting"])
+                                               "Who's Online", "News", "Voting", "Bank"])
         self.assertEqual(alice.desk[2][:2], ("File", "Library"))
         alice.desk_open("File Library")
         await alice.wait_window("File Library")

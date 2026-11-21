@@ -132,6 +132,24 @@
       Windows roots to private/temp/winroots.pem and pass --cafile
 - [ ] Resources: the client could say in HELLO which slots it still holds (attic survives
       a reset), so a reconnect skips the chess and One tiles (3 KB and 17 KB packed)
+- [x] Bank and credits (2026-11-21): users.credits and a ledger (credit_log), starting
+      credits, earning with daily limits (bank.EARN: games played and won, a poker hand,
+      board posts, chat lines, votes, an active hour), gifts (with a private message),
+      loans (one at a time, daily compound interest, a share of earnings repays it, overdue
+      blocks gifts and poker), Areas > Bank and its desktop icon, My Account's Credits,
+      the User Editor's Credits and statement (History), Admin > Bank Settings... Tried in
+      Xemu: the Bank window
+- [x] Texas Hold'em (2026-11-21): no-limit, 2-6, real credits (buy in 100-1,000, cashed out
+      on leaving; db.poker_chips gives them back if the server stops), side pots, the
+      computer (Monte Carlo hand strength and pot odds), a 30 s turn timer (sat out after
+      two), people sit down at a running table. The table: a green felt Grid (35 tiles) with
+      cards, the button and chips drawn on its tiles per viewer (TileCache); cards dealt one
+      at a time as sprites. Tried in Xemu: buying in, a hand against two computers, the deal
+- [ ] Poker: chat at the table; pre-action boxes (check/fold); showing who won with a
+      flight of chips to the winner; the house's credits (vs Computer) are made and lost from
+      nothing: watch Bank Settings' totals; table stakes other than 5/10
+- [ ] Bank: a richest-users list; gifts only from accounts older than a day (new accounts
+      made to give their starting credits away)
 - [x] Terms of Service (2026-11-21): the last sign-up step (read, tick "I agree", OK greyed
       out until then; users.tos_agreed), the Sysop's editor (Admin > Terms of Service...,
       admin.tos, 4 pages of 32 lines), a standard default text. Tried in Xemu: the step, the

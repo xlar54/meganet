@@ -54,6 +54,9 @@ class Server:
         self.screens = Screens(self)
         self.games = GameLobby(games.discover())
         self.db.sync_permissions()           # the game plugins may have registered keys
+        for user_id, chips in self.db.poker_chips().items():   # (left on a poker table when
+            self.db.from_poker_table(user_id, memo="the server restarted")   # it stopped)
+            self.serverlog.write("bank: %d poker chips back to user %d" % (chips, user_id))
         self.sessions = set()
         self._next_id = 1
         self._server = None
@@ -62,6 +65,7 @@ class Server:
         """Start listening. Returns the port (useful when `port` is 0: pick a free one)."""
         self._server = await asyncio.start_server(self._connected, host, port)
         self._away = asyncio.create_task(self.screens.presence.run())     # Auto-Away
+        self._bank = asyncio.create_task(self.screens.bank.run())         # an hour online
         return self._server.sockets[0].getsockname()[1]
 
     async def serve_forever(self):
@@ -69,9 +73,15 @@ class Server:
             await self._server.serve_forever()
 
     async def stop(self):
-        if getattr(self, "_away", None):
-            self._away.cancel()
+        for task in (getattr(self, "_away", None), getattr(self, "_bank", None)):
+            if task:
+                task.cancel()
         for s in list(self.sessions):
+            if s.game is not None:           # (out of their games now, while the database
+                try:                         # is open: poker gives their chips back)
+                    self.games.disconnected(s)
+                except Exception:
+                    s.error("error leaving a game:\n%s" % traceback.format_exc(), area="conn")
             s.disconnect()
         if self._server:
             self._server.close()

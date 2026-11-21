@@ -49,7 +49,38 @@ CREATE TABLE IF NOT EXISTS users (
     about      TEXT NOT NULL DEFAULT '',
     last_login INTEGER,
     karma      INTEGER NOT NULL DEFAULT 20,
-    tos_agreed INTEGER                  -- when they agreed to the Terms of Service (sign-up)
+    tos_agreed INTEGER,                 -- when they agreed to the Terms of Service (sign-up)
+    credits    INTEGER NOT NULL DEFAULT 0   -- the bank balance (bank.py; credit_log says why)
+);
+CREATE TABLE IF NOT EXISTS credit_log (         -- the bank's ledger: every change to a balance
+    id       INTEGER PRIMARY KEY,
+    user_id  INTEGER NOT NULL REFERENCES users(id),
+    delta    INTEGER NOT NULL,                  -- (0: a note, such as loan interest)
+    balance  INTEGER NOT NULL,                  -- the balance after it
+    reason   TEXT NOT NULL,                     -- bank.EARN's reasons, "gift", "loan", ...
+    memo     TEXT NOT NULL DEFAULT '',
+    other_id INTEGER,                           -- the other side: a gift's giver or taker,
+                                                -- the opponent beaten
+    by_user  INTEGER,                           -- an admin's change: who
+    at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS credit_log_user ON credit_log (user_id, at);
+CREATE TABLE IF NOT EXISTS loans (              -- the bank's loans (one open at a time)
+    id        INTEGER PRIMARY KEY,
+    user_id   INTEGER NOT NULL REFERENCES users(id),
+    principal INTEGER NOT NULL,
+    owed      INTEGER NOT NULL,
+    rate      REAL NOT NULL,                    -- interest: percent a day
+    taken     INTEGER NOT NULL,
+    due       INTEGER NOT NULL,
+    accrued   INTEGER NOT NULL,                 -- interest is charged up to this time
+    closed    INTEGER                           -- paid off then (NULL: still open)
+);
+CREATE INDEX IF NOT EXISTS loans_user ON loans (user_id);
+CREATE TABLE IF NOT EXISTS poker_chips (        -- credits on a poker table (games/poker.py):
+    user_id  INTEGER PRIMARY KEY REFERENCES users(id),    -- given back at start-up if the
+    chips    INTEGER NOT NULL,                  -- server stopped with them there
+    since    INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS roles (
     id    INTEGER PRIMARY KEY,
@@ -269,7 +300,13 @@ USER_COLUMNS = [("role_id", "INTEGER REFERENCES roles(id)"),
                 ("last_name", "TEXT NOT NULL DEFAULT ''"),
                 # accounts from before karma points start at OK, not at a new user's Low
                 ("karma", "INTEGER NOT NULL DEFAULT 50"),
-                ("tos_agreed", "INTEGER")]      # when they agreed to the Terms of Service
+                ("tos_agreed", "INTEGER"),      # when they agreed to the Terms of Service
+                ("credits", "INTEGER NOT NULL DEFAULT 0")]  # (seeded once: credits_seeded)
+# The bank (bank.py): its settings are one JSON setting; a new account's opening balance is
+# its "start" (DEFAULT_START_CREDITS until an admin sets one).
+BANK_KEY = "bank"
+DEFAULT_START_CREDITS = 500
+CREDITS_MAX = 9_999_999          # a balance (and anything typed) stays below this
 # First and last names: required (sign-up and My Account), at most REAL_NAME_MAX characters
 REAL_NAME_MAX = 20
 REAL_NAME_RE = re.compile(r"[A-Za-z][A-Za-z .'-]*")
@@ -531,6 +568,10 @@ def verify_password(password, stored):
     return hmac.compare_digest(again.split("$")[3], digest)
 
 
+class _Rollback(Exception):
+    """Raised inside `with self.conn:` to undo the transaction."""
+
+
 def _like_pattern(text):
     """A LIKE pattern (with ESCAPE '!') matching names that contain `text`."""
     return "%" + text.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
@@ -572,6 +613,15 @@ class Database:
                 self.conn.execute("INSERT INTO chat_rooms (name, created) VALUES (?, ?)",
                                   (LOBBY, int(time.time())))
             self._set_setting("rooms_seeded", 1)
+        if self.setting("credits_seeded") is None:          # the bank opened: everyone's
+            now = int(time.time())                          # opening balance, once
+            start = self.start_credits()
+            for (uid,) in self.conn.execute("SELECT id FROM users").fetchall():
+                self.conn.execute("UPDATE users SET credits = ? WHERE id = ?", (start, uid))
+                self.conn.execute("INSERT INTO credit_log (user_id, delta, balance, reason, at) "
+                                  "VALUES (?, ?, ?, 'opening balance', ?)",
+                                  (uid, start, start, now))
+            self._set_setting("credits_seeded", 1)
         self.conn.commit()
 
     def close(self):
@@ -795,8 +845,14 @@ class Database:
             with self.conn:
                 first = self.conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
                 role = self.first_user_role_id() if first else self.default_role_id()
-                self.conn.execute("INSERT INTO users (name, pw_hash, created, role_id) "
-                                  "VALUES (?, ?, ?, ?)", (name, pw_hash, int(time.time()), role))
+                now = int(time.time())
+                start = self.start_credits()
+                cur = self.conn.execute(
+                    "INSERT INTO users (name, pw_hash, created, role_id, credits) "
+                    "VALUES (?, ?, ?, ?, ?)", (name, pw_hash, now, role, start))
+                self.conn.execute("INSERT INTO credit_log (user_id, delta, balance, reason, at) "
+                                  "VALUES (?, ?, ?, 'opening balance', ?)",
+                                  (cur.lastrowid, start, start, now))
                 if first:
                     self.conn.execute("UPDATE users SET karma = ? WHERE name = ?",
                                       (FIRST_USER_KARMA, name))
@@ -818,7 +874,7 @@ class Database:
 
     _USER_SQL = ("SELECT u.id, u.name, u.created, u.role_id, r.name AS role, u.first_name, "
                  "u.last_name, u.email, u.location, u.birthdate, u.about, u.last_login, "
-                 "u.karma, u.tos_agreed FROM users u "
+                 "u.karma, u.tos_agreed, u.credits FROM users u "
                  "LEFT JOIN roles r ON r.id = u.role_id ")
 
     def user(self, name=None, user_id=None):
@@ -1464,6 +1520,194 @@ class Database:
         """Users with karma below `below`, lowest first."""
         return self.conn.execute(self._USER_SQL + "WHERE u.karma < ? ORDER BY u.karma, "
                                  "u.name COLLATE NOCASE", (below,)).fetchall()
+
+    # ---- the bank (bank.py): balances, the ledger, loans, chips on a poker table ----
+
+    def bank_settings(self):
+        """The bank's settings as stored (a dict; bank.settings() fills in the defaults)."""
+        try:
+            got = json.loads(self.setting(BANK_KEY, "{}"))
+        except ValueError:
+            got = {}
+        return got if isinstance(got, dict) else {}
+
+    def set_bank_settings(self, values):
+        with self.conn:
+            self._set_setting(BANK_KEY, json.dumps(values))
+
+    def start_credits(self):
+        start = self.bank_settings().get("start", DEFAULT_START_CREDITS)
+        return start if isinstance(start, int) and 0 <= start <= CREDITS_MAX else \
+            DEFAULT_START_CREDITS
+
+    def credits(self, user_id):
+        row = self.conn.execute("SELECT credits FROM users WHERE id = ?", (user_id,)).fetchone()
+        return row["credits"] if row else None
+
+    def _credit(self, user_id, delta, reason, memo, other_id, by_user, at):
+        """Inside a transaction: add `delta` unless the balance would go below 0 or above
+        CREDITS_MAX; log it. The new balance, or None (nothing changed)."""
+        cur = self.conn.execute("UPDATE users SET credits = credits + ? WHERE id = ? AND "
+                                "credits + ? BETWEEN 0 AND ?",
+                                (delta, user_id, delta, CREDITS_MAX))
+        if cur.rowcount != 1:
+            return None
+        balance = self.credits(user_id)
+        self.conn.execute("INSERT INTO credit_log (user_id, delta, balance, reason, memo, "
+                          "other_id, by_user, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                          (user_id, delta, balance, reason, memo[:60], other_id, by_user, at))
+        return balance
+
+    def add_credits(self, user_id, delta, reason, memo="", other_id=None, by_user=None):
+        """Change a balance and log it: the new balance, or None if it would go below 0 (or
+        past CREDITS_MAX), or there's no such user."""
+        with self.conn:
+            return self._credit(user_id, delta, reason, memo, other_id, by_user,
+                                int(time.time()))
+
+    def transfer_credits(self, from_id, to_id, amount, memo=""):
+        """A gift: both sides in one transaction. (from's balance, to's) or None if from
+        hasn't enough (or to would pass CREDITS_MAX)."""
+        now = int(time.time())
+        try:
+            with self.conn:
+                a = self._credit(from_id, -amount, "gift sent", memo, to_id, None, now)
+                b = self._credit(to_id, amount, "gift", memo, from_id, None, now) \
+                    if a is not None else None
+                if b is None:
+                    raise _Rollback
+                return a, b
+        except _Rollback:
+            return None
+
+    def credit_log(self, user_id, n=100):
+        """The latest ledger rows, newest first, with the other side's and the admin's name."""
+        return self.conn.execute(
+            "SELECT c.*, o.name AS other_name, b.name AS by_name FROM credit_log c "
+            "LEFT JOIN users o ON o.id = c.other_id LEFT JOIN users b ON b.id = c.by_user "
+            "WHERE c.user_id = ? ORDER BY c.at DESC, c.id DESC LIMIT ?",
+            (user_id, n)).fetchall()
+
+    def credit_events_since(self, user_id, since, reason, other_id=None):
+        """How many ledger rows for `reason` since `since` (with that other side, if given)."""
+        if other_id is not None:
+            return self.conn.execute(
+                "SELECT COUNT(*) FROM credit_log WHERE user_id = ? AND at >= ? AND reason = ? "
+                "AND other_id = ?", (user_id, since, reason, other_id)).fetchone()[0]
+        return self.conn.execute("SELECT COUNT(*) FROM credit_log WHERE user_id = ? AND "
+                                 "at >= ? AND reason = ?", (user_id, since, reason)).fetchone()[0]
+
+    def open_loan(self, user_id):
+        return self.conn.execute("SELECT * FROM loans WHERE user_id = ? AND closed IS NULL "
+                                 "ORDER BY id DESC LIMIT 1", (user_id,)).fetchone()
+
+    def loans_open(self):
+        return self.conn.execute("SELECT * FROM loans WHERE closed IS NULL").fetchall()
+
+    def take_loan(self, user_id, amount, rate, days):
+        """A new loan: the credits go to the balance. The loan's id, or None (one already
+        open, or the balance would pass CREDITS_MAX)."""
+        now = int(time.time())
+        try:
+            with self.conn:
+                if self.open_loan(user_id) is not None:
+                    raise _Rollback
+                if self._credit(user_id, amount, "loan", "%d days at %s%% a day"
+                                % (days, ("%g" % rate)), None, None, now) is None:
+                    raise _Rollback
+                cur = self.conn.execute(
+                    "INSERT INTO loans (user_id, principal, owed, rate, taken, due, accrued) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (user_id, amount, amount, rate, now, now + days * 86400, now))
+                return cur.lastrowid
+        except _Rollback:
+            return None
+
+    def charge_interest(self, loan_id, owed, accrued, interest):
+        """Interest added to a loan (a 0 row in the ledger says how much)."""
+        loan = self.conn.execute("SELECT * FROM loans WHERE id = ?", (loan_id,)).fetchone()
+        with self.conn:
+            self.conn.execute("UPDATE loans SET owed = ?, accrued = ? WHERE id = ?",
+                              (owed, accrued, loan_id))
+            if interest:
+                self.conn.execute(
+                    "INSERT INTO credit_log (user_id, delta, balance, reason, memo, at) "
+                    "VALUES (?, 0, ?, 'loan interest', ?, ?)",
+                    (loan["user_id"], self.credits(loan["user_id"]),
+                     "+%d: you owe %d" % (interest, owed), int(time.time())))
+
+    def repay_loan(self, loan_id, amount, reason="loan repayment"):
+        """Pay `amount` off a loan from the balance (at most what's owed). (paid, still owed)
+        or None if the balance hasn't enough."""
+        now = int(time.time())
+        try:
+            with self.conn:
+                loan = self.conn.execute("SELECT * FROM loans WHERE id = ? AND closed IS NULL",
+                                         (loan_id,)).fetchone()
+                if loan is None:
+                    raise _Rollback
+                amount = min(amount, loan["owed"])
+                left = loan["owed"] - amount
+                memo = "paid off" if left == 0 else "%d still owed" % left
+                if amount <= 0 or self._credit(loan["user_id"], -amount, reason, memo, None,
+                                               None, now) is None:
+                    raise _Rollback
+                self.conn.execute("UPDATE loans SET owed = ?, closed = ? WHERE id = ?",
+                                  (left, now if left == 0 else None, loan_id))
+                return amount, left
+        except _Rollback:
+            return None
+
+    def poker_chips(self):
+        """{user_id: chips} on poker tables (as of their last hand)."""
+        return {r["user_id"]: r["chips"] for r in
+                self.conn.execute("SELECT user_id, chips FROM poker_chips")}
+
+    def to_poker_table(self, user_id, amount):
+        """Buy in (or buy more chips): credits to the table. The balance, or None."""
+        now = int(time.time())
+        try:
+            with self.conn:
+                bal = self._credit(user_id, -amount, "poker buy-in", "", None, None, now)
+                if bal is None:
+                    raise _Rollback
+                self.conn.execute("INSERT INTO poker_chips (user_id, chips, since) VALUES "
+                                  "(?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET chips = "
+                                  "chips + excluded.chips", (user_id, amount, now))
+                return bal
+        except _Rollback:
+            return None
+
+    def set_poker_chips(self, user_id, chips):
+        """After a hand: what a player has on the table now."""
+        with self.conn:
+            self.conn.execute("UPDATE poker_chips SET chips = ? WHERE user_id = ?",
+                              (chips, user_id))
+
+    def from_poker_table(self, user_id, chips=None, memo=""):
+        """Cash out: the chips (None: as stored) go back to the balance. The balance, or None
+        if they had nothing on a table."""
+        now = int(time.time())
+        with self.conn:
+            row = self.conn.execute("SELECT chips FROM poker_chips WHERE user_id = ?",
+                                    (user_id,)).fetchone()
+            if row is None:
+                return None
+            self.conn.execute("DELETE FROM poker_chips WHERE user_id = ?", (user_id,))
+            chips = row["chips"] if chips is None else chips
+            room = CREDITS_MAX - self.credits(user_id)
+            if min(chips, room) <= 0:
+                return self.credits(user_id)
+            return self._credit(user_id, min(chips, room), "poker cash-out", memo, None, None,
+                                now)
+
+    def credits_total(self):
+        """All the credits there are: (balances, on poker tables, owed on loans)."""
+        return (self.conn.execute("SELECT COALESCE(SUM(credits), 0) FROM users").fetchone()[0],
+                self.conn.execute("SELECT COALESCE(SUM(chips), 0) FROM poker_chips"
+                                  ).fetchone()[0],
+                self.conn.execute("SELECT COALESCE(SUM(owed), 0) FROM loans WHERE closed IS "
+                                  "NULL").fetchone()[0])
 
     # ---- chat rooms: the permanent ones (chat.py keeps the members' own in memory) ----
 

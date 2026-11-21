@@ -26,6 +26,7 @@ import time
 from . import __version__
 from . import permissions as perms
 from .account import Account, WIN_ACCOUNT
+from .bank import Bank
 from .admin import Admin
 from .boards import Boards
 from .chat import Chat
@@ -62,6 +63,7 @@ M_BOARDS, M_CHAT, M_NEWS, M_FILES, M_GAMES = 0x10, 0x11, 0x12, 0x13, 0x14
 M_GALLERY, M_MUSIC, M_MAIL = 0x15, 0x16, 0x17
 M_VOTING = 0x18
 M_INTERNET = 0x19
+M_BANK = 0x1A
 M_WHO, M_MEMBERS_SEP, M_SEARCH = 0x20, 0x21, 0x23     # $21: no longer used (was a separator)
 M_ACCOUNT = MENU_MY_ACCOUNT      # $22: sent by the client's own MegaNet > My Account
 M_ROLES, M_USERS, M_MOTD, M_ADMIN_MSGS = 0x30, 0x31, 0x32, 0x33
@@ -72,6 +74,7 @@ M_SETTINGS = 0x34
 M_BROADCAST = 0x35
 M_LOG = 0x36
 M_TOS = 0x37
+M_BANK_SETTINGS = 0x38
 STATUS_ITEMS = dict(zip((M_AVAILABLE, M_AWAY, M_OFFLINE), STATUSES))
 WIN_WHO_W, WIN_WHO_H = 300, 136
 
@@ -88,6 +91,7 @@ MENU_TREE = [
         (M_GAMES, "Games", "games.play", "open_games"),
         (M_INTERNET, "Internet", perms.INTERNET_USE, "open_internet"),
         (M_VOTING, "Voting", perms.POLLS_VOTE, "open_voting"),
+        (M_BANK, "Bank", perms.BANK_USE, "open_bank"),
     ]),
     (M_MEMBERS, "Members", [
         (M_WHO, "Who's Online", None, "open_who"),
@@ -113,6 +117,7 @@ MENU_TREE = [
         (M_TOS, "Terms of Service...", perms.ADMIN_TOS, "open_tos"),
         (M_ADMIN_MSGS, "Messages from users...", perms.ADMIN_PAGES, "open_admin_messages"),
         (M_SETTINGS, "System Settings...", perms.ADMIN_SETTINGS, "open_settings"),
+        (M_BANK_SETTINGS, "Bank Settings...", perms.ADMIN_BANK, "open_bank_settings"),
         (M_BROADCAST, "Broadcast...", perms.ADMIN_BROADCAST, "open_broadcast"),
         (M_LOG, "Server Log...", perms.ADMIN_LOG, "open_log"),
     ]),
@@ -120,7 +125,7 @@ MENU_TREE = [
 
 DENIED = "Your account can't use %s."
 ADMIN_KEYS = (perms.ADMIN_USERS, perms.ADMIN_ROLES, perms.ADMIN_MOTD, perms.ADMIN_TOS,
-              perms.ADMIN_SETTINGS,
+              perms.ADMIN_SETTINGS, perms.ADMIN_BANK,
               perms.ADMIN_BROADCAST, perms.ADMIN_LOG)
 
 
@@ -166,6 +171,7 @@ class Screens:
         self.logs = LogWindows(server)
         self.internet = InternetArea(server)
         self.gallery = Gallery(server)
+        self.bank = Bank(server)
 
     def signed_on(self, session, welcome=True, after=None):
         """Everything a session gets on signing on. The desktop icons come first, under a
@@ -286,6 +292,12 @@ class Screens:
 
     def open_gallery(self, session, item=None):
         return self.gallery.open(session)
+
+    def open_bank(self, session, item=None):
+        return self.bank.open(session)
+
+    def open_bank_settings(self, session, item=None):
+        return self.bank.open_settings(session)
 
     def status_changed(self, session):
         """Someone's status changed: their Status menu and dot, and everyone's Who's Online."""
@@ -523,6 +535,7 @@ class Screens:
         self.logs.permissions_changed(session)
         self.internet.permissions_changed(session)
         self.gallery.permissions_changed(session)
+        self.bank.permissions_changed(session)
         self.new_users_changed()
         self.im_rules_changed()
         self.desktop.refresh(session)
@@ -547,6 +560,7 @@ class Screens:
         self.logs.disconnected(session)
         self.internet.disconnected(session)
         self.gallery.disconnected(session)
+        self.bank.disconnected(session)
         self.ims.disconnected(session)
         self.pages.disconnected(session)
         self.who.pop(session, None)

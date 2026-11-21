@@ -39,6 +39,20 @@ class Game:
     permission = "games.play" # who may play: a key from permissions.py (register your own)
     computer = False          # True: Join offers "vs Computer..." (the game plays the seats)
 
+    @classmethod
+    def join_problem(cls, session):
+        """Why `session` can't join this game now (shown to them), or None. Poker: not enough
+        credits."""
+        return None
+
+    def open_seat(self, session):
+        """True if `session` may sit down in this game while it's running (lobby.queue puts
+        them in at once, then calls sit_down). By default games start with their players."""
+        return False
+
+    def sit_down(self, player):
+        """`player` joined while the game runs (open_seat said yes); self.players has them."""
+
     def __init__(self):
         self.players = []     # Player objects still in the game
         self.computers = 0    # computer players asked for (set before start(); computer games)
@@ -90,6 +104,15 @@ class Game:
             return None
         win.on_event = route
         return win
+
+    def credit(self, session, reason, beat=None):
+        """Pay a player from the bank (bank.py): "game played" (each player, once a game or
+        round is done) or "game won" (`beat`: the session of the person beaten, or None for
+        the computer or several). Returns the credits paid."""
+        if session is None or session.user_id is None:
+            return 0
+        return session.server.screens.bank.earn(
+            session.user_id, reason, beat.user_id if beat is not None else None, self.name)
 
     def show(self, player, window):
         window.show(player.session)

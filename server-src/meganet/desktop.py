@@ -150,6 +150,25 @@ ICONS["voting"] = [                              # a ballot with a tick going in
     "....kkkkkkkkkkkkkkkkkkkkkkkk....",
 ]
 
+ICONS["bank"] = [                                # a bank: gold pediment, white columns
+    "...............kk...............",
+    ".............kyyyyk.............",
+    "..........kyyyyyyyyyyk..........",
+    ".......kyyyyyyyyyyyyyyyyk.......",
+    "....kyyyyyyyyyyyyyyyyyyyyyyk....",
+    "...kkkkkkkkkkkkkkkkkkkkkkkkkk...",
+    "...kwwwwwwwwwwwwwwwwwwwwwwwwk...",
+    "...kkkkkkkkkkkkkkkkkkkkkkkkkk...",
+    "....kwwk.kwwk.kwwk.kwwk.kwwk....",
+    "....kwwk.kwwk.kwwk.kwwk.kwwk....",
+    "....kwwk.kwwk.kwwk.kwwk.kwwk....",
+    "....kwwk.kwwk.kwwk.kwwk.kwwk....",
+    "....kwwk.kwwk.kwwk.kwwk.kwwk....",
+    "..kkkkkkkkkkkkkkkkkkkkkkkkkkkk..",
+    ".kssssssssssssssssssssssssssssk.",
+    ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
+]
+
 # The columns, top to bottom: (picture, label, permission or None, Screens action). LEFT
 # fills slots 0-7 from the left edge, RIGHT slots 8-11 from the right edge (protocol).
 DESKTOP = [
@@ -162,6 +181,7 @@ DESKTOP_RIGHT = [
     ("who", "Who's Online", None, "open_who"),
     ("news", "News", "news.read", "open_news"),
     ("voting", "Voting", "polls.vote", "open_voting"),
+    ("bank", "Bank", "bank.use", "open_bank"),
 ]
 
 

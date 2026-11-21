@@ -16,7 +16,7 @@ in [docs/MEGA65_NOTES.md](docs/MEGA65_NOTES.md). Remaining work is in [TODO.md](
 
 Status: early.
 - **Server:** signs users on (accounts and roles in SQLite), then sends a menu bar (Areas,
-  Members, Admin, Help), chat rooms (a Lobby, moderators' and members' rooms, private rooms), a two-player tic-tac-toe game, chess (a lobby to pick an opponent, a picture board, every rule enforced, chat beside the board), **One** (the card game for 2-4: match the colour or number, Skips, Reverses, Draw Twos, Wilds, call One! on your last card; wait for other players or play against 1-3 computer players; cards played and drawn fly across the table as hardware sprites), and admin windows for
+  Members, Admin, Help), chat rooms (a Lobby, moderators' and members' rooms, private rooms), a two-player tic-tac-toe game, chess (a lobby to pick an opponent, a picture board, every rule enforced, chat beside the board), **One** (the card game for 2-4: match the colour or number, Skips, Reverses, Draw Twos, Wilds, call One! on your last card; wait for other players or play against 1-3 computer players; cards played and drawn fly across the table as hardware sprites), **Texas Hold'em** (no-limit poker for 2-6 at a green felt table, for real credits; wait for others or play 1-5 computer players; cards are dealt one at a time from the dealer), and admin windows for
   roles and users. Tested with fake clients.
 - **Client:** has its Windows 95-style GUI library (`client-src/lib/gui/`), the sign-on
   screen, the menu bar (its own **MegaNet** menu first, with Exit back to BASIC), and the
@@ -36,6 +36,14 @@ Status: early.
   (BBC, NPR, The Guardian, Ars Technica, Hacker News, Slashdot, NASA, Hackaday, Indie Retro
   News and more to start with; moderators add and remove them), and opens a story in the
   Web Browser.
+- **Bank:** every user has **credits**: a starting balance (set by the Sysop), more for
+  playing games (extra for a win at chess, One or Tic-Tac-Toe), message board posts, chat,
+  voting, and every hour signed on and active, each with a daily limit. Areas > Bank shows
+  the balance and a statement of every change, gives credits to another user (they get a
+  private message), and lends credits at daily interest (part of what you earn repays it;
+  an overdue loan stops gifts and poker). Poker is played with credits. My Account shows
+  the balance; admins set it in the User Editor and change the rules in Admin > Bank
+  Settings...
 - **Art Gallery:** galleries of IFF pictures (Deluxe Paint's format) that moderators set up
   and members upload to from a drive. View shows a picture over the whole screen; Slideshow
   steps through them with Space (Esc stops). The server reads and converts the IFF, so the

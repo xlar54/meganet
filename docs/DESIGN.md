@@ -405,6 +405,17 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   piles; the hand, 12 x 2 cards of 32 x 22, 64 tiles in resource slot 8), the others' card
   counts in play order, the play-by-play and chat. Cards played and drawn fly between the
   hand, the rows and the piles (below).
+- **Texas Hold'em** (`games/poker.py`, rules in `poker_rules.py`, art in `poker_art.py`):
+  no-limit poker for 2-6 played for the bank's credits. The table is one `GRID` (13 x 5
+  tiles of 32 x 22 in resource slot 9: a green felt stadium with a wooden rail, 35 distinct
+  tiles); cards, the dealer button and the pot's chips are drawn onto the cell's own felt
+  tile and sent to each viewer as needed (`session.send_resource_at`, a per-viewer
+  `TileCache` in tiles 35-63), so everyone sees their own cards face up and the others' face
+  down. You sit at the bottom left, the others clockwise; seat labels sit round the table.
+  Cards are dealt one at a time as sprites from the dealer button.
+- **The bank** (`bank.py`): `users.credits` and the `credit_log` ledger; earning
+  (`Bank.earn`, daily limits, called by games through `Game.credit`), gifts, loans, Areas >
+  Bank, Admin > Bank Settings.
 - **The server's sprites** (`Caps.SPRITES` clients, `client-src/sprites.asm`, built on
   `lib/hwsprite.asm` `hws_from_bitmap`): `S.SPRITE` (`$32`: `u8 n, u8 win, u8 slot, u16
   offset, u8 w, u8 h, u16 stride, u8 step, u16 x, u8 y, u8 c, c x (u8 colour, r, g, b)`) makes

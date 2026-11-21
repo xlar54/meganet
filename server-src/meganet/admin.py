@@ -567,7 +567,9 @@ class UsersEditor:
         for b in self.need:                  # (they need a user picked: _fill keeps them)
             b.enable(self.user_id is not None)
         self.karma = win.add(TextBox(self.FX, karma_y, 40, 12))      # (3 digits show whole)
-        self.karma_word = win.add(Label(self.FX + 48, karma_y + 2, 96, 10, ""))
+        self.karma_word = win.add(Label(self.FX + 44, karma_y + 2, 72, 10, ""))
+        win.add(Label(self.FX + 120, karma_y + 2, 64, 10, "Credits:"))       # (the bank:
+        self.credits = win.add(TextBox(self.FX + 184, karma_y, 68, 12))     # 7 digits show)
         self.status = win.add(Label(8, self.H - 12, self.W - 16, 10, ""))
         self.win = win
         if self.user_id in self.user_ids:          # a user to start with (the person icon)
@@ -621,6 +623,12 @@ class UsersEditor:
         self.list.selected = self.user_ids.index(self.user_id)
         self.list.set_value(self.list.selected)
 
+    def credits_changed(self):
+        """The bank changed the picked user's balance (bank.changed): the box follows."""
+        user = self.db.user(user_id=self.user_id) if self.user_id is not None else None
+        if user is not None and self.win is not None and self.win.shown:
+            self.credits.set_text(str(user["credits"]))
+
     def _role_row(self, user):
         return self.role_ids.index(user["role_id"]) if user["role_id"] in self.role_ids else None
 
@@ -633,7 +641,8 @@ class UsersEditor:
                   (self.joined, when(user["created"]) if user is not None else ""),
                   (self.last_login, when(user["last_login"]) if user is not None else ""),
                   (self.karma, str(user["karma"]) if user is not None else ""),
-                  (self.karma_word, karma.level(user["karma"]) if user is not None else "")]
+                  (self.karma_word, karma.level(user["karma"]) if user is not None else ""),
+                  (self.credits, str(user["credits"]) if user is not None else "")]
         role = self._role_row(user) if user is not None else None
         for gadget, text in values:
             if send:
@@ -686,7 +695,10 @@ class UsersEditor:
                 e["reason"], " (%s)" % e["by_name"] if e["by_name"] else ""))
         if len(lines) == 2:
             lines.append("No changes yet.")
-        win = Window.centred("Karma History", 440, 128, flags=WFlag.CLOSE | WFlag.MOVABLE,
+        from .bank import statement_row, credits
+        lines += ["", "Bank: %s" % credits(user["credits"]), ""]
+        lines += [statement_row(e) for e in self.db.credit_log(self.user_id, 60)]
+        win = Window.centred("History", 440, 128, flags=WFlag.CLOSE | WFlag.MOVABLE,
                              win_id=WIN_KARMA)
         win.add(TextView(8, 4, 424, 100, lines))
         add_buttons(win, [("OK", closer, GFlag.DEFAULT)], centre=True)
@@ -736,6 +748,11 @@ class UsersEditor:
         if new_karma != str(user["karma"]):
             if not (new_karma.isascii() and new_karma.isdigit()) or not 0 <= int(new_karma) <= dbmod.KARMA_MAX:
                 problem = problem or "Karma Points are 0 to %d." % dbmod.KARMA_MAX
+        new_credits = clean_text(self.credits.value).strip().replace(",", "")
+        if new_credits != str(user["credits"]):
+            if (not (new_credits.isascii() and new_credits.isdigit())
+                    or int(new_credits) > dbmod.CREDITS_MAX):
+                problem = problem or "Credits are 0 to {:,}.".format(dbmod.CREDITS_MAX)
         if problem:
             return self.say(problem)
         role_id = self.role_ids[self.roles.selected]
@@ -751,6 +768,8 @@ class UsersEditor:
             karma.change(self.admin.server, self.user_id, int(new_karma) - user["karma"],
                          "set by an admin", by=self.session)
             self.karma_word.set_text(karma.level(int(new_karma)))
+        if new_credits != str(user["credits"]):
+            self.admin.server.screens.bank.adjust(self.user_id, int(new_credits), self.session)
         role = self.db.role(role_id)
         self.session.log("admin: saved user %s (%s)" % (user["name"], role["name"]))
         self.admin.changed()

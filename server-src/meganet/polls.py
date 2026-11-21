@@ -352,6 +352,7 @@ class VotingWindow:
                     if c["id"] == self.choice_id)
         self.session.log("voted in poll %d" % poll["id"])
         self.polls.changed(poll["id"])
+        self.polls.server.screens.bank.earn(self.session.user_id, "poll vote", memo=poll["question"])
         return self.say("Your vote for %s is in. Thanks!" % text[:CHOICE_MAX])
 
     def _results(self, button):

@@ -70,6 +70,7 @@ Edit gadgets first, as the real client does).
 |---|---|
 | `meganet/protocol.py` | Message numbers, gadget kinds, flags; `Writer`, `Reader`, `Deframer` |
 | `meganet/ui.py` | `Window` and the gadget classes (`Button`, `Label`, `TextBox`, `Password`, `ListBox`, `DropDown`, `TextView`, `TextArea` (Edit), `CheckBox`, `Radio`, `Progress`...), mirroring the client's GUI; `Menu` for the menu bar |
+| `meganet/bank.py` | Areas > Bank: credits, the ledger, earning (`Bank.earn`), gifts, loans, Admin > Bank Settings |
 | `meganet/session.py` | One per connection: reads frames, sign-on, sends events to windows and gadgets |
 | `meganet/server.py` | The listener and the shared state; `python -m meganet` runs `main()` here |
 | `meganet/db.py` | SQLite: users (PBKDF2-SHA256 password hashes), roles and their permissions, settings, and every area's tables |
@@ -165,10 +166,10 @@ The tree is `MENU_TREE` in `meganet/screens.py`:
 
 | Title (id) | Items (id) | Needs |
 |---|---|---|
-| Areas (1) | News ($12), Message Boards ($10), Chat Rooms ($11), Private Messages ($17), Art Gallery ($15), SID Music ($16), File Library ($13), Games ($14) | `news.read`, `boards.read`, `chat.use`, `mail.use`, `gallery.view`, `music.listen`, `files.download`, `games.play` |
+| Areas (1) | News ($12), Message Boards ($10), Chat Rooms ($11), Private Messages ($17), Art Gallery ($15), SID Music ($16), File Library ($13), Games ($14), Internet ($19), Voting ($18), Bank ($1A) | `news.read`, `boards.read`, `chat.use`, `mail.use`, `gallery.view`, `music.listen`, `files.download`, `games.play`, `internet.use`, `polls.vote`, `bank.use` |
 | Members (2) | Who's Online ($20), User Search... ($23) | everyone |
 | Help (4) | About MegaNet ($40), Getting Around ($41), Page Admin ($42) | everyone |
-| Admin ($E0, right of Window) | User Editor... ($31), Roles... ($30), Message of the Day... ($32), Terms of Service... ($37), Messages from users... ($33) | `admin.users`, `admin.roles`, `admin.motd`, `admin.tos`, `admin.pages` |
+| Admin ($E0, right of Window) | User Editor... ($31), Roles... ($30), Message of the Day... ($32), Terms of Service... ($37), Messages from users... ($33), Bank Settings... ($38) | `admin.users`, `admin.roles`, `admin.motd`, `admin.tos`, `admin.pages`, `admin.bank` |
 
 **My Account ($22)** is the first item of the client's own MegaNet menu. The server never sends
 it in MENU, but accepts a MENU_PICK of $22 from any signed-on session (`ui.Menu.client_item`,
@@ -935,6 +936,22 @@ Drop a Python file into `meganet/games/` with a `Game` subclass and restart the 
   (`session.send_resource`), under a "Loading Chess" window (55, modal) whose progress bar
   moves as they arrive; clients without `Caps.GRID` are refused at the lobby. Clients with
   `Caps.PICTURE` get them packed (`S.RESOURCE_PACKED`, PackBits): 3 KB instead of 14.
+
+**Texas Hold'em** (`games/poker.py`, rules in `poker_rules.py`, the table and cards in
+`poker_art.py`, permission `games.poker`) is no-limit poker for 2-6, played for credits:
+- Join asks Wait for Others (a running table with a free seat takes you at once) or vs
+  Computer... (1-5). `Game.join_problem` refuses players with fewer than 100 credits or an
+  overdue loan. Buy Chips... brings 100-1,000 credits to the table (`db.to_poker_table`);
+  what's in front of you after each hand is saved (`db.set_poker_chips`), and Leave or a
+  disconnect cashes it out (`db.from_poker_table`). At start-up, chips left on a table go
+  back to their owners.
+- Blinds 5/10. Fold, Check / Call, Raise (to the amount in the box), 1/2 Pot and Pot (fill
+  the box), All In; Sit Out / I'm Back. 30 s a turn, then check or fold for you; two in a
+  row sit you out. Each hand you act in earns "poker hand" credits.
+- The table window (dynamic id, 624x171): a 13 x 5 `GRID` of the felt (slot 9) with cards,
+  the button and chips drawn on its tiles for each viewer; seat labels round it (name,
+  chips, last action, "Wins N" or the hand shown); the pot, the hand number, your status and
+  your best hand in the corners.
 
 **One** (`games/one.py`, rules in `one_rules.py`, the cards in `one_art.py`) is the card game
 for 2-4, by the usual official rules: 108 cards; match the colour, number or symbol, or play

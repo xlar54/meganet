@@ -307,7 +307,7 @@ class KarmaTest(ChatBase):
         await alice.wait_for(lambda: status_of(win) == "Saved bob.", "saved")
         self.assertEqual(self.karma("bob"), 40)
         alice.click_text(WIN_USERS, "History")
-        hist = await alice.wait_window("Karma History")
+        hist = await alice.wait_window("History")
         lines = hist.gadgets[gadget_of(hist, Kind.TEXTVIEW)]["lines"]
         self.assertEqual(lines[0], "bob: Karma Points 40 (OK)")
         self.assertTrue(lines[2].endswith("+34 = 40  set by an admin (alice)"), lines[2])
