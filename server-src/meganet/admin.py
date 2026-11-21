@@ -70,6 +70,7 @@ class Admin:
         self.roles_eds = {}      # session -> RolesEditor
         self.users_eds = {}      # session -> UsersEditor
         self.motd_eds = {}       # session -> MotdEditor
+        self.tos_eds = {}        # session -> TosEditor
 
     @property
     def db(self):
@@ -103,6 +104,14 @@ class Admin:
         if ed is not None and ed.win is not None and ed.win.shown:
             return ed.show()             # already open: bring it back, edits kept
         return MotdEditor(self, session).show()
+
+    def open_tos(self, session):
+        if not session.can(perms.ADMIN_TOS):
+            return refuse(session, "open_tos", perms.ADMIN_TOS)
+        ed = self.tos_eds.get(session)
+        if ed is not None and ed.win is not None and ed.win.shown:
+            return ed.show()             # already open: bring it back, edits kept
+        return TosEditor(self, session).show()
 
     # ---- System Settings (admin.settings) ----
 
@@ -202,6 +211,8 @@ class Admin:
             self.users_eds[session].close()
         if not session.can(perms.ADMIN_MOTD) and session in self.motd_eds:
             self.motd_eds[session].close()
+        if not session.can(perms.ADMIN_TOS) and session in self.tos_eds:
+            self.tos_eds[session].close()
         for win_id, key in ((WIN_SETTINGS, perms.ADMIN_SETTINGS),
                             (WIN_BROADCAST, perms.ADMIN_BROADCAST),
                             (WIN_KARMA, perms.ADMIN_USERS)):
@@ -213,6 +224,7 @@ class Admin:
         self.roles_eds.pop(session, None)
         self.users_eds.pop(session, None)
         self.motd_eds.pop(session, None)
+        self.tos_eds.pop(session, None)
 
 
 class RolesEditor:
@@ -865,6 +877,102 @@ class MotdEditor:
         self.session.alert("Message of the Day", "Saved. Users see it when they next sign on.")
 
     @guarded(perms.ADMIN_MOTD)
+    def _cancel(self, button):
+        self.close()
+
+
+class TosEditor:
+    """One admin's Terms of Service window (a dynamic id): the Terms, a page at a time (the
+    client's text areas hold 32 lines), in a text area exactly as wide as the sign-up's
+    reader, so each line here is a line new users read. < and > turn the pages (edits kept);
+    Save stores all four (if they fit the reader); Cancel (or the close box) drops the edits."""
+
+    W, H = 448, 158
+    AREA = (8, 14, 8 * dbmod.TOS_COLS + TextArea.PAD + 11, 118)   # TOS_COLS characters
+
+    def __init__(self, admin, session):
+        self.admin = admin
+        self.session = session
+        self.pages = admin.db.tos()
+        self.page = 0
+        self.win = None
+
+    @property
+    def db(self):
+        return self.admin.db
+
+    def show(self):
+        self.admin.tos_eds[self.session] = self
+        if self.win is not None and self.win.shown:
+            self.win.close()
+        win = Window.centred("Terms of Service", self.W, self.H, on_close=self._closed,
+                             flags=WFlag.CLOSE | WFlag.MOVABLE)
+        self.head = win.add(Label(8, 2, 432, 10, self._heading(), GFlag.CENTRE))
+        self.area = win.add(TextArea(*self.AREA, lines=self.pages[self.page]))
+        y = self.AREA[1] + self.AREA[3] + 6
+        self.prev_b = win.add(Button(8, y, 24, 16, "<", on_click=self._prev))
+        self.next_b = win.add(Button(36, y, 24, 16, ">", on_click=self._next))
+        self.status = win.add(Label(68, y + 3, 200, 10, "Edit, then Save."))
+        add_buttons(win, [("Save", self._save, 0), ("Cancel", self._cancel, 0)], y=y)
+        self._buttons()
+        self.win = win
+        win.show(self.session)
+        return self
+
+    def _heading(self):
+        return "Terms of Service: page %d of %d" % (self.page + 1, dbmod.TOS_PAGES)
+
+    def _buttons(self):
+        self.prev_b.enable(self.page > 0)
+        self.next_b.enable(self.page < dbmod.TOS_PAGES - 1)
+
+    def close(self):
+        self.admin.tos_eds.pop(self.session, None)
+        if self.win is not None:
+            self.win.close()
+
+    def _closed(self, window):
+        if self.admin.tos_eds.get(self.session) is self:
+            del self.admin.tos_eds[self.session]
+
+    def say(self, text):
+        self.status.set_text(text)
+
+    def _typed(self):
+        """The page on screen as typed (the client sent it before the click), kept."""
+        self.pages[self.page] = [clean_text(l).rstrip() for l in self.area.lines]
+        return self.pages
+
+    def _turn(self, step):
+        self._typed()
+        self.page = max(0, min(dbmod.TOS_PAGES - 1, self.page + step))
+        self.area.set_lines(self.pages[self.page])
+        self.head.set_text(self._heading())
+        self._buttons()
+
+    # ---- handlers ----
+
+    @guarded(perms.ADMIN_TOS)
+    def _prev(self, button):
+        self._turn(-1)
+
+    @guarded(perms.ADMIN_TOS)
+    def _next(self, button):
+        self._turn(1)
+
+    @guarded(perms.ADMIN_TOS)
+    def _save(self, button):
+        problem = dbmod.tos_problem(self._typed())
+        if problem:
+            return self.say(problem[:25]) if len(problem) <= 25 else                 self.session.alert("Terms of Service", problem)
+        self.pages = self.db.set_tos(self.pages)
+        self.session.log("admin: terms of service saved (%d lines)"
+                         % len(dbmod.tos_text(self.pages)))
+        self.close()
+        self.session.alert("Terms of Service", "Saved. New users agree to them as they join.")
+        return None
+
+    @guarded(perms.ADMIN_TOS)
     def _cancel(self, button):
         self.close()
 

@@ -71,6 +71,7 @@ M_AVAILABLE, M_AWAY, M_OFFLINE = 0x50, 0x51, 0x52
 M_SETTINGS = 0x34
 M_BROADCAST = 0x35
 M_LOG = 0x36
+M_TOS = 0x37
 STATUS_ITEMS = dict(zip((M_AVAILABLE, M_AWAY, M_OFFLINE), STATUSES))
 WIN_WHO_W, WIN_WHO_H = 300, 136
 
@@ -109,6 +110,7 @@ MENU_TREE = [
         (M_USERS, "User Editor...", perms.ADMIN_USERS, "open_users"),
         (M_ROLES, "Roles...", perms.ADMIN_ROLES, "open_roles"),
         (M_MOTD, "Message of the Day...", perms.ADMIN_MOTD, "open_motd"),
+        (M_TOS, "Terms of Service...", perms.ADMIN_TOS, "open_tos"),
         (M_ADMIN_MSGS, "Messages from users...", perms.ADMIN_PAGES, "open_admin_messages"),
         (M_SETTINGS, "System Settings...", perms.ADMIN_SETTINGS, "open_settings"),
         (M_BROADCAST, "Broadcast...", perms.ADMIN_BROADCAST, "open_broadcast"),
@@ -117,7 +119,8 @@ MENU_TREE = [
 ]
 
 DENIED = "Your account can't use %s."
-ADMIN_KEYS = (perms.ADMIN_USERS, perms.ADMIN_ROLES, perms.ADMIN_MOTD, perms.ADMIN_SETTINGS,
+ADMIN_KEYS = (perms.ADMIN_USERS, perms.ADMIN_ROLES, perms.ADMIN_MOTD, perms.ADMIN_TOS,
+              perms.ADMIN_SETTINGS,
               perms.ADMIN_BROADCAST, perms.ADMIN_LOG)
 
 
@@ -309,6 +312,9 @@ class Screens:
 
     def open_motd(self, session, item):
         return self.admin.open_motd(session)
+
+    def open_tos(self, session, item):
+        return self.admin.open_tos(session)
 
     def open_admin_messages(self, session, item):
         return self.pages.open_messages(session)

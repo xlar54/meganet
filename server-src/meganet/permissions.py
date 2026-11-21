@@ -98,6 +98,7 @@ FILES_MODERATE = register("files.moderate", "Manage file libraries", like="board
 ADMIN_LOG = register("admin.log", "Admin: read the log")
 INTERNET_USE = register("internet.use", "Use the Internet area", like="files.download")
 GALLERY_MODERATE = register("gallery.moderate", "Manage art galleries", like="boards.moderate")
+ADMIN_TOS = register("admin.tos", "Admin: terms of service", like=ADMIN_MOTD)
 GALLERY_VIEW, GALLERY_UPLOAD = "gallery.view", "gallery.upload"
 FILES_DOWNLOAD, FILES_UPLOAD = "files.download", "files.upload"
 IM_SEND = "im.send"

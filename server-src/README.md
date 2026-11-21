@@ -55,7 +55,7 @@ to a signed-off user who gets the icon at sign-on, read, reply, the Sent folder,
 side, unknown recipients, `mail.use` enforced), and My Account (`tests/test_account.py`: opened
 by MENU_PICK $22, the layout, save and reload through the drop-downs and C.TEXT, invalid and
 partial dates, clearing to "--", Cancel, too many About Me lines, an old-style About Me, Last
-Login, Reset Password), and the New User wizard (`tests/test_signup.py`: the five steps and
+Login, Reset Password), and the New User wizard (`tests/test_signup.py`: the six steps and
 their layout, the account, profile and admin message saved, the admin's envelope icon, the
 alert last; taken, held and bad names, passwords, dates, emails, Back keeping every value,
 Cancel at steps 1 and 4 and the close box followed by a normal sign-on on the same connection,
@@ -118,14 +118,14 @@ LOGIN (new user, "", "")        ->
 CLICK / VALUE / SELECT / TEXT / WIN_CLOSED for window 20 ->        (only these, only window 20)
                                 <- window 20 again for each step
 Cancel or the close box         -> <- WIN_CLOSE 20, LOGIN_RESULT 0 "Sign-up cancelled."
-Accept                          -> <- WIN_CLOSE 20, LOGIN_RESULT 1, MENU, the welcome window...,
+OK (Terms of Service agreed)    -> <- WIN_CLOSE 20, LOGIN_RESULT 1, MENU, the welcome window...,
                                       then ALERT "Welcome to MegaNet!" (last: in front)
 ```
 
 After a cancel the connection stays open for another LOGIN. The window is 448x152, centred,
-modal, with a close box (= Cancel). Every step has "Step n of 5" at the top left, a status line
+modal, with a close box (= Cancel). Every step has "Step n of 6" at the top left, a status line
 (y 120) and its buttons at the bottom right (y 134, 64x16): Back (not on step 1), Next (the
-default; Accept on step 5) and Cancel.
+default; OK on step 6) and Cancel.
 
 | Step | Title | Fields |
 |---|---|---|
@@ -133,7 +133,8 @@ default; Accept on step 5) and Cancel.
 | 2 | New User: Password | the rule from `db.check_new_password` + "Type it twice."; Password and Confirm: Password boxes (124, 50 / 65) 160 wide |
 | 3 | New User: About You | "optional, change it later in MegaNet > My Account"; Birthdate: Month / Day / Year drop-downs (as My Account), Location and Email Address: TextBoxes 260 wide |
 | 4 | New User: About Me | an Edit area (124, 46) 260x70: My Account's 30-character lines, all 8 lines visible |
-| 5 | New User: Review | Screen name, Name (first and last), Password (stars), Birthdate ("21 Jun 1985" or "not given"), Location, Email Address, the first two About Me lines; Back, Accept, Cancel |
+| 5 | New User: Review | Screen name, Name (first and last), Password (stars), Birthdate ("21 Jun 1985" or "not given"), Location, Email Address, the first two About Me lines; Back, Next, Cancel |
+| 6 | New User: Terms of Service | "Please read our Terms of Service, then agree to join."; the Terms (`db.tos()`) in a TextView (4, 28) 433x76, exactly 52 characters wide, scrolled to the top; a check box "I have read and agree to the Terms of Service."; OK (default) greyed out until the box is ticked, Back, Cancel |
 
 The values are kept on the server between steps, so Back shows them again (Back doesn't check
 anything). Next checks its step: the name with `db.check_new_name`, not an existing account in
@@ -141,12 +142,13 @@ any case ("That name is taken, please try another."), and not held by another se
 then the first and last names (`db.check_real_name`: required, letters, spaces, ' - and ., at
 most 20 characters);
 the passwords match the rule and each other; the date, email and lengths as My Account checks
-them; at most 8 About Me lines. Accept checks every step again and shows the first one with a
-problem. A good step 1 **holds the name** until the wizard ends (Accept, Cancel, another
+them; at most 8 About Me lines. OK checks every step again and shows the first one with a
+problem, and that the box is ticked (a forged click on the greyed-out OK is dropped anyway).
+A good step 1 **holds the name** until the wizard ends (OK, Cancel, another
 LOGIN or the connection going), and an old-style new-user LOGIN can't take a held name either.
 
-Accept creates the account (the default role; the very first account is Sysop) and saves the
-profile. Unless it is the first account, it adds an admin message (subject "New user", "<name>
+OK creates the account (the default role; the very first account is Sysop) and saves the
+profile and when they agreed to the Terms (`users.tos_agreed`). Unless it is the first account, it adds an admin message (subject "New user", "<name>
 has just signed up. Please check their access (Admin > User Editor).") from the new user and refreshes
 the admins' envelope icons, as a Page Admin message does. Then the usual sign-on, and the alert
 "Account set up! An admin has been told and will upgrade your access." (the first account gets
@@ -166,7 +168,7 @@ The tree is `MENU_TREE` in `meganet/screens.py`:
 | Areas (1) | News ($12), Message Boards ($10), Chat Rooms ($11), Private Messages ($17), Art Gallery ($15), SID Music ($16), File Library ($13), Games ($14) | `news.read`, `boards.read`, `chat.use`, `mail.use`, `gallery.view`, `music.listen`, `files.download`, `games.play` |
 | Members (2) | Who's Online ($20), User Search... ($23) | everyone |
 | Help (4) | About MegaNet ($40), Getting Around ($41), Page Admin ($42) | everyone |
-| Admin ($E0, right of Window) | User Editor... ($31), Roles... ($30), Message of the Day... ($32), Messages from users... ($33) | `admin.users`, `admin.roles`, `admin.motd`, `admin.pages` |
+| Admin ($E0, right of Window) | User Editor... ($31), Roles... ($30), Message of the Day... ($32), Terms of Service... ($37), Messages from users... ($33) | `admin.users`, `admin.roles`, `admin.motd`, `admin.tos`, `admin.pages` |
 
 **My Account ($22)** is the first item of the client's own MegaNet menu. The server never sends
 it in MENU, but accepts a MENU_PICK of $22 from any signed-on session (`ui.Menu.client_item`,
@@ -212,6 +214,7 @@ for a button or a MENU_PICK for an item it was never given.
 | `admin.users` | Assign users to roles | | | | x |
 | `admin.roles` | Edit roles and their permissions | | | | x |
 | `admin.motd` | Edit the message of the day | | | | x |
+| `admin.tos` | Edit the terms of service (new: roles with `admin.motd` get it) | | | | x |
 | `admin.pages` | Answer pages from users (and read their messages) | | | x | x |
 | `admin.settings` | System Settings (Auto-Away, New Users' instant messages) | | | | x |
 | `admin.broadcast` | Broadcast a line to everyone signed on | | | | x |
@@ -289,6 +292,18 @@ There are two ways to change it:
   Replace, Insert before, Add at end and Delete use the text box; Preview opens the welcome
   window with the edited lines, as users will see it; Save stores them, Cancel (or the close
   box) throws them away. Every handler checks `admin.motd` again.
+
+### The Terms of Service
+
+New users read and agree to them as the last step of sign-up (above); `users.tos_agreed` records
+when. They're kept in the settings table (`db.tos()` / `set_tos()`, key `tos`) as 4 pages of at
+most 32 lines (the client's text areas hold 32), each line at most 52 characters: the reader's
+width, so a line typed is a line read. A new database starts with a standard online-service
+agreement (`db.DEFAULT_TOS`: accounts, acceptable use, your content, moderation, privacy, files,
+no warranty, liability, changes, contact). Change it on the MEGA65 with Admin > *Terms of
+Service...* (`admin.tos`): a page at a time in a text area as wide as the reader, < and > to turn
+the pages (edits kept), Save (refused if the text would run past the reader's 128 lines, or is
+empty), Cancel. Users who agreed to an older text aren't asked again.
 
 `ui.centre(w, h)` and `Window.centred(title, w, h, ...)` centre any window below the menu bar.
 

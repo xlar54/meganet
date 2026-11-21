@@ -86,6 +86,7 @@ class RolesTest(RolesBase):
         self.assertEqual(self.alice.menu_titles(), ["Areas", "Members", "Help", "Status", "Admin"])
         self.assertEqual(self.alice.menu_items("Admin"), ["User Editor...", "Roles...",
                                                           "Message of the Day...",
+                                                          "Terms of Service...",
                                                           "Messages from users...",
                                                           "System Settings...",
                                                           "Broadcast...",
@@ -492,17 +493,20 @@ class NewUserIconTest(RolesBase):
 
 class RolesPagingTest(RolesBase):
     async def test_more_permissions_than_fit(self):
-        from meganet.admin import PER_PAGE          # exactly two pages, however many keys
-        n = 2 * PER_PAGE - len(permissions.keys())  # the core has (needs at least 2 extra)
-        self.assertGreaterEqual(n, 2, "the core alone fills two pages: change this test")
+        from meganet.admin import PER_PAGE          # the last page exactly full, with at
+        core = len(permissions.keys())              # least 2 extra keys on it
+        pages = (core + 2 + PER_PAGE - 1) // PER_PAGE
+        n = pages * PER_PAGE - core
         extra = [permissions.register("test.extra%d" % i, "Extra thing %d" % i) for i in range(n)]
         last, before = "Extra thing %d" % (n - 1), "test.extra%d" % (n - 2)
         try:
             self.server.db.sync_permissions()
             roles = await self.edit_role(self.alice, "Sysop")
-            roles.find("Page 1/2")
-            self.alice.click_text(WIN_ROLES, "Next >")
-            await self.alice.wait_for(lambda: has_text(self.alice, WIN_ROLES, "Page 2/2"), "p2")
+            roles.find("Page 1/%d" % pages)
+            for page in range(2, pages + 1):
+                self.alice.click_text(WIN_ROLES, "Next >")
+                await self.alice.wait_for(lambda: has_text(self.alice, WIN_ROLES, "Page %d/%d"
+                                                           % (page, pages)), "page %d" % page)
             roles = self.alice.windows[WIN_ROLES]
             box = roles.find(last)
             self.assertEqual(roles.gadgets[box]["value"], 1, "Sysop got the new key")

@@ -125,6 +125,12 @@
       Windows roots to private/temp/winroots.pem and pass --cafile
 - [ ] Resources: the client could say in HELLO which slots it still holds (attic survives
       a reset), so a reconnect skips the chess and One tiles (3 KB and 17 KB packed)
+- [x] Terms of Service (2026-11-21): the last sign-up step (read, tick "I agree", OK greyed
+      out until then; users.tos_agreed), the Sysop's editor (Admin > Terms of Service...,
+      admin.tos, 4 pages of 32 lines), a standard default text. Tried in Xemu: the step, the
+      tick and OK, the editor
+- [ ] Terms of Service: ask existing users to agree again when the Terms change (a version
+      number, a window at sign-on)
 - [x] Unread news (2026-11-21): per-user read tracking (db news_reads, the version read),
       the newspaper icon (NOTIFY slot 6, icon 10; the client has 8 slots now), the offer
       after the welcome window counts unread ones, Mark All Read. Tried in Xemu: the icon,

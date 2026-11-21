@@ -13,20 +13,23 @@ One window, WIN_SIGNUP (20), centred, modal, W x H = 448 x 152, sent again for e
     3  About you     Birthdate (Month / Day / Year drop-downs, as My Account), Location, Email
                      (all optional)
     4  About me      a TextArea as wide as My Account's (30-character lines, 8 lines, all shown)
-    5  Review        every value on labels; Accept (default), Back, Cancel
+    5  Review        every value on labels
+    6  Terms of Service   the Terms (db.tos(), edited in Admin > Terms of Service...) in a
+                     view as wide as their editor's, "I have read and agree to the Terms of
+                     Service." (a check box), and OK, greyed out until the box is ticked
 
-Each step: "Step n of 5" at the top left, its text, its fields, a status line, and Back
-(not on step 1) / Next (default; Accept on step 5) / Cancel at the bottom right. The values
-are kept here between steps, so Back shows them again. Next checks the step; Accept checks
-everything again (and shows the first step with a problem).
+Each step: "Step n of 6" at the top left, its text, its fields, a status line, and Back
+(not on step 1) / Next (default; OK on step 6) / Cancel at the bottom right. The values
+are kept here between steps, so Back shows them again. Next checks the step; OK checks
+everything again (and shows the first step with a problem) and that the box is ticked.
 
 The name is reserved while the wizard holds it (after a good step 1): another session's
 wizard, or an old-style new-user LOGIN, can't take it.
 
 Cancel or the close box: the window closes and the client gets LOGIN_RESULT 0 "Sign-up
 cancelled."; the connection stays open for another LOGIN.
-Accept: the account is created (default role; the very first account is Sysop) with the
-profile, the admins get an admin_messages entry and their envelope icon (not for the first
+OK: the account is created (default role; the very first account is Sysop) with the
+profile and the time they agreed to the Terms (users.tos_agreed), the admins get an admin_messages entry and their envelope icon (not for the first
 account: it is the Sysop), then LOGIN_RESULT 1 and the usual sign-on (menu, welcome window...),
 and last an ALERT in front: "Welcome to MegaNet!".
 """
@@ -39,13 +42,13 @@ from .account import (Account, MONTHS, NOT_SET, year_rows, tidy_about, length_pr
                       about_problem, LABEL_X, LABEL_W, FIELD_X, FIELD_W, MONTH_X, MONTH_W,
                       DAY_X, DAY_W, YEAR_X, YEAR_W, BOX_H, BUTTON_W, BUTTON_H)
 from .protocol import WFlag, GFlag, clean_text
-from .ui import Window, Button, Label, TextBox, Password, DropDown, TextArea
+from .ui import Window, Button, Label, TextBox, Password, DropDown, TextArea, TextView, CheckBox
 
 WIN_SIGNUP = 20
 WIN_SET_UP = 21                      # "your account is set up": OK, then the welcome window
 
 W, H = 448, 152                      # client area (centred: x 92, y 20)
-STEPS = 5
+STEPS = 6
 TEXT_W = W - 2 * LABEL_X             # 440: a line of text holds 55 characters
 NAME_W = 96                          # room for the 10 characters of a screen name
 REAL_W = 6 + 8 * dbmod.REAL_NAME_MAX  # 166: a first or last name shows whole
@@ -56,7 +59,13 @@ REVIEW_ROW = 11                      # 8 rows (two of About Me) end above the st
 STATUS_Y = H - 2 - BUTTON_H - 14     # 120
 BUTTON_Y = H - 2 - BUTTON_H          # 134
 
-TITLES = {1: "Screen Name", 2: "Password", 3: "About You", 4: "About Me", 5: "Review"}
+TITLES = {1: "Screen Name", 2: "Password", 3: "About You", 4: "About Me", 5: "Review",
+          6: "Terms of Service"}
+# step 6: the Terms in a view exactly TOS_COLS characters wide (as wide as their editor's text
+# area, admin.TosEditor), the check box under it
+TOS_VIEW = (LABEL_X, 28, 8 * dbmod.TOS_COLS + TextView.PAD + 11, 76)
+AGREE = "I have read and agree to the Terms of Service."
+NOT_AGREED = "Please tick the box to agree, or Cancel."
 
 CANCELLED = "Sign-up cancelled."
 TAKEN = "That name is taken, please try another."
@@ -117,6 +126,7 @@ class Wizard:
         self.signup = signup
         self.session = session
         self.step = 1
+        self.agreed = False          # the Terms of Service box (step 6)
         self.typed_name = ""         # step 1's box as last seen
         self.name = ""               # the checked name: reserved while set
         self.first = self.last = ""  # first and last name (step 1, required)
@@ -151,11 +161,15 @@ class Wizard:
             win.add(Button(next_x, BUTTON_Y, BUTTON_W, BUTTON_H, "Next", GFlag.DEFAULT,
                            on_click=self._next))
         else:
-            win.add(Button(next_x, BUTTON_Y, BUTTON_W, BUTTON_H, "Accept", GFlag.DEFAULT,
-                           on_click=self._accept))
+            win.ok = win.add(Button(next_x, BUTTON_Y, BUTTON_W, BUTTON_H, "OK",
+                                    GFlag.DEFAULT | (GFlag.NONE if self.agreed
+                                                     else GFlag.DISABLED),
+                                    on_click=self._accept))
         win.add(Button(cancel_x, BUTTON_Y, BUTTON_W, BUTTON_H, "Cancel", on_click=self._cancel))
         self.win = win
         win.show(self.session)
+        if step == 6:
+            win.terms.scroll_to(0)       # (a view follows its lines down: the Terms from the top)
         return win
 
     @staticmethod
@@ -210,7 +224,7 @@ class Wizard:
         win.about = win.add(TextArea(FIELD_X, 46, FIELD_W, ABOUT_H, self.about))
 
     def _step5(self, win):
-        self._text(win, 18, "Please check your details, then click Accept.")
+        self._text(win, 18, "Please check your details, then click Next.")
         about = self.about[:2] or [NOT_GIVEN]
         if len(self.about) > 2:
             about[1] += " ..."
@@ -225,6 +239,18 @@ class Wizard:
             if label:
                 win.add(Label(LABEL_X, y, LABEL_W, 10, label))
             win.add(Label(FIELD_X, y, VALUE_W, 10, short(value, VALUE_W // 8)))
+
+    def _step6(self, win):
+        self._text(win, 16, "Please read our Terms of Service, then agree to join.")
+        win.terms = win.add(TextView(*TOS_VIEW, dbmod.tos_text(self.db.tos())))
+        win.agree = win.add(CheckBox(LABEL_X, TOS_VIEW[1] + TOS_VIEW[3] + 2, TEXT_W, 12, AGREE,
+                                     checked=self.agreed, on_select=self._agree))
+
+    def _agree(self, box, index, double):
+        """The box ticked or not: OK follows it."""
+        if self.session.signup is self and box.window is self.win:
+            self.agreed = box.checked
+            self.win.ok.enable(self.agreed)
 
     # ---- values ----
 
@@ -306,6 +332,9 @@ class Wizard:
             if problem:
                 self.show(step, problem)
                 return None
+        if not self.agreed or not self.win.agree.checked:         # (a forged OK)
+            self.win.status.set_text(NOT_AGREED)
+            return None
         session = self.session
         pw_hash = await asyncio.to_thread(dbmod.hash_password, self.password)
         if session.closed or session.signup is not self:
@@ -318,12 +347,13 @@ class Wizard:
         birthdate, _ = self.birthdate()
         self.db.set_profile(user["id"], self.first, self.last, self.email, self.location,
                             birthdate, self.about)
+        self.db.set_tos_agreed(user["id"])
         first = self.db.user_count() == 1
         if not first:
             self.db.add_admin_message(user["id"], ADMIN_SUBJECT, [ADMIN_TEXT % self.name])
         self.win.close()
         session.signup = None
-        session.log("sign-up accepted: %s" % self.name)
+        session.log("sign-up accepted: %s (agreed to the Terms of Service)" % self.name)
         screens = session.server.screens
         session.sign_on(self.name, "Welcome to MegaNet, %s!" % self.name, new=True,
                         welcome=False, after=lambda: set_up_window(session, first))

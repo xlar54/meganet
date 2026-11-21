@@ -57,7 +57,8 @@ Client: `build.bat` assembles `client-src/main.asm` and writes `target/meganet.d
 builds it and starts Xemu. On a MEGA65, plug in Ethernet on a network with DHCP, run the
 server on a PC, type its IP address on the sign-on screen, and click Sign On. The first time,
 click New User instead: a step-by-step sign-up (screen name, password, about you, about me, then
-a review page with Accept) creates the account and signs you in.
+a review page, then the Terms of Service to read and agree to) creates the account and signs
+you in. The Sysop edits the Terms in Admin > Terms of Service...
 
 Xemu has no network on Windows, so there are two ways to run the client against the server in
 Xemu:

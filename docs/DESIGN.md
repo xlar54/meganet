@@ -273,7 +273,7 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   server. The Roles and Users windows (`meganet/admin.py`) are built from the ordinary gadgets.
 - **Menu bar instead of a main-menu window:** after sign-on the server sends `MENU` with
   Areas (News, Message Boards, Chat Rooms, Private Messages, Art Gallery, SID Music, File Library, Games), Members (Who's
-  Online, User Search), Admin (right of the client's Window menu: User Editor..., Roles..., Message of the Day..., Messages from users...; only with `admin.*`)
+  Online, User Search), Admin (right of the client's Window menu: User Editor..., Roles..., Message of the Day..., Terms of Service..., Messages from users...; only with `admin.*`)
   and Help (About MegaNet, Getting Around, Page Admin), each
   item filtered by `session.can()` and a title left out when it has no items left. The tree is
   `MENU_TREE` in `screens.py`; `ui.Menu` builds and sends it, and checks picks against it.
@@ -365,16 +365,17 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   `LOGIN` (flags bit 0 = new user, name, password) and answers `LOGIN_RESULT`. The client draws
   its own sign-on window. Window ids `$F0`-`$FF` are the client's; the server uses 1-`$EF`.
 - **New User wizard** (`meganet/signup.py`; started by a new-user `LOGIN` with no name): one
-  centred, modal window (id 20, 448x152) sent again for each of five steps, each with "Step n
-  of 5", a status line and Back / Next (default) / Cancel at the bottom right: 1 screen name
+  centred, modal window (id 20, 448x152) sent again for each of six steps, each with "Step n
+  of 6", a status line and Back / Next (default) / Cancel at the bottom right: 1 screen name
   (checked with `db.check_new_name`, not taken in any case, not held by another session's
   wizard), 2 password and confirm (`db.check_new_password`, must match), 3 about you (optional:
   Birthdate drop-downs, Location, Email, with My Account's checks), 4 About Me (optional: an
   Edit area as wide as My Account's, all 8 lines visible), 5 review (every value on labels, the
-  password as stars; Accept, Back, Cancel). Values stay on the server between steps, so Back
-  shows them again; Next checks its step and Accept checks them all again. A name is held from
-  a good step 1 until the wizard ends. Accept: the account (default role; the first account is
-  Sysop) with its profile, an `admin_messages` entry "New user" from the new user ("<name> has
+  password as stars), 6 the Terms of Service (the Sysop's text, edited in Admin > Terms of
+  Service...; a check box "I have read and agree", OK greyed out until it's ticked). Values stay
+  on the server between steps, so Back shows them again; Next checks its step and OK checks them
+  all again. A name is held from a good step 1 until the wizard ends. OK: the account (default
+  role; the first account is Sysop) with its profile and when they agreed to the Terms, an `admin_messages` entry "New user" from the new user ("<name> has
   just signed up. Please check their access (Admin > User Editor).") and the admins' envelope icons
   (skipped for the first account), then the sign-on and the welcome alert ("Account set up! An
   admin has been told and will upgrade your access.").

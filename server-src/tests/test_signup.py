@@ -1,5 +1,6 @@
 """The New User sign-up wizard (signup.py): LOGIN with the new-user flag and no name opens it;
-five steps with Back / Next / Cancel, checks on Next and at Accept, the review, the account and
+six steps with Back / Next / Cancel, checks on Next and at OK, the review, the Terms of
+Service (a box to tick before OK works), the account and
 profile saved, the admins told, the welcome alert in front; Cancel and the close box give
 LOGIN_RESULT 0 and the connection stays usable; only the wizard's window works before sign-on;
 names held by a running wizard."""
@@ -37,7 +38,7 @@ class WizardMixin:
         return c
 
     async def at(self, c, step):
-        await c.wait_for(lambda: has_text(c, WIN_SIGNUP, "Step %d of 5" % step),
+        await c.wait_for(lambda: has_text(c, WIN_SIGNUP, "Step %d of 6" % step),
                          "step %d" % step)
         return c.windows[WIN_SIGNUP]
 
@@ -93,9 +94,19 @@ class WizardMixin:
         self.assertIsNone(await self.press(c, "Next"))
         return await self.at(c, 5)
 
+    async def to_terms(self, c):
+        """From the review (step 5) to the Terms of Service, the box ticked."""
+        self.assertIsNone(await self.press(c, "Next"))
+        win = await self.at(c, 6)
+        c.select(WIN_SIGNUP, gadget_of(win, Kind.CHECKBOX), 1)
+        await c.wait_for(lambda: c.enabled(WIN_SIGNUP, "OK"), "OK enabled")
+        return win
+
     async def accept(self, c):
+        """From the review: Next, tick the Terms of Service, OK -> the LOGIN_RESULT."""
+        await self.to_terms(c)
         n = len(c.login_results)
-        c.click_text(WIN_SIGNUP, "Accept")
+        c.click_text(WIN_SIGNUP, "OK")
         await c.wait_for(lambda: len(c.login_results) > n, "LOGIN_RESULT")
         return c.login_results[-1]
 
@@ -113,15 +124,15 @@ class WizardMixin:
         self.assertEqual(win.pos, ui.centre(W, H))
         self.assertTrue(window_fits(*win.pos, W, H))
         self.assertTrue(win.flags & WFlag.MODAL and win.flags & WFlag.CLOSE)
-        self.assertEqual(self.values(win)[0], "Step %d of 5" % step)
+        self.assertEqual(self.values(win)[0], "Step %d of 6" % step)
         g = win.gadgets
-        labels = [b for b in ("Back", "Next", "Accept", "Cancel") if
+        labels = [b for b in ("Back", "Next", "OK", "Cancel") if
                   any(x["text"] == b and x["kind"] == Kind.BUTTON for x in g.values())]
         self.assertEqual(labels, (["Back"] if step > 1 else []) +
-                         (["Accept"] if step == 5 else ["Next"]) + ["Cancel"])
+                         (["OK"] if step == 6 else ["Next"]) + ["Cancel"])
         default = [x["text"] for x in g.values() if x["kind"] == Kind.BUTTON
                    and x["flags"] & GFlag.DEFAULT]
-        self.assertEqual(default, ["Accept" if step == 5 else "Next"])
+        self.assertEqual(default, ["OK" if step == 6 else "Next"])
         boxes = [g[win.find(b)]["box"] for b in labels]
         self.assertEqual(len({b[1] for b in boxes}), 1, "one row of buttons")
         self.assertEqual(boxes[-1][0] + boxes[-1][2], W - 4, "right-aligned")
@@ -438,13 +449,14 @@ class SignupTest(WizardMixin, PagesBase):
         await self.at(b, 2)
         await self.to_review_from_2(b)
         self.assertEqual((await self.accept(b))[0], True)
-        # If the name went while a was on step 5 (here: forced), Accept goes back to step 1.
+        # If the name went while a was on the Terms (here: forced), OK goes back to step 1.
         await self.at(a, 2)
         await self.to_review_from_2(a)
+        await self.to_terms(a)
         session_a = next(s for s in self.server.sessions if s.signup is not None)
         session_a.signup.name = "Kim"
         session_a.signup.typed_name = "Kim"
-        a.click_text(WIN_SIGNUP, "Accept")
+        a.click_text(WIN_SIGNUP, "OK")
         win = await self.at(a, 1)
         await a.wait_for(lambda: status_of(a.windows[WIN_SIGNUP]) == TAKEN, "taken")
         self.assertEqual(a.login_results, [])

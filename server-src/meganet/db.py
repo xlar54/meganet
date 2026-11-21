@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS users (
     birthdate  TEXT NOT NULL DEFAULT '',
     about      TEXT NOT NULL DEFAULT '',
     last_login INTEGER,
-    karma      INTEGER NOT NULL DEFAULT 20
+    karma      INTEGER NOT NULL DEFAULT 20,
+    tos_agreed INTEGER                  -- when they agreed to the Terms of Service (sign-up)
 );
 CREATE TABLE IF NOT EXISTS roles (
     id    INTEGER PRIMARY KEY,
@@ -261,7 +262,8 @@ USER_COLUMNS = [("role_id", "INTEGER REFERENCES roles(id)"),
                 ("first_name", "TEXT NOT NULL DEFAULT ''"),
                 ("last_name", "TEXT NOT NULL DEFAULT ''"),
                 # accounts from before karma points start at OK, not at a new user's Low
-                ("karma", "INTEGER NOT NULL DEFAULT 50")]
+                ("karma", "INTEGER NOT NULL DEFAULT 50"),
+                ("tos_agreed", "INTEGER")]      # when they agreed to the Terms of Service
 # First and last names: required (sign-up and My Account), at most REAL_NAME_MAX characters
 REAL_NAME_MAX = 20
 REAL_NAME_RE = re.compile(r"[A-Za-z][A-Za-z .'-]*")
@@ -292,6 +294,128 @@ def check_birthdate(text, today=None):
     if day.year < 1900:
         return "A birthdate from 1900 on, please."
     return None
+
+# The Terms of Service new users agree to at the end of sign-up (signup.py), edited by the
+# Sysop in Admin > Terms of Service... (admin.py, admin.tos). Kept in the settings table as
+# JSON: TOS_PAGES pages of at most TOS_PAGE_LINES lines (the client's text areas hold 32), each
+# line at most TOS_COLS characters (the reader's width, so a line typed is a line read). The
+# reader shows the pages one after another, a blank line between, and the client keeps
+# TOS_VIEW_LINES lines in a view: the whole text must fit (tos_problem).
+TOS_KEY = "tos"
+TOS_PAGES = 4
+TOS_PAGE_LINES = 32
+TOS_COLS = 52
+TOS_VIEW_LINES = 128
+DEFAULT_TOS = [[
+    "MEGANET TERMS OF SERVICE",
+    "",
+    "Welcome to MegaNet. By creating an account or using",
+    "the service you agree to these Terms. If you do not",
+    "agree, please do not use MegaNet.",
+    "",
+    "1. YOUR ACCOUNT",
+    "You must give true information when you sign up and",
+    "keep your password secret. You are responsible for",
+    "everything done with your account. One account per",
+    "person, please. Tell the Sysop at once if you think",
+    "someone else has used your account.",
+    "",
+    "2. ACCEPTABLE USE",
+    "Be courteous. You agree not to post or send",
+    "anything that is unlawful, threatening, abusive,",
+    "harassing, defamatory, obscene or hateful; that",
+    "invades anyone's privacy; or that you have no right",
+    "to share, such as pirated software or other",
+    "people's copyrighted work.",
+    "",
+    "You also agree not to impersonate anyone, send spam",
+    "or chain letters, upload viruses or harmful files,",
+    "try to get into accounts or areas you are not",
+    "allowed into, or disrupt the service or its members.",
+], [
+    "3. YOUR CONTENT",
+    "You keep ownership of what you post: messages,",
+    "files, pictures and the like. By posting it you",
+    "give MegaNet permission to store it, show it and",
+    "send it to other members as part of the service.",
+    "Don't post anything you wouldn't want others to see.",
+    "",
+    "4. MODERATION",
+    "The Sysop and moderators may edit, move or remove",
+    "any content, and may warn, suspend or close any",
+    "account that breaks these Terms, at their own",
+    "discretion and without notice.",
+    "",
+    "5. PRIVACY",
+    "We keep the information you give us, and records of",
+    "your use (such as sign-on times), to run the",
+    "service. Your profile is visible to other members.",
+    "Private messages are between the members who send",
+    "and receive them, but the Sysop may read them to",
+    "look into a problem or when the law requires it.",
+    "We do not sell your information.",
+], [
+    "6. FILES AND SOFTWARE",
+    "Files in the libraries are shared by members. Use",
+    "them at your own risk, and only as their authors",
+    "and licences allow. Check what you download.",
+    "",
+    "7. NO WARRANTY",
+    "MegaNet is provided \"as is\", without any warranty.",
+    "It may be unavailable or slow, or lose data, at any",
+    "time. Keep your own copies of anything important.",
+    "",
+    "8. LIMITATION OF LIABILITY",
+    "As far as the law allows, the operators of MegaNet",
+    "are not liable for any loss or damage arising from",
+    "your use of the service, or from anything posted by",
+    "other members.",
+    "",
+    "9. CHANGES",
+    "These Terms may change. Changes will be announced",
+    "in the News, and using MegaNet after a change means",
+    "you accept the new Terms.",
+    "",
+    "10. CONTACT",
+    "Questions? Use Help > Page Admin, or send a private",
+    "message to the Sysop.",
+    "",
+    "Thank you, and enjoy MegaNet!",
+], []]
+
+
+def tidy_tos(pages):
+    """Pages as stored: TOS_PAGES lists of at most TOS_PAGE_LINES clean lines, trailing
+    spaces and trailing blank lines dropped, each line cut at TOS_COLS."""
+    out = []
+    for page in (list(pages) + [[]] * TOS_PAGES)[:TOS_PAGES]:
+        lines = [clean_text(str(line).expandtabs(4).rstrip())[:TOS_COLS] for line in page]
+        while lines and not lines[-1]:
+            lines.pop()
+        out.append(lines[:TOS_PAGE_LINES])
+    return out
+
+
+def tos_text(pages):
+    """The lines the reader shows: the pages with text, a blank line between."""
+    out = []
+    for page in pages:
+        if page:
+            if out:
+                out.append("")
+            out.extend(page)
+    return out
+
+
+def tos_problem(pages):
+    """None if the Terms fit the reader, else what's wrong."""
+    lines = tos_text(tidy_tos(pages))
+    if not lines:
+        return "The Terms of Service can't be empty."
+    if len(lines) > TOS_VIEW_LINES:
+        return "That's %d lines; the reader holds %d." % (len(lines), TOS_VIEW_LINES)
+    return None
+
 
 # The message of the day: a list of lines (one paragraph each; the client wraps them), kept in
 # the settings table as JSON. Every user sees it in the welcome window at sign-on.
@@ -560,6 +684,28 @@ class Database:
             self._set_setting(MOTD_KEY, json.dumps(lines))
         return lines
 
+    def tos(self):
+        """The Terms of Service: TOS_PAGES lists of lines (the default if none is stored)."""
+        try:
+            pages = json.loads(self.setting(TOS_KEY, "null"))
+        except ValueError:
+            pages = None
+        if not isinstance(pages, list) or not all(isinstance(p, list) for p in pages):
+            pages = DEFAULT_TOS
+        return tidy_tos(pages)
+
+    def set_tos(self, pages):
+        """Replace the Terms of Service; returns the pages as stored. (Check tos_problem.)"""
+        pages = tidy_tos(pages)
+        with self.conn:
+            self._set_setting(TOS_KEY, json.dumps(pages))
+        return pages
+
+    def set_tos_agreed(self, user_id):
+        with self.conn:
+            self.conn.execute("UPDATE users SET tos_agreed = ? WHERE id = ?",
+                              (int(time.time()), user_id))
+
     def default_role_id(self):
         """The role new accounts get (if that setting is lost: the lowest-level role)."""
         rid = self.setting("default_role")
@@ -616,7 +762,7 @@ class Database:
 
     _USER_SQL = ("SELECT u.id, u.name, u.created, u.role_id, r.name AS role, u.first_name, "
                  "u.last_name, u.email, u.location, u.birthdate, u.about, u.last_login, "
-                 "u.karma FROM users u "
+                 "u.karma, u.tos_agreed FROM users u "
                  "LEFT JOIN roles r ON r.id = u.role_id ")
 
     def user(self, name=None, user_id=None):
