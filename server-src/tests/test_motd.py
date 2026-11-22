@@ -86,6 +86,24 @@ class MotdTest(RolesBase):
         win = await self.editor(c)                      # it opens with the saved lines
         self.assertEqual(win.gadgets[self.area(win)]["lines"], lines)
 
+    async def test_clear_empties_the_editor_only(self):
+        c, dbase = self.alice, self.server.db
+        win = await self.editor(c)
+        self.assertTrue(win.gadgets[self.area(win)]["lines"])
+        await self.do(c, win, "Clear", "Cleared: type the new one. Cancel keeps the old.")
+        self.assertEqual(win.gadgets[self.area(win)]["lines"], [])
+        self.assertEqual(dbase.motd(), db.DEFAULT_MOTD, "Clear doesn't save")
+        c.click_text(WIN_MOTD, "Cancel")                # Cancel: the old message stays
+        await c.wait_for(lambda: WIN_MOTD not in c.windows, "editor closed")
+        self.assertEqual(dbase.motd(), db.DEFAULT_MOTD)
+
+        win = await self.editor(c)                      # Clear, type a new one, Save
+        await self.do(c, win, "Clear", "Cleared: type the new one. Cancel keeps the old.")
+        c.text(WIN_MOTD, self.area(win), ["A fresh start."])
+        c.click_text(WIN_MOTD, "Save")
+        await c.wait_for(lambda: WIN_MOTD not in c.windows, "editor closed")
+        self.assertEqual(dbase.motd(), ["A fresh start."])
+
     async def test_cancel_discards(self):
         c = self.alice
         win = await self.editor(c)
@@ -115,9 +133,10 @@ class MotdTest(RolesBase):
         win = await self.editor(c)
         self.session("alice").perms = frozenset({"chat.use"})
         c.text(WIN_MOTD, gadget_of(win, Kind.EDIT), ["Hacked"])
-        for button in ("Preview", "Save"):
+        for button in ("Clear", "Preview", "Save"):
             c.click_text(WIN_MOTD, button)
-        await c.wait_for(lambda: len(c.alerts) == 2, "2 refusals")
+        await c.wait_for(lambda: len(c.alerts) == 3, "3 refusals")
+        self.assertEqual(win.gadgets[gadget_of(win, Kind.EDIT)]["lines"], ["Hacked"])
         self.assertTrue(all(a == ("Administration", "You don't have permission to do that.")
                             for a in c.alerts), c.alerts)
         self.assertEqual(self.server.db.motd(), db.DEFAULT_MOTD)

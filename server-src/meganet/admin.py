@@ -833,9 +833,10 @@ def motd_for_editor(lines, cols):
 class MotdEditor:
     """One admin's Message of the Day window: the message in an editable text area exactly as
     wide as the welcome window's view, so each line here is a line users see. Preview shows
-    the welcome window with it; Save stores it; Cancel (or the close box) drops the edits."""
+    the welcome window with it; Clear empties the text area (to start a new message: nothing is
+    stored until Save); Save stores it; Cancel (or the close box) drops the edits."""
 
-    W, H = 416, 158
+    W, H = 416, 170              # (171 is the tallest that fits below the menu bar)
     AREA = (8, 14, 400, 118)     # as wide as screens.Screens.MOTD_VIEW (a test checks);
                                  # 14 lines show, it scrolls to 32
 
@@ -856,10 +857,10 @@ class MotdEditor:
                              flags=WFlag.CLOSE | WFlag.MOVABLE, on_close=self._closed)
         win.add(Label(8, 2, 400, 10, "Message of the Day", GFlag.CENTRE))
         self.area = win.add(TextArea(*self.AREA, lines=self.lines))
-        y = self.AREA[1] + self.AREA[3] + 6
-        self.status = win.add(Label(8, y + 3, 168, 10, "Edit, then Save."))
-        add_buttons(win, [("Preview", self._preview, 0), ("Save", self._save, 0),
-                          ("Cancel", self._cancel, 0)], y=y)
+        y = self.AREA[1] + self.AREA[3] + 4
+        self.status = win.add(Label(8, y, 400, 10, "Edit, then Save."))
+        add_buttons(win, [("Clear", self._clear, 0), ("Preview", self._preview, 0),
+                          ("Save", self._save, 0), ("Cancel", self._cancel, 0)], y=y + 14)
         self.win = win
         win.show(self.session)
 
@@ -882,6 +883,13 @@ class MotdEditor:
         return self.lines
 
     # ---- handlers ----
+
+    @guarded(perms.ADMIN_MOTD)
+    def _clear(self, button):
+        self.lines = []
+        self.area.set_lines([])
+        self.area.focus()
+        self.say("Cleared: type the new one. Cancel keeps the old.")
 
     @guarded(perms.ADMIN_MOTD)
     def _preview(self, button):
