@@ -13,6 +13,8 @@ server-src/data/
 server-src/filelibs/
 # the Art Gallery's pictures (uploads)
 server-src/galleries/
+# the SID Music libraries' tunes (uploads and what the sysop puts there)
+server-src/sidlibs/
 .claude/settings.local.json
 # Personal notes, examples, non-build tools, temp data, the MEGA65 book: never published
 private/

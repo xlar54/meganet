@@ -193,6 +193,28 @@ ASCII. The authoritative list of messages is [`server-src/meganet/protocol.py`](
     most 128, 63 characters each) sent at once and a selection in range; an Edit has room for
     a line, gets only lines that fit its width (at most 32), and `SET_TEXT` on it is always "".
 
+## SID music in the background
+
+SID Music (`server-src/meganet/sidlib.py`) is the File Library for C64 SID tunes; the client
+plays them while everything else carries on (`client-src/sidplay.asm`, `Caps.SID`):
+
+- **The tune's own C64:** it's C64 machine code expecting its own zero page, stack and load
+  address. MAP maps its `$0000`-`$7FFF` to `$52000`, its `$8000`-`$BFFF` and `$E000`-`$FFFF`
+  to `$48000`/`$4E000`, just while it runs; `$C000`-`$DFFF` stays the client's and the I/O. A
+  small routine at `$CF10` maps it in, calls init or play, maps the client back, and puts
+  `$01` and the CIA interrupt masks back.
+- **Timing:** play is called from the frame interrupt (`irq_hook`), 50 or 60 times a second
+  (CIA-timed and NTSC tunes 60) whatever the screen's rate, so a busy main loop doesn't slow
+  the music.
+- **Two SID pairs:** the tune writes the right SIDs (`$D400`); the client's own sounds play
+  on the left ones (`$D440`/`$D460`). A sound pauses the tune: no play calls, and the right
+  SIDs muted in the audio mixer, until the sound has rung out; then it carries on where it
+  stopped. The mixer sends both pairs to both speakers and the headphones.
+- **Safety:** the server only sends tunes that `sidcheck.py` ran in a legal-opcodes 6502 and
+  found well behaved (only their own memory, the SIDs and the CIA timers; every call
+  returning). The 45GS02 runs the 6502's undocumented opcodes as other instructions (MAP, a
+  16-bit stack), so such a tune could crash the client.
+
 ## File transfers and local storage
 
 Raw binary over the same TCP stream, in `FILE_DATA` chunks of up to 1 KB, with a CRC-32 at the

@@ -35,7 +35,7 @@ little-mega-people.
 | `text.asm` | dma | 40 or 80 column text console without the KERNAL: `text_init`, `text_clear`, `text_goto`, `putc`, `puts`, `#PRINT`, `put_hex`, `put_dec`; scrolls by DMA |
 | `palette.asm` | video_fcm | `pal_set`, `pal_set_level` (brightness 0-255), `pal_fade_out` / `pal_fade_in` |
 | `audio.asm` | – | `audio_init` (mixer routing), `audio_play` / `audio_stop` (samples on any channel), `stream_start` / `stream_frame` (long 8-bit or packed 4-bit audio from attic) |
-| `sid.asm` | – | `sid_init`, `sfx_play`, `sfx_frame`: table-driven SID effects; `SID_MIRROR` = a second SID's address sends every write there too, for both speakers |
+| `sid.asm` | – | `sid_init`, `sfx_play`, `sfx_frame`: table-driven SID effects; `SFX_SID` = the SID they play on (default `SID1`, `$D400`), `SID_MIRROR` = a second SID's address that gets every write too. `$D400`/`$D420` are the right SIDs, `$D440`/`$D460` the left (the mixer's sources 1 and 0) |
 | `rtc.asm` | – | `rtc_read`: time and date in binary, 24-hour, validated (handles Xemu's binary month) |
 | `fixed.asm` | – | 16.16 signed fixed point on the 32-bit Q register: `fmul`, `fdiv`, `fsqrt` (exact floor, Newton on the divider), `ppow` (Phong powers); `#MOVQ #ADDQ #SUBQ #NEGQ #FMUL #FDIV`, vector `#VADD #VSUB #VSCALE #DOT`, the Q shifts 64tass lacks (`#ASLQ_Q` ...), compare-and-branch segments (`#BGTQ #BLEQ #BLTQ #BEQZ #BNEZ`), `#ABSQ`, `#DBLQ`, `FX(v)` for tables. Include `lib/fixed_zp.asm` inside the project's base-page block (39 bytes) |
 | `fixtrig.asm` | fixed | `fsin_deg` / `fcos_deg`: sine and cosine of an angle in degrees (16.16), whole degrees from a table and linear in between. `FT_PTR`: a base-page word it may change (default `ptr0`) |

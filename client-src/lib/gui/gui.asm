@@ -5756,10 +5756,13 @@ l_ts_buf:       .fill GUI_TOAST_MAX + 1
 ; icon with the lowest slot is rightmost, and empty slots leave no gap. Icon 1 = an alert
 ; (flashes), 2 = an envelope, 3 = a Wi-Fi fan (connected), 4 = the fan greyed with a red X
 ; (not connected), 5 = a person (a black board-game pawn), 6 = a speech bubble, 7 / 8 / 9 =
-; a green / yellow / dark grey dot with a black edge (a status), 10 = a newspaper. A click
-; gives GE_NOTIFY, ge_val = the slot
+; a green / yellow / dark grey dot with a black edge (a status), 10 = a newspaper, 11 = two
+; beamed music notes (black: playing), 12 = the notes greyed (paused). A click gives
+; GE_NOTIFY, ge_val = the slot
 ;---------------------------------------------------------------------------------------
-GUI_NSLOTS      = 8
+        .weak
+GUI_NSLOTS      = 8                     ; (a program may want more: each takes GUI_NSPACE
+        .endweak                        ; more of the bar when they all show at once)
 GUI_NICON_W     = 22                    ; an icon's width
 GUI_NSPACE      = 24                    ; and the step from one slot to the next (8 of them
                                         ; stay right of a 7-title menu bar)
@@ -5924,6 +5927,10 @@ l_nt_wifi:
         bne +
         lda #<l_nn_bm
         ldx #>l_nn_bm
++       cpy #11                         ; 11, 12: the music notes
+        bcc +
+        lda #<l_nm_bm
+        ldx #>l_nm_bm
 +       sta _px+1
         stx _px+2
         lda #GC_FACE
@@ -6081,22 +6088,65 @@ l_nn_bm:                                ; 10: a newspaper (unread news): a white
         .text "..+#+++#+++#+++++#+.."
         .text "..+###############+.."
         .text "..+++++++++++++++++.."
+l_nm_bm:                                ; 11 / 12: two beamed quavers (music playing / paused)
+        .text "......##########....."
+        .text "......##########....."
+        .text "......#........#....."
+        .text "......#........#....."
+        .text "......#........#....."
+        .text "......#........#....."
+        .text "...####.....####....."
+        .text "..#####....#####....."
+        .text "...###......###......"
 l_nw_cols:      .byte GC_BLACK, GC_SHADOW, GC_BLACK, GC_BLACK      ; icons 3-6's "#"
                 .byte GC_GREEN, GC_YELLOW, GC_DKGREY               ; 7-9
                 .byte GC_WHITE                                     ; 10
+                .byte GC_BLACK, GC_SHADOW                          ; 11, 12
 l_nw_i:         .byte 0
 l_nw_k:         .byte 0
 l_nw_c:         .byte 0
 l_nw_r:         .byte 0
 
-; all the slots: the icons' strip cleared to the bar's face, then each icon
+; all the slots: the icons' strip cleared to the bar's face, then each icon. Only as far left
+; as the icons reach now, or reached last time (a long menu bar's last title may be under
+; slots that are empty)
 l_nt_all:
         jsr d6_clip_all
-        lda #<(635 - (GUI_NSLOTS - 1) * GUI_NSPACE - (GUI_NICON_W - 1))
+        ldx #0                          ; the icons shown
+        ldy #0
+-       lda nt_icon,y
+        beq +
+        inx
++       iny
+        cpy #GUI_NSLOTS
+        bne -
+        txa
+        cmp l_nt_was
+        bcs +
+        lda l_nt_was                    ; (more last time: clear where they were)
++       stx l_nt_was
+        cmp #0
+        bne +
+        jmp _icons                      ; none now or before: nothing to clear
++       sec
+        sbc #1
+        tay                             ; (the strip: 635 - (n - 1) * GUI_NSPACE - 21 .. 635)
+        lda #<(635 - (GUI_NICON_W - 1))
         sta gr_x0
-        lda #>(635 - (GUI_NSLOTS - 1) * GUI_NSPACE - (GUI_NICON_W - 1))
+        lda #>(635 - (GUI_NICON_W - 1))
         sta gr_x0+1
-        lda #<635
+-       cpy #0
+        beq +
+        sec
+        lda gr_x0
+        sbc #GUI_NSPACE
+        sta gr_x0
+        lda gr_x0+1
+        sbc #0
+        sta gr_x0+1
+        dey
+        bra -
++       lda #<635
         sta gr_x1
         lda #>635
         sta gr_x1+1
@@ -6108,7 +6158,7 @@ l_nt_all:
         sta gr_y1
         lda #GC_FACE
         jsr l_gd_fill
-        lda #0
+_icons: lda #0
         sta l_nt_k
 -       lda l_nt_k
         jsr l_nt_draw
@@ -6162,6 +6212,7 @@ l_nt_flash:
 _out:   rts
 
 nt_icon:        .fill GUI_NSLOTS
+l_nt_was:       .byte 0                 ; icons shown at the last l_nt_all
 l_nt_s:         .byte 0
 l_nt_k:         .byte 0
 l_nt_t:         .byte 0

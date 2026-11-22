@@ -142,9 +142,12 @@ left corner).
   slot is rightmost, and empty slots leave no gap. Icon 1 is an alert that flashes red twice
   a second, icon 2 an envelope, icon 3 a Wi-Fi fan (connected), icon 4 the fan greyed with a
   red X (not connected), icon 5 a person (a black pawn), icon 6 a speech bubble, icons
-  7-9 a green / yellow / dark grey dot, icon 10 a newspaper, and 0 removes it. There are 8
-  slots (0-7, `GUI_NSLOTS`), 24 pixels apart. A click gives `GE_NOTIFY` with `ge_val` = the
-  slot.
+  7-9 a green / yellow / dark grey dot, icon 10 a newspaper, icon 11 two beamed music notes
+  and icon 12 the notes greyed (paused), and 0 removes it. There are 8 slots by default
+  (`GUI_NSLOTS`, a `.weak` a program can raise: MegaNet has 9), 24 pixels apart. Redrawing
+  them clears the bar only as far left as the icons reach (now or last time), so a long menu
+  bar's last title isn't wiped under empty slots. A click gives `GE_NOTIFY` with `ge_val` =
+  the slot.
 - **Scroll bars:** every list and text view has a Windows 95 scroll bar on its right, 11 pixels
   wide.
   - The arrows scroll a row and the track a page. The thumb shows how much is visible

@@ -69,6 +69,7 @@ login_open:
         ; (fall through)
 ; the Connect window
 open_connect:
+        jsr sdp_stop                     ; (signed off or cut off: no SID tune now)
         lda #LS_CONNECT
         sta login_state
         lda #CW

@@ -196,6 +196,8 @@ class FakeClient:
         self.toasts = []         # (seconds, slot or None, text)
         self.broadcasts = []     # (seconds, text)
         self.sounds = []         # S.SOUND numbers, in order
+        self.sid = None          # the SID tune playing (S.SID_PLAY's fields + its data)
+        self.sids = []           # every S.SID_PLAY
         self.login_results = []  # (ok, message)
         self.hello = None        # (version, session id)
         self.update = None       # (build, nfiles, message)
@@ -513,6 +515,20 @@ class FakeClient:
                 self.events.append(("icon", slot))
         elif t == S.SOUND:
             self.sounds.append(r.u8())
+        elif t == S.SID_PLAY:
+            assert self.caps & Caps.SID, "S.SID_PLAY for a client without Caps.SID"
+            sid = dict(slot=r.u8(), load=r.u16(), length=r.u16(), init=r.u16(), play=r.u16(),
+                       song=r.u8(), rate=r.u8())
+            data = self.resources.get(sid["slot"])
+            assert data is not None, "S.SID_PLAY before its resource"
+            sid["data"] = bytes(data[:sid["length"]])
+            self.sid = sid
+            self.sids.append(sid)
+        elif t == S.SID_STOP:
+            self.sid = None
+        elif t == S.SID_PAUSE:
+            assert self.sid is not None, "S.SID_PAUSE with no tune playing"
+            self.sid["paused"] = bool(r.u8())
         elif t == S.BROADCAST:
             secs, text = r.u8(), r.str()
             assert len(text) <= BROADCAST_MAX, "broadcast too long for the row"
@@ -602,7 +618,8 @@ class FakeClient:
             assert len(values) == n and first + n <= len(g["cells"]), "CELLS out of range"
             g["cells"][first:first + n] = list(values)
         elif t == S.RESOURCE:
-            assert self.caps & Caps.GRID, "a RESOURCE for a client without Caps.GRID"
+            assert self.caps & (Caps.GRID | Caps.SID), \
+                "a RESOURCE for a client without Caps.GRID or Caps.SID (a SID tune's data)"
             slot, offset = r.u8(), r.u16()
             data = r.rest()
             assert slot < RESOURCE_SLOTS and len(data) <= RESOURCE_CHUNK

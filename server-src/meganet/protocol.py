@@ -63,7 +63,8 @@ MENU_MY_ACCOUNT = 0x22
 # icon. The hint (at most NOTIFY_HINT_MAX characters) is a short text the client may show.
 # C.NOTIFY_CLICK (u8 slot) says the user clicked that slot's icon; the client leaves the icon
 # there, and the server sends icon 0 when it's done with it. The server's slots:
-NOTIFY_SLOTS = 7          # (clients from before the newspaper have 6: they ignore slot 6)
+NOTIFY_SLOTS = 8          # (clients from before the newspaper have 6, before SID Music 7:
+                          # they ignore the slots they don't have)
 NOTIFY_HINT_MAX = 40
 SLOT_STATUS = 0          # your status, always shown: a green / yellow / dark grey dot
 SLOT_PAGE = 1            # a user is paging the admins (admins only)
@@ -72,6 +73,7 @@ SLOT_MAIL = 3            # unread private messages
 SLOT_NEW_USER = 4        # users still in the default role (admins with admin.users only)
 SLOT_IM = 5              # instant messages not read yet
 SLOT_NEWS = 6            # unread news bulletins (news.py)
+SLOT_MUSIC = 7           # a SID tune playing or paused (sidlib.py): Now Playing
 TOAST_NO_SLOT = 0xFF
 
 
@@ -95,6 +97,8 @@ class Icon(IntEnum):
     AWAY = 8             # yellow
     OFFLINE = 9          # dark grey
     NEWS = 10            # a folded newspaper: unread news
+    NOTE = 11            # two beamed music notes: a SID tune playing (SLOT_MUSIC)
+    NOTE_PAUSED = 12     # the notes greyed: paused
 
 
 class S(IntEnum):
@@ -191,6 +195,12 @@ class S(IntEnum):
     SPRITE_MOVE = 0x33   # u8 n, s16 dx, s16 dy, u8 frames, u8 hide: it moves (dx, dy) a frame
                          # (8.8 fixed point) for `frames` frames, then goes if hide is 1
     SPRITE_OFF = 0x34    # u8 n ($FF: all): gone
+    SID_PLAY = 0x35      # u8 slot, u16 load, u16 length, u16 init, u16 play, u8 song (0-based),
+                         # u8 rate (play calls a second: 50 or 60)  (Caps.SID: the C64 data of
+                         # a checked PSID tune is in the resource slot; the client plays it in
+                         # the background, pausing while its own sounds play: sidplay.asm)
+    SID_STOP = 0x36      # (nothing)  the tune stops
+    SID_PAUSE = 0x37     # u8 paused (1: hold it where it is, its SIDs muted; 0: carry on)
     CANVAS_PEN = 0x31    # u8 mode (CanvasPen), u8 colour (a palette entry), u8 size (1-16):
                          # what the client draws at once while the mouse is held, before the
                          # server's CANVAS_RECT comes
@@ -374,6 +384,7 @@ class Caps(IntFlag):
     PICTURE = 16         # S.PICTURE / PICTURE_END / RESOURCE_PACKED, C.PIC_KEY (Art Gallery)
     CANVAS = 32          # S.CANVAS / CANVAS_END / CANVAS_RECT / CANVAS_PEN, C.CANVAS (Paint)
     SPRITES = 64         # S.SPRITE / SPRITE_MOVE / SPRITE_OFF (One's flying cards)
+    SID = 128            # S.SID_PLAY / SID_STOP: SID tunes in the background (SID Music)
 
 
 class Local(IntEnum):

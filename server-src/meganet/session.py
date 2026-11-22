@@ -35,8 +35,11 @@ from .protocol import (TOAST_NO_SLOT, clean_text, S, C, Writer, Deframer, Protoc
 log = logging.getLogger("meganet")
 
 RING_GAP = 3.0               # seconds: a burst of messages rings once (ring)
+SID_SLOT = 10                # the resource slot a SID tune goes in (1 chess, 2-7 the Art
+                             # Gallery, 8 One, 9 poker)
 
-FIRST_DYNAMIC_WIN = 0x40     # ids below this are the fixed screens in screens.py
+FIRST_DYNAMIC_WIN = 0x50     # ids below this are the fixed screens in screens.py
+                             # ($40-$47: SID Music, sidlib.py)
 WIN_LOADING_RES = 55         # "Loading Chess": a resource coming (send_resource)
 
 # What the sign-up wizard's window may send before sign-on (each starts with u8 win)
@@ -75,6 +78,8 @@ class Session:
         self.active_minutes = 0      # towards the bank's "hour online" (bank.check_online)
         self.status = "available"    # Status menu: available / away / offline (presence.py)
         self.ring_away = True        # My Account's "Ring when I'm Away" (ring())
+        self.sid_playing = None      # (key, song) of the SID tune it's playing (play_sid)
+        self.sid_now = None          # and what SID Music says about it (sidlib.py)
         self.last_ring = -RING_GAP
         self.auto_away = False       # away because of no activity (back with the next one)
         self.last_active = time.time()   # the last message that wasn't a PING
@@ -184,7 +189,7 @@ class Session:
         self.sound(Sound.DOORBELL)
         return True
 
-    def send_resource(self, slot, key, data, title=None):
+    def send_resource(self, slot, key, data, title=None, what="the game's pictures"):
         """Put `data` (at most RESOURCE_SIZE bytes: a grid's tiles, say) in the client's
         resource slot `slot` (S.RESOURCE, RESOURCE_CHUNK at a time; S.RESOURCE_PACKED to
         Caps.PICTURE clients, which unpack PackBits), unless this connection
@@ -202,7 +207,7 @@ class Session:
             from .ui import Window, Label, Progress, MARGIN
             win = Window.centred("Loading %s" % title, 260, 40, win_id=WIN_LOADING_RES,
                                  flags=WFlag.MODAL)
-            win.add(Label(MARGIN, 4, 260 - 2 * MARGIN, 10, "Loading the game's pictures..."))
+            win.add(Label(MARGIN, 4, 260 - 2 * MARGIN, 10, "Loading %s..." % what))
             bar = win.add(Progress(MARGIN, 20, 260 - 2 * MARGIN))
             win.show(self)
         packed = bool(self.caps & Caps.PICTURE)  # (clients that unpack: about a third)
@@ -266,6 +271,34 @@ class Session:
         """S.SPRITE_OFF: sprite n gone (0xFF: all)."""
         if self.caps & Caps.SPRITES:
             self.send(S.SPRITE_OFF, Writer().u8(n))
+
+    # ---- SID tunes (Caps.SID): played by the client in the background ----
+
+    def play_sid(self, psid, song, key):
+        """Play song `song` (0-based) of a checked tune (sidcheck.parse + check): its C64
+        data to SID_SLOT (`key` names it: sent again only if it changed), then S.SID_PLAY.
+        CIA-timed songs and NTSC ones play 60 times a second, the rest 50. False for a client
+        without Caps.SID."""
+        if not self.caps & Caps.SID:
+            return False
+        self.send_resource(SID_SLOT, key, psid.data, title="Music", what="the music")
+        rate = 60 if psid.speeds[song] == "cia" or psid.clock == "NTSC" else 50
+        self.send(S.SID_PLAY, Writer().u8(SID_SLOT).u16(psid.load).u16(len(psid.data))
+                  .u16(psid.init).u16(psid.play).u8(song).u8(rate))
+        self.sid_playing = (key, song)
+        return True
+
+    def stop_sid(self):
+        if self.caps & Caps.SID and self.sid_playing is not None:
+            self.send(S.SID_STOP)
+        self.sid_playing = None
+
+    def pause_sid(self, paused):
+        """Hold the tune where it is (its SIDs muted), or let it carry on."""
+        if self.caps & Caps.SID and self.sid_playing is not None:
+            self.send(S.SID_PAUSE, Writer().u8(1 if paused else 0))
+            return True
+        return False
 
     def fly(self, window, slot, offset, w, h, start, end, frames, colours, step=1, n=0):
         """A picture flies from `start` to `end` in `frames` frames, then goes: sprite_show

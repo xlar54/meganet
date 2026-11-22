@@ -241,6 +241,36 @@ CREATE TABLE IF NOT EXISTS library_files (
     downloads   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS library_files_library ON library_files (library_id);
+CREATE TABLE IF NOT EXISTS sid_libraries (       -- SID Music (sidlib.py): as libraries, under
+    id           INTEGER PRIMARY KEY,           -- the server's sidlibs/ folder
+    title        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    folder       TEXT NOT NULL UNIQUE,
+    description  TEXT NOT NULL DEFAULT '',
+    auto_approve INTEGER NOT NULL DEFAULT 1,
+    created      INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sid_access (
+    library_id   INTEGER NOT NULL REFERENCES sid_libraries(id),
+    role_id      INTEGER NOT NULL REFERENCES roles(id),
+    can_see      INTEGER NOT NULL,
+    can_download INTEGER NOT NULL,              -- (listen)
+    can_upload   INTEGER NOT NULL,
+    PRIMARY KEY (library_id, role_id)
+);
+CREATE TABLE IF NOT EXISTS sid_files (           -- each a checked PSID tune (sidcheck.py)
+    id          INTEGER PRIMARY KEY,
+    library_id  INTEGER NOT NULL REFERENCES sid_libraries(id),
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL,                  -- SID
+    description TEXT NOT NULL DEFAULT '',
+    path        TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    uploader    INTEGER REFERENCES users(id),
+    added       INTEGER NOT NULL,
+    approved    INTEGER NOT NULL DEFAULT 1,
+    downloads   INTEGER NOT NULL DEFAULT 0      -- (plays)
+);
+CREATE INDEX IF NOT EXISTS sid_files_library ON sid_files (library_id);
 CREATE TABLE IF NOT EXISTS galleries (           -- the Art Gallery (gallery/)
     id           INTEGER PRIMARY KEY,
     title        TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -290,6 +320,10 @@ FIRST_USER_KARMA = 100           # the very first account (the Sysop)
 PROFILE_MAX = 63
 ABOUT_LINES = 8
 # Columns added to users after the first release: (name, SQL type and default)
+# a kind of library: its (libraries, access, files) tables
+LIBRARY_TABLES = {"files": ("libraries", "library_access", "library_files"),
+                  "sid": ("sid_libraries", "sid_access", "sid_files")}
+
 USER_COLUMNS = [("role_id", "INTEGER REFERENCES roles(id)"),
                 ("email", "TEXT NOT NULL DEFAULT ''"),
                 ("location", "TEXT NOT NULL DEFAULT ''"),
@@ -1207,115 +1241,139 @@ class Database:
 
     # ---- file libraries (filelib.py) ----
 
-    _LIB_SQL = ("SELECT l.id, l.title, l.folder, l.description, l.auto_approve, l.created, "
-                "(SELECT COUNT(*) FROM library_files f WHERE f.library_id = l.id "
-                " AND f.approved) AS files, "
-                "(SELECT COUNT(*) FROM library_files f WHERE f.library_id = l.id "
-                " AND NOT f.approved) AS held FROM libraries l ")
+    # File libraries (filelib.py, kind "files") and SID libraries (sidlib.py, kind "sid"):
+    # the same three tables each, LIBRARY_TABLES[kind].
 
-    def libraries(self):
+    @staticmethod
+    def _lib_tables(kind):
+        try:
+            return LIBRARY_TABLES[kind]
+        except KeyError:
+            raise ValueError("no library kind %r" % (kind,)) from None
+
+    def _lib_sql(self, kind):
+        libs, _, files = self._lib_tables(kind)
+        return ("SELECT l.id, l.title, l.folder, l.description, l.auto_approve, l.created, "
+                "(SELECT COUNT(*) FROM %s f WHERE f.library_id = l.id AND f.approved) AS files, "
+                "(SELECT COUNT(*) FROM %s f WHERE f.library_id = l.id AND NOT f.approved) "
+                "AS held FROM %s l " % (files, files, libs))
+
+    def libraries(self, kind="files"):
         """Every library (id, title, folder, description, auto_approve, created, files: approved
         ones, held: waiting for a moderator), sorted by title."""
-        return self.conn.execute(self._LIB_SQL + "ORDER BY l.title COLLATE NOCASE").fetchall()
+        return self.conn.execute(self._lib_sql(kind)
+                                 + "ORDER BY l.title COLLATE NOCASE").fetchall()
 
-    def library(self, library_id):
-        return self.conn.execute(self._LIB_SQL + "WHERE l.id = ?", (library_id,)).fetchone()
+    def library(self, library_id, kind="files"):
+        return self.conn.execute(self._lib_sql(kind) + "WHERE l.id = ?",
+                                 (library_id,)).fetchone()
 
-    def create_library(self, title, folder, description="", auto_approve=True):
+    def create_library(self, title, folder, description="", auto_approve=True, kind="files"):
         """A new library; its id, or None if the title (any case) or the folder is taken."""
+        libs = self._lib_tables(kind)[0]
         try:
             with self.conn:
                 cur = self.conn.execute(
-                    "INSERT INTO libraries (title, folder, description, auto_approve, created) "
-                    "VALUES (?, ?, ?, ?, ?)", (title, folder, description,
-                                               1 if auto_approve else 0, int(time.time())))
+                    "INSERT INTO %s (title, folder, description, auto_approve, created) "
+                    "VALUES (?, ?, ?, ?, ?)" % libs,
+                    (title, folder, description, 1 if auto_approve else 0, int(time.time())))
             return cur.lastrowid
         except sqlite3.IntegrityError:
             return None
 
-    def update_library(self, library_id, title, folder, description, auto_approve):
+    def update_library(self, library_id, title, folder, description, auto_approve, kind="files"):
         """Returns None, or why not."""
+        libs = self._lib_tables(kind)[0]
         try:
             with self.conn:
-                self.conn.execute("UPDATE libraries SET title = ?, folder = ?, description = ?, "
-                                  "auto_approve = ? WHERE id = ?",
+                self.conn.execute("UPDATE %s SET title = ?, folder = ?, description = ?, "
+                                  "auto_approve = ? WHERE id = ?" % libs,
                                   (title, folder, description, 1 if auto_approve else 0,
                                    library_id))
             return None
         except sqlite3.IntegrityError:
             return "There is already a library called %s (or using its folder)." % title
 
-    def delete_library(self, library_id):
+    def delete_library(self, library_id, kind="files"):
         """The library's rows: its file entries and access rows (not the files themselves)."""
+        libs, access, files = self._lib_tables(kind)
         with self.conn:
-            self.conn.execute("DELETE FROM library_files WHERE library_id = ?", (library_id,))
-            self.conn.execute("DELETE FROM library_access WHERE library_id = ?", (library_id,))
-            self.conn.execute("DELETE FROM libraries WHERE id = ?", (library_id,))
+            self.conn.execute("DELETE FROM %s WHERE library_id = ?" % files, (library_id,))
+            self.conn.execute("DELETE FROM %s WHERE library_id = ?" % access, (library_id,))
+            self.conn.execute("DELETE FROM %s WHERE id = ?" % libs, (library_id,))
 
-    def library_access(self, library_id):
+    def library_access(self, library_id, kind="files"):
         """{role_id: (see, download, upload)} for the roles set for this library. A role that
         isn't there may do all three (as far as its permissions allow)."""
+        access = self._lib_tables(kind)[1]
         return {row["role_id"]: (bool(row["can_see"]), bool(row["can_download"]),
                                  bool(row["can_upload"]))
                 for row in self.conn.execute(
-                    "SELECT role_id, can_see, can_download, can_upload FROM library_access "
-                    "WHERE library_id = ?", (library_id,))}
+                    "SELECT role_id, can_see, can_download, can_upload FROM %s "
+                    "WHERE library_id = ?" % access, (library_id,))}
 
-    def set_library_access(self, library_id, access):
+    def set_library_access(self, library_id, access, kind="files"):
         """Replace the library's rows: {role_id: (see, download, upload)}; downloading or
         uploading implies seeing it."""
+        table = self._lib_tables(kind)[1]
         with self.conn:
-            self.conn.execute("DELETE FROM library_access WHERE library_id = ?", (library_id,))
+            self.conn.execute("DELETE FROM %s WHERE library_id = ?" % table, (library_id,))
             for role_id, (see, down, up) in access.items():
-                self.conn.execute("INSERT INTO library_access VALUES (?, ?, ?, ?, ?)",
+                self.conn.execute("INSERT INTO %s VALUES (?, ?, ?, ?, ?)" % table,
                                   (library_id, role_id, 1 if see or down or up else 0,
                                    1 if down else 0, 1 if up else 0))
 
-    _FILE_SQL = ("SELECT f.id, f.library_id, f.name, f.type, f.description, f.path, f.size, "
-                 "f.uploader, COALESCE(u.name, '') AS uploader_name, f.added, f.approved, "
-                 "f.downloads FROM library_files f LEFT JOIN users u ON u.id = f.uploader ")
+    def _file_sql(self, kind):
+        return ("SELECT f.id, f.library_id, f.name, f.type, f.description, f.path, f.size, "
+                "f.uploader, COALESCE(u.name, '') AS uploader_name, f.added, f.approved, "
+                "f.downloads FROM %s f LEFT JOIN users u ON u.id = f.uploader "
+                % self._lib_tables(kind)[2])
 
-    def library_files(self, library_id, held=False):
+    def library_files(self, library_id, held=False, kind="files"):
         """A library's files, by name; `held`: those waiting for a moderator too."""
         return self.conn.execute(
-            self._FILE_SQL + "WHERE f.library_id = ? %s ORDER BY f.name COLLATE NOCASE, f.id"
-            % ("" if held else "AND f.approved"), (library_id,)).fetchall()
+            self._file_sql(kind) + "WHERE f.library_id = ? %s ORDER BY f.name COLLATE NOCASE, "
+            "f.id" % ("" if held else "AND f.approved"), (library_id,)).fetchall()
 
-    def library_file(self, file_id):
-        return self.conn.execute(self._FILE_SQL + "WHERE f.id = ?", (file_id,)).fetchone()
+    def library_file(self, file_id, kind="files"):
+        return self.conn.execute(self._file_sql(kind) + "WHERE f.id = ?", (file_id,)).fetchone()
 
-    def library_file_by_path(self, library_id, path):
-        return self.conn.execute(self._FILE_SQL + "WHERE f.library_id = ? AND f.path = ?",
+    def library_file_by_path(self, library_id, path, kind="files"):
+        return self.conn.execute(self._file_sql(kind) + "WHERE f.library_id = ? AND f.path = ?",
                                  (library_id, path)).fetchone()
 
     def add_library_file(self, library_id, name, ftype, description, path, size,
-                         uploader=None, approved=True):
+                         uploader=None, approved=True, kind="files"):
         with self.conn:
             cur = self.conn.execute(
-                "INSERT INTO library_files (library_id, name, type, description, path, size, "
-                "uploader, added, approved) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO %s (library_id, name, type, description, path, size, "
+                "uploader, added, approved) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                % self._lib_tables(kind)[2],
                 (library_id, name, ftype, description, path, size, uploader, int(time.time()),
                  1 if approved else 0))
         return cur.lastrowid
 
-    def update_library_file(self, file_id, name, ftype, description, path, size):
+    def update_library_file(self, file_id, name, ftype, description, path, size, kind="files"):
         with self.conn:
-            self.conn.execute("UPDATE library_files SET name = ?, type = ?, description = ?, "
-                              "path = ?, size = ? WHERE id = ?",
+            self.conn.execute("UPDATE %s SET name = ?, type = ?, description = ?, "
+                              "path = ?, size = ? WHERE id = ?" % self._lib_tables(kind)[2],
                               (name, ftype, description, path, size, file_id))
 
-    def approve_library_file(self, file_id):
+    def approve_library_file(self, file_id, kind="files"):
         with self.conn:
-            self.conn.execute("UPDATE library_files SET approved = 1 WHERE id = ?", (file_id,))
+            self.conn.execute("UPDATE %s SET approved = 1 WHERE id = ?"
+                              % self._lib_tables(kind)[2], (file_id,))
 
-    def delete_library_file(self, file_id):
+    def delete_library_file(self, file_id, kind="files"):
         with self.conn:
-            self.conn.execute("DELETE FROM library_files WHERE id = ?", (file_id,))
-
-    def count_download(self, file_id):
-        with self.conn:
-            self.conn.execute("UPDATE library_files SET downloads = downloads + 1 WHERE id = ?",
+            self.conn.execute("DELETE FROM %s WHERE id = ?" % self._lib_tables(kind)[2],
                               (file_id,))
+
+    def count_download(self, file_id, kind="files"):
+        """(A SID library counts plays here.)"""
+        with self.conn:
+            self.conn.execute("UPDATE %s SET downloads = downloads + 1 WHERE id = ?"
+                              % self._lib_tables(kind)[2], (file_id,))
 
     # ---- the Art Gallery (gallery/) ----
 

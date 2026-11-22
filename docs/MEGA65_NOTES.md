@@ -495,7 +495,9 @@ The multiplier's output is live: `MULTOUT` changes as soon as an input does. To 
 
 - SID registers are write-only (peeks read `$FF`).
 - Frequency tables must be computed for the PAL clock.
-- For stereo, mirror voices: SID 1 to SID 2 and SID 3 to SID 4, so every part sounds in both speakers [?: this assumes the default mixer pans the SID pairs to opposite sides].
+- **Which SIDs are where** (book, I/O map and appendix V): `$D400` and `$D420` are the **right** SIDs, `$D440` and `$D460` the **left** ones (mirrored again at `$D480`-`$D4FF`). The mixer has one source for each pair: source 0 = left SIDs, source 1 = right SIDs. So mirroring SID 1 to SID 2 doesn't give stereo by itself: both are right SIDs. Route the pair to both outputs in the mixer instead (registers `0*32+2`, `1*32+2`, `6*32+2`, `7*32+2` for the right pair), or mirror a right SID to a left one.
+- **Two things at once:** keep music on one pair and sound effects on the other (MegaNet: a C64 tune on the right SIDs, its own sounds on the left), then each can be paused or muted on its own: a source's coefficients at 0 mute that pair without touching its registers, so a paused tune carries on exactly where it stopped.
+- **Running a C64 SID tune (PSID) on the 45GS02:** give it its own memory with MAP (MegaNet's `client-src/sidplay.asm`: tune `$0000`-`$7FFF` -> `$52000`, `$8000`-`$BFFF` and `$E000`-`$FFFF` -> `$48000`/`$4E000`; block 6 unmapped so the I/O and a call routine at `$CFxx` stay put), set `$01 = $35` before every call as a PSID player does, and put the CIA interrupt masks back after. The 6502's undocumented opcodes are other instructions on the 45GS02 (`$5C` is MAP, `$03` SEE), so check tunes first: `server-src/meganet/sidcheck.py` runs one in a legal-opcodes 6502 and refuses anything else. `JMP ($xxFF)` differs too: the 65CE02 doesn't wrap within the page.
 
 ---
 

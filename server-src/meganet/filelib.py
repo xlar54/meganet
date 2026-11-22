@@ -150,16 +150,60 @@ def tidy_lines(lines, n=DESC_LINES):
     return out
 
 
+class LibraryDB:
+    """The database as one kind of library sees it: the library methods (db.py) with `kind`
+    filled in; everything else as it is."""
+    METHODS = frozenset((
+        "libraries", "library", "create_library", "update_library", "delete_library",
+        "library_access", "set_library_access", "library_files", "library_file",
+        "library_file_by_path", "add_library_file", "update_library_file",
+        "approve_library_file", "delete_library_file", "count_download"))
+
+    def __init__(self, db, kind):
+        self._db, self._kind = db, kind
+
+    def __getattr__(self, name):
+        attr = getattr(self._db, name)
+        if name in self.METHODS:
+            kind = self._kind
+            return lambda *a, **kw: attr(*a, kind=kind, **kw)
+        return attr
+
+
 class FileLibrary:
+    """Areas > File Library. Its settings are class attributes, so another kind of library
+    (sidlib.py: SID Music) is a subclass with its own."""
+    KIND = "files"                       # the database's tables (db.LIBRARY_TABLES)
+    TITLE = "File Library"
+    NOUN = "file libraries"              # ("There are no file libraries yet.")
+    ROOT_ATTR = "filelibs_dir"           # the server's folder for them, and its name
+    ROOT_NAME = "filelibs"
+    SEE, UPLOAD, MODERATE = SEE, UPLOAD, MODERATE
+    (WIN_FILES, WIN_LIB_EDIT, WIN_FILE_EDIT, WIN_DOWNLOAD, WIN_TRANSFER, WIN_UPLOAD, WIN_ACCESS,
+     WIN_DELETE) = (WIN_FILES, WIN_LIB_EDIT, WIN_FILE_EDIT, WIN_DOWNLOAD, WIN_TRANSFER,
+                    WIN_UPLOAD, WIN_ACCESS, WIN_DELETE)
+    TYPES = TYPES                        # Add File / Edit File's types
+    ACCESS_LABELS = ("See", "Download", "Upload")
+    UPLOAD_SD = True                     # uploads from the SD card too (disk images)
+    SD_HINT = "Click a folder to open it, or an image to send it."
+
+    def sd_wanted(self, kind, name):
+        """Which SD card files the Upload window lists (`kind` Local, `name` 8.3)."""
+        return kind in (Local.D64, Local.D81)
+    BROWSER = None                       # its window's class (None: Browser)
+
     def __init__(self, server):
         self.server = server
-        self.root = server.filelibs_dir
+        self.root = getattr(server, self.ROOT_ATTR)
         os.makedirs(self.root, exist_ok=True)
         self.browsers = {}               # session -> Browser
+        self._db = None
 
     @property
     def db(self):
-        return self.server.db
+        if self._db is None or self._db._db is not self.server.db:
+            self._db = LibraryDB(self.server.db, self.KIND)
+        return self._db
 
     # ---- paths on the server ----
 
@@ -186,15 +230,32 @@ class FileLibrary:
 
     # ---- who may do what ----
 
-    @staticmethod
-    def moderator(session):
-        return session.can(MODERATE)
+    def moderator(self, session):
+        return session.can(self.MODERATE)
+
+    # ---- what a library takes (another kind of library checks more) ----
+
+    def upload_type(self, kind):
+        """The type an upload of `kind` (Local) is kept as."""
+        return TYPE_OF[kind]
+
+    def data_problem(self, data):
+        """None if `data` (an upload, or a file Add File points at) may go in; else why not."""
+        return None
+
+    CHECKING = None                      # what to say while check_data works (None: at once)
+
+    def check_data(self, data, then):
+        """Check `data` (data_problem), then call then(problem). Here at once; a library whose
+        check is slow does it elsewhere and calls back later (sidlib.py), so `then` must
+        look again at whatever may have changed meanwhile."""
+        then(self.data_problem(data))
 
     def _row(self, session, lib):
         return self.db.library_access(lib["id"]).get(session.role_id, (True, True, True))
 
     def can_see(self, session, lib):
-        if lib is None or not session.can(SEE):
+        if lib is None or not session.can(self.SEE):
             return False
         return self.moderator(session) or self._row(session, lib)[0]
 
@@ -203,7 +264,7 @@ class FileLibrary:
                                                 or self._row(session, lib)[1])
 
     def can_upload(self, session, lib):
-        return (self.can_see(session, lib) and session.can(UPLOAD)
+        return (self.can_see(session, lib) and session.can(self.UPLOAD)
                 and (self.moderator(session) or self._row(session, lib)[2]))
 
     def may_see_file(self, session, f):
@@ -215,9 +276,9 @@ class FileLibrary:
     # ---- opening, and keeping everyone's windows in step ----
 
     def open(self, session):
-        if not session.can(SEE):
-            return refuse(session, TITLE, SEE)
-        b = self.browsers.get(session) or Browser(self, session)
+        if not session.can(self.SEE):
+            return refuse(session, self.TITLE, self.SEE)
+        b = self.browsers.get(session) or (self.BROWSER or Browser)(self, session)
         b.view, b.lib_id, b.file_id = "libs", None, None
         return b.show()
 
@@ -228,12 +289,12 @@ class FileLibrary:
     def permissions_changed(self, session):
         st = getattr(session, "storage", None)
         job = st.job if st is not None else None
-        if job is not None and not session.can(UPLOAD if isinstance(job, Upload) else SEE):
+        if job is not None and not session.can(self.UPLOAD if isinstance(job, Upload) else self.SEE):
             job.stop("Stopped: your account can't do that now.")
         b = self.browsers.get(session)
         if b is None:
             return
-        if not session.can(SEE):
+        if not session.can(self.SEE):
             b.close()
         else:
             b.show()                     # (the moderator buttons may come or go)
@@ -246,7 +307,7 @@ class FileLibrary:
 
     def tell_moderators(self, text):
         for s in self.server.sessions:
-            if s.user is not None and not s.closed and s.can(MODERATE):
+            if s.user is not None and not s.closed and s.can(self.MODERATE):
                 s.toast(text, 8)
 
 
@@ -404,8 +465,8 @@ class Browser:
 
     def close(self):
         self.files.browsers.pop(self.session, None)
-        for win_id in (WIN_LIB_EDIT, WIN_FILE_EDIT, WIN_DOWNLOAD, WIN_UPLOAD, WIN_ACCESS,
-                       WIN_DELETE, WIN_FILES):
+        for win_id in (self.files.WIN_LIB_EDIT, self.files.WIN_FILE_EDIT, self.files.WIN_DOWNLOAD, self.files.WIN_UPLOAD, self.files.WIN_ACCESS,
+                       self.files.WIN_DELETE, self.files.WIN_FILES):
             win = self.session.windows.get(win_id)
             if win is not None:
                 win.close()
@@ -425,8 +486,8 @@ class Browser:
         if self.view == "files" and not self.files.can_see(self.session, lib):
             self.view, self.lib_id = "libs", None
             lib = None
-        title = TITLE if self.view == "libs" else "%s: %s" % (TITLE, lib["title"])
-        a = AreaWindow(title, WIN_FILES, on_close=self._closed)
+        title = self.files.TITLE if self.view == "libs" else "%s: %s" % (self.files.TITLE, lib["title"])
+        a = AreaWindow(title, self.files.WIN_FILES, on_close=self._closed)
         win = self.win = a.win
         getattr(self, "_show_" + self.view)(a, lib, status)
         self.buttons()
@@ -477,7 +538,7 @@ class Browser:
         if self.view == "libs":
             n = len(self.libs)
             if not n:
-                return "There are no file libraries yet."
+                return "There are no %s yet." % self.files.NOUN
             return "%d librar%s." % (n, "y" if n == 1 else "ies")
         held = lib["held"] if self.mod else 0
         return "%s: %s%s" % (lib["title"], plural(lib["files"], "file"),
@@ -531,7 +592,7 @@ class Browser:
                           a.command("Access...", self._access)]
         if status is None:
             status = "Pick a library and Open it." if rows else (
-                "New... makes one." if self.mod else "There are no file libraries yet.")
+                "New... makes one." if self.mod else "There are no %s yet." % self.files.NOUN)
         self.status = a.status(status)
 
     # a library's files
@@ -578,8 +639,8 @@ class Browser:
     # ---- handlers: everyone ----
 
     def _ok(self):
-        if not self.session.can(SEE):
-            refuse(self.session, TITLE, SEE)
+        if not self.session.can(self.files.SEE):
+            refuse(self.session, self.files.TITLE, self.files.SEE)
             self.close()
             return False
         return True
@@ -664,8 +725,8 @@ class Browser:
     # ---- handlers: moderators ----
 
     def _mod_ok(self):
-        if not self.session.can(MODERATE):
-            refuse(self.session, TITLE, MODERATE, MOD_ONLY)
+        if not self.session.can(self.files.MODERATE):
+            refuse(self.session, self.files.TITLE, self.files.MODERATE, MOD_ONLY)
             return False
         return self._ok()
 
@@ -693,11 +754,11 @@ class Browser:
             return None
         n = len(self.db.library_files(lib["id"], held=True))
         win = Window.centred("Delete Library", 400, 62,
-                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_DELETE)
+                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=self.files.WIN_DELETE)
         win.lib_id = lib["id"]
         win.add(Label(8, 4, 384, 10, "Delete %s and its %d file entr%s?" % (
             lib["title"], n, "y" if n == 1 else "ies")))
-        win.add(Label(8, 16, 384, 10, "The folder filelibs/%s stays on the server." % lib["folder"]))
+        win.add(Label(8, 16, 384, 10, "The folder %s/%s stays on the server." % (self.files.ROOT_NAME, lib["folder"])))
         win.add(Label(8, 28, 384, 10, "This can't be undone."))
         add_buttons(win, [("Delete", self._confirm_delete_lib, 0),
                           ("Cancel", closer, GFlag.DEFAULT)], centre=True)
@@ -730,7 +791,7 @@ class Browser:
         access = self.db.library_access(lib["id"])
         h = 30 + 13 * len(roles) + 34
         win = Window.centred("Library Access", 400, h,
-                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_ACCESS)
+                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=self.files.WIN_ACCESS)
         win.lib_id = lib["id"]
         win.add(Label(8, 4, 384, 10, "Who may use %s?" % lib["title"]))
         win.add(Label(8, 18, 160, 10, "Role"))
@@ -739,13 +800,14 @@ class Browser:
             y = 30 + 13 * i
             see, down, up = access.get(r["id"], (True, True, True))
             keys = self.db.role_permissions(r["id"])
-            win.add(Label(8, y + 1, 152, 10, (r["name"] + ("" if SEE in keys else " *"))[:19]))
-            sb = win.add(CheckBox(160, y, 56, 12, "See", see))
-            db_ = win.add(CheckBox(224, y, 88, 12, "Download", down))
-            ub = win.add(CheckBox(320, y, 72, 12, "Upload", up))
+            win.add(Label(8, y + 1, 152, 10, (r["name"] + ("" if self.files.SEE in keys else " *"))[:19]))
+            see_l, down_l, up_l = self.files.ACCESS_LABELS
+            sb = win.add(CheckBox(160, y, 56, 12, see_l, see))
+            db_ = win.add(CheckBox(224, y, 88, 12, down_l, down))
+            ub = win.add(CheckBox(320, y, 72, 12, up_l, up))
             win.boxes.append((r["id"], sb, db_, ub))
         y = 30 + 13 * len(roles) + 2
-        win.add(Label(8, y + 2, 384, 10, "* no file libraries at all (Admin > Roles)"))
+        win.add(Label(8, y + 2, 384, 10, "* no %s at all (Admin > Roles)" % self.files.NOUN))
         add_buttons(win, [("OK", self._access_ok, GFlag.DEFAULT), ("Cancel", closer, 0)],
                     y=y + 16)
         win.show(self.session)
@@ -791,7 +853,7 @@ class Browser:
         if f is None:
             return None
         win = Window.centred("Delete File", 400, 62,
-                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_DELETE)
+                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=self.files.WIN_DELETE)
         win.file_id = f["id"]
         win.add(Label(8, 4, 384, 10, "Delete %s from %s?" % (f["name"], lib["title"])))
         win.remove = win.add(CheckBox(8, 18, 384, 12, ("Delete %s from the server too" % (
@@ -849,7 +911,7 @@ class Browser:
 # ---------------------------------------------------------------------------------------------
 
 class LibraryDialog:
-    """New Library / Edit Library (WIN_LIB_EDIT)."""
+    """New Library / Edit Library (its library's WIN_LIB_EDIT)."""
     W, H = 420, 124
 
     def __init__(self, browser, lib):
@@ -861,12 +923,13 @@ class LibraryDialog:
         lib = self.lib
         win = Window.centred("Edit Library" if lib else "New Library", self.W, self.H,
                              flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE,
-                             win_id=WIN_LIB_EDIT)
+                             win_id=self.b.files.WIN_LIB_EDIT)
         win.add(Label(8, 6, 96, 10, "Title:"))
         self.title = win.add(TextBox(112, 4, 300, 12, lib["title"] if lib else ""))
         win.add(Label(8, 20, 96, 10, "Folder:"))
-        win.add(Label(112, 20, 300, 10, "filelibs/%s" % lib["folder"] if lib else
-                      "filelibs/ and the title (spaces as _)"))
+        root = self.b.files.ROOT_NAME
+        win.add(Label(112, 20, 300, 10, "%s/%s" % (root, lib["folder"]) if lib else
+                      "%s/ and the title (spaces as _)" % root))
         win.add(Label(8, 36, 96, 10, "Description:"))
         self.desc = win.add(TextArea(112, 34, 300, 38,
                                      lib["description"].split("\n") if lib and
@@ -893,16 +956,16 @@ class LibraryDialog:
         other = next((x for x in db.libraries() if x["folder"] == folder
                       and x["id"] != self.lib_id), None)
         if other is not None:
-            return self.status.set_text(("%s already uses filelibs/%s." % (
-                other["title"], folder))[:50])
+            return self.status.set_text(("%s already uses %s/%s." % (
+                other["title"], files.ROOT_NAME, folder))[:50])
         new_path = os.path.join(files.root, folder)
         if self.lib_id is None:
             lib_id = db.create_library(title, folder, desc, self.auto.checked)
             if lib_id is None:
                 return self.status.set_text("There is already a library called %s." % title)
             os.makedirs(new_path, exist_ok=True)
-            b.session.log("new library %s (filelibs/%s)" % (title, folder))
-            done = "Made %s, in filelibs/%s." % (title, folder)
+            b.session.log("new library %s (%s/%s)" % (title, files.ROOT_NAME, folder))
+            done = "Made %s, in %s/%s." % (title, files.ROOT_NAME, folder)
             b.lib_id = lib_id
         else:
             old = db.library(self.lib_id)
@@ -911,7 +974,8 @@ class LibraryDialog:
                 return b.say("That library is gone.")
             old_path = os.path.join(files.root, old["folder"])
             if folder != old["folder"] and os.path.exists(new_path) and os.path.exists(old_path):
-                return self.status.set_text(("filelibs/%s is already on the server." % folder)[:50])
+                return self.status.set_text(("%s/%s is already on the server." % (
+                    files.ROOT_NAME, folder))[:50])
             problem = db.update_library(self.lib_id, title, folder, desc, self.auto.checked)
             if problem:
                 return self.status.set_text(problem[:50])
@@ -923,7 +987,8 @@ class LibraryDialog:
                 db.update_library(self.lib_id, old["title"], old["folder"], old["description"],
                                   old["auto_approve"])
                 return self.status.set_text(("Couldn't rename the folder: %s" % e.strerror)[:50])
-            b.session.log("edited library %s -> %s (filelibs/%s)" % (old["title"], title, folder))
+            b.session.log("edited library %s -> %s (%s/%s)" % (old["title"], title,
+                                                               files.ROOT_NAME, folder))
             done = "Saved %s." % title
         self.win.close()
         files.changed()
@@ -943,17 +1008,19 @@ class FileDialog:
         f = self.f
         win = Window.centred("Edit File" if f else "Add File", self.W, self.H,
                              flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE,
-                             win_id=WIN_FILE_EDIT)
+                             win_id=self.b.files.WIN_FILE_EDIT)
         win.add(Label(8, 6, 96, 10, "Filename:"))
         self.name = win.add(TextBox(112, 4, 6 + 8 * NAME_MAX, 12, f["name"] if f else ""))
         win.add(Label(264, 6, 40, 10, "Type:"))
-        self.type = win.add(DropDown(312, 4, 64, TYPES, TYPES.index(f["type"]) if f else 0))
+        types = self.b.files.TYPES
+        self.type = win.add(DropDown(312, 4, 64, types, types.index(f["type"]) if f else 0))
         win.add(Label(8, 20, 96, 10, "Description:"))
         self.desc = win.add(TextArea(112, 18, 320, 38, f["description"].split("\n")
                                      if f and f["description"] else []))
         win.add(Label(8, 62, 96, 10, "Server Path:"))
         self.path = win.add(TextBox(112, 60, 320, 12, f["path"] if f else ""))
-        win.add(Label(112, 74, 320, 10, ("in filelibs/%s/ on the server" % self.folder)[:40]))
+        win.add(Label(112, 74, 320, 10, ("in %s/%s/ on the server" % (
+            self.b.files.ROOT_NAME, self.folder))[:40]))
         self.status = win.add(Label(8, 88, self.W - 16, 10, ""))
         add_buttons(win, [("OK", self._ok, GFlag.DEFAULT), ("Cancel", closer, 0)])
         self.win = win
@@ -971,12 +1038,14 @@ class FileDialog:
         say = self.status.set_text
         path = tidy_path(clean_text(self.path.value))
         if path is None:
-            return say("The server path is a file inside filelibs/%s/." % lib["folder"][:16])
+            return say("The server path is a file inside %s/%s/." % (
+                b.files.ROOT_NAME, lib["folder"][:16]))
         real = b.files.file_path(lib, path)
         if real is None or not os.path.isfile(real):
-            return say(("There's no file %s in filelibs/%s/." % (path, lib["folder"]))[:52])
+            return say(("There's no file %s in %s/%s/." % (path, b.files.ROOT_NAME,
+                                                         lib["folder"]))[:52])
         size = os.path.getsize(real)
-        ftype = TYPES[self.type.selected or 0]
+        ftype = self.b.files.TYPES[self.type.selected or 0]
         name = clean_text(self.name.value).strip() or os.path.splitext(
             os.path.basename(path))[0].upper()[:NAME_MAX]
         problem = check_cbm_name(name) or check_image(ftype, size)
@@ -985,6 +1054,32 @@ class FileDialog:
         if problem:
             return say(problem[:52])
         desc = "\n".join(tidy_lines(self.desc.lines))
+        same = b.db.library_file_by_path(lib["id"], path)
+        if same is not None and (self.f is None or same["id"] != self.f["id"]):
+            return say(("%s already has an entry: %s." % (path, same["name"]))[:52])
+        try:
+            with open(real, "rb") as fh:
+                data = fh.read()
+        except OSError as e:
+            return say(("Couldn't read it: %s" % e.strerror)[:52])
+        if b.files.CHECKING:
+            say(b.files.CHECKING)
+        b.files.check_data(data, lambda problem: self._save(problem, path, name, ftype, desc,
+                                                            size))
+        return None
+
+    def _save(self, problem, path, name, ftype, desc, size):
+        """The file's data checked (perhaps a while later: look at everything again)."""
+        b = self.b
+        if not self.win.shown or not b.session.can(b.files.MODERATE):
+            return None
+        say = self.status.set_text
+        if problem:
+            return say(problem[:52])
+        lib = b.db.library(self.lib_id)
+        if lib is None:
+            self.win.close()
+            return b.say("That library is gone.")
         same = b.db.library_file_by_path(lib["id"], path)
         if same is not None and (self.f is None or same["id"] != self.f["id"]):
             return say(("%s already has an entry: %s." % (path, same["name"]))[:52])
@@ -1041,7 +1136,7 @@ class DownloadDialog:
         if not self.image:
             win = Window.centred("Download", 360, 84,
                                  flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE,
-                                 win_id=WIN_DOWNLOAD)
+                                 win_id=self.b.files.WIN_DOWNLOAD)
             win.add(Label(8, 4, 344, 10, ("Download " + about)[:43]))
             win.add(Label(8, 20, 112, 10, "Save to drive:"))
             self.drive = win.add(DropDown(128, 18, 48, [str(d) for d in LOCAL_DRIVES], 0))
@@ -1052,7 +1147,7 @@ class DownloadDialog:
         else:
             win = Window.centred("Download to the SD card", 440, 160,
                                  flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE,
-                                 win_id=WIN_DOWNLOAD, on_close=self._closed)
+                                 win_id=self.b.files.WIN_DOWNLOAD, on_close=self._closed)
             win.add(Label(8, 2, 424, 10, ("Save " + about)[:53]))
             self.where = win.add(Label(8, 14, 424, 10, "Folder: /"))
             self.list = win.add(ListBox(8, 26, 424, 80, [], on_select=self._pick))
@@ -1155,7 +1250,8 @@ class DownloadDialog:
 
 
 class Transfer:
-    """The transfer window (WIN_TRANSFER) and the job behind it, one at a time a session."""
+    """The transfer window (its library's WIN_TRANSFER: the Art Gallery's uploads, which have
+    no library, use the File Library's) and the job behind it, one at a time a session."""
     W, H = 360, 70
 
     def __init__(self, browser, title, what):
@@ -1165,10 +1261,12 @@ class Transfer:
         self.title, self.what = title, what
         self.over = False
         self.shown_pct = -1
+        files = getattr(browser, "files", None)
+        self.win_id = files.WIN_TRANSFER if files is not None else WIN_TRANSFER
 
     def open_window(self, status):
         win = Window.centred(self.title, self.W, self.H, flags=WFlag.CLOSE | WFlag.MOVABLE,
-                             win_id=WIN_TRANSFER, on_close=self._closed, minimize=True)
+                             win_id=self.win_id, on_close=self._closed, minimize=True)
         win.add(Label(8, 4, 344, 10, self.what[:43]))
         self.bar = win.add(Progress(8, 18, 344, 12))
         self.status = win.add(Label(8, 34, 344, 10, status))
@@ -1317,12 +1415,12 @@ class UploadDialog:
             return self.session.alert("Upload", "Wait for the transfer that's running.")
         if caps & Caps.DRIVES:
             self.sources += [("Drive %d" % d, d) for d in LOCAL_DRIVES]
-        if caps & Caps.SD_READ:
+        if caps & Caps.SD_READ and self.b.files.UPLOAD_SD:
             self.sources.append(("SD card", LOCAL_SD))
         if not self.sources:
             return self.session.alert("Upload", "Your MegaNet client can't read its disks yet.")
         win = Window.centred("Upload", self.W, self.H,
-                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=WIN_UPLOAD,
+                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE, win_id=self.b.files.WIN_UPLOAD,
                              on_close=self._closed)
         win.add(Label(8, 4, 48, 10, "From:"))
         self.source = win.add(DropDown(56, 2, 96, [s[0] for s in self.sources], 0,
@@ -1372,7 +1470,7 @@ class UploadDialog:
         if self.dev == LOCAL_SD:
             dirs = sorted((e for e in entries if e[0] == Local.DIR and e[2] not in (".", "..")),
                           key=lambda e: e[2])
-            imgs = sorted((e for e in entries if e[0] in (Local.D64, Local.D81)),
+            imgs = sorted((e for e in entries if self.b.files.sd_wanted(e[0], e[2])),
                           key=lambda e: e[2])
             self.rows = ([(Local.DIR, 0, "..", "")] if self.sd_path else []) + dirs + imgs
             rows = ["../  (up a folder)" if e[2] == ".." else
@@ -1380,7 +1478,7 @@ class UploadDialog:
                     "    %-12s %7s  %s" % (e[2], size_text(e[1]),
                                            e[3] if e[3] and e[3] != e[2] else "")
                     for e in self.rows]
-            hint = "Click a folder to open it, or an image to send it."
+            hint = self.b.files.SD_HINT
         else:
             head = next((e for e in entries if e[0] == Local.HEADER), None)
             free = next((e for e in entries if e[0] == Local.FREE), None)
@@ -1407,7 +1505,7 @@ class UploadDialog:
         self.picked = e
         base = e[2].rsplit(".", 1)[0] if self.dev == LOCAL_SD else e[2]
         self.name.set_text(base[:NAME_MAX])
-        self.type.set_text("Type: %s" % TYPE_OF[e[0]])
+        self.type.set_text("Type: %s" % self.b.files.upload_type(e[0]))
         return self.status.set_text("")
 
     def _closed(self, window):
@@ -1434,7 +1532,7 @@ class UploadDialog:
         if problem:
             return self.status.set_text(problem[:53])
         kind, size, src = self.picked[0], self.picked[1], self.picked[2]
-        ftype = TYPE_OF[kind]
+        ftype = b.files.upload_type(kind)
         if self.dev == LOCAL_SD:
             problem = check_image(ftype, size)
             if problem:
@@ -1501,7 +1599,28 @@ class Upload(Transfer):
         lib = db.library(self.lib_id)
         if lib is None or not files.can_upload(self.session, lib):
             return self.end("You can't upload to that library now.", False)
-        ftype = TYPE_OF[self.kind]
+        self.st.finish(self)             # (the client's part is over: a late reply is ignored)
+        if files.CHECKING and self.win.shown:
+            self.status.set_text(files.CHECKING[:43])
+        files.check_data(bytes(self.data), self._checked)
+        return None
+
+    def _checked(self, problem):
+        """The data checked (perhaps a while later: cancelled meanwhile, or the library gone,
+        or the uploader's rights)."""
+        if self.over:
+            return None
+        files, db = self.b.files, self.b.db
+        if problem:                      # (not kept: it never reached the library's folder)
+            self.session.log("upload refused (%s): %s" % (problem, self.what))
+            self.end(problem, False)
+            if len(problem) > 43:        # (more than the transfer window's line holds)
+                self.session.alert("Upload", "%s wasn't added: %s" % (self.name, problem))
+            return None
+        lib = db.library(self.lib_id)
+        if lib is None or not files.can_upload(self.session, lib):
+            return self.end("You can't upload to that library now.", False)
+        ftype = files.upload_type(self.kind)
         rel = files.unique_path(lib, self.name, ftype)
         try:
             os.makedirs(files.folder_path(lib), exist_ok=True)
@@ -1513,7 +1632,8 @@ class Upload(Transfer):
         approved = bool(lib["auto_approve"]) or files.moderator(self.session)
         db.add_library_file(lib["id"], self.name, ftype, self.desc, rel, len(self.data),
                             self.session.user_id, approved)
-        self.session.log("uploaded %s as filelibs/%s/%s%s" % (self.what, lib["folder"], rel,
+        self.session.log("uploaded %s as %s/%s/%s%s" % (self.what, files.ROOT_NAME,
+                                                       lib["folder"], rel,
                                                              "" if approved else " (held)"))
         if approved:
             self.end("Done: %s is in %s." % (self.name, lib["title"]), True)

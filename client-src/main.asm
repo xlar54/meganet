@@ -19,6 +19,8 @@
 ;   $8700000     the overlays (overlays.asm), 64 KB each; they run in the window
 ;                OVL_BASE-$CCFF
 ;   $CD00-$CF05  the bridge build's rings (Xemu only)
+;   $CF10-       sidplay.asm's call routine (it maps a SID tune in: $52000-$59FFF,
+;                $48000-$4BFFF and $4E000-$4FFFF are the tune's C64 memory)
 ;   $14000       the server's sprites (sprites.asm); $15000 the art's palette after boot
 ;=======================================================================================
         .cpu "45gs02"
@@ -37,6 +39,8 @@ MOUSE_MAX_X     = 639
 GUI_MAXWIN      = 12                    ; windows open at once
 GUI_MAXGAD      = 80                    ; gadgets in all of them (< 128: some loops use bpl)
 GUI_MAXBIG      = 16                    ; lists, views, text areas, drop-downs (attic, 8 KB each)
+GUI_NSLOTS      = 9                     ; menu-bar icons: link.asm's, then the server's 0-7
+                                        ; (7: the SID tune playing, sidplay.asm)
 GUI_TBUF        = $eb00                 ; the gadget texts (80 x 64): under the KERNAL ROM,
                                         ; after proto.asm's frame buffers ($E000-$EAFF)
         .cerror GUI_TBUF + GUI_MAXGAD * 64 > $fffa, "the gadget texts run into the vectors"
@@ -129,6 +133,7 @@ entry:
         cli
         jsr gui_init
         jsr sid_init                    ; (the page chime; sound.asm)
+        jsr sdp_install                  ; (SID tunes in the background: sidplay.asm)
         jsr art_palette
         jsr login_open
         lda #1
@@ -263,6 +268,7 @@ PAL_STASH       = $15000                ; the art's palette after boot (bank 1: 
         .include "net.asm"
         .include "proto.asm"
         .include "sound.asm"
+        .include "sidplay.asm"
         .include "link.asm"
         .include "overlays.asm"         ; (storage, sdwrite, picture, canvas: the overlays)
         .include "sprites.asm"

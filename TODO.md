@@ -162,6 +162,16 @@
       checks every row arrives and no frame passes the client's 2 KB limit. Tried in Xemu
 - [ ] Lists longer than 128 rows show only the first 128 (the client's limit): the Server
       Log pages at 128; file libraries, boards and the user list could pass it one day
+- [x] SID Music (2026-11-22, branch sid-music): SID tune libraries like the File Library
+      (sidlibs/), tunes checked in a 6502 before they go in (sidcheck.py), played by the
+      client in the background (sidplay.asm), paused by its own sounds. Tried in Xemu:
+      private/sid's three tunes play (50 and 60 calls a second), the doorbell pauses and
+      resumes one, Play from the SID Music window
+- [x] SID Music's menu-bar note (2026-11-22): while a tune plays (greyed when paused); it
+      opens Now Playing: Pause / Resume, Stop, Song >, SID Music. Tried in Xemu: the note,
+      the window, Pause holding the tune (play calls stopped), the Admin title kept whole
+- [ ] SID Music: RSID tunes and ones loading at $C000+ (relocation?); the CIA rate a tune
+      sets in its init (now 60 Hz); a desktop icon
 - [ ] Poker: pre-action boxes (check/fold); showing who won with a
       flight of chips to the winner; the house's credits (vs Computer) are made and lost from
       nothing: watch Bank Settings' totals; table stakes other than 5/10

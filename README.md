@@ -51,6 +51,12 @@ Status: early.
   your own (Draw, Line, Box, Oval, Fill, a 32-colour palette, Undo, Save): the server keeps
   the picture and paints, the client shows it full screen and draws strokes at once while
   the server's answer comes (`client-src/canvas.asm`).
+- **SID Music:** libraries of C64 SID tunes, built like the File Library. Play one and it
+  keeps playing in the background while you use the rest of MegaNet; the doorbell and the
+  client's other sounds pause it while they play. The client runs the tune's own C64 code
+  in memory of its own (`client-src/sidplay.asm`), so the server checks every tune in a 6502
+  first and refuses any that would touch more than its memory and the SID
+  (`server-src/meganet/sidcheck.py`).
 - **Client memory:** code used now and then lives in attic RAM as overlays and takes turns
   in one window (`client-src/overlays.asm`): the File Library's disk and SD-card work (`OVL0`)
   and the Art Gallery's pictures and Paint (`OVL1`). The disk has `MEGANET`, `OVL0` and

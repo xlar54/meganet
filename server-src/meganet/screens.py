@@ -21,6 +21,7 @@ item checks its permission again when it's picked, since a client can send any M
 likes. Picks of ids that weren't in the menu sent to that session are ignored (ui.Menu).
 """
 
+import os
 import time
 
 from . import __version__
@@ -34,6 +35,7 @@ from .desktop import Desktop
 from .polls import Polls
 from .news import News
 from .filelib import FileLibrary
+from .sidlib import SidLibrary
 from .serverlog import LogWindows
 from .internet import InternetArea
 from .gallery import Gallery
@@ -44,7 +46,7 @@ from .mail import Mail
 from .pages import Pages
 from .signup import Signup
 from .protocol import (WFlag, GFlag, MENU_SEPARATOR, VERSION, SLOT_STATUS, SLOT_PAGE, SLOT_ADMIN_MAIL,
-                       SLOT_MAIL, SLOT_NEW_USER, SLOT_IM, SLOT_NEWS, MENU_MY_ACCOUNT, MENU_LATE, Icon,
+                       SLOT_MAIL, SLOT_NEW_USER, SLOT_IM, SLOT_NEWS, SLOT_MUSIC, MENU_MY_ACCOUNT, MENU_LATE, Icon,
                        S, Writer, clean_text, BROADCAST_MAX, BROADCAST_SECS)
 from .ui import Window, Button, Label, TextBox, ListBox, TextView, Menu, add_buttons, closer
 
@@ -86,7 +88,7 @@ MENU_TREE = [
         (M_CHAT, "Chat Rooms", "chat.use", "open_chat"),
         (M_MAIL, "Private Messages", perms.MAIL_USE, "open_mail"),
         (M_GALLERY, "Art Gallery", perms.GALLERY_VIEW, "open_gallery"),
-        (M_MUSIC, "SID Music", "music.listen", "coming_soon"),
+        (M_MUSIC, "SID Music", "music.listen", "open_music"),
         (M_FILES, "File Library", "files.download", "open_files"),
         (M_GAMES, "Games", "games.play", "open_games"),
         (M_INTERNET, "Internet", perms.INTERNET_USE, "open_internet"),
@@ -168,6 +170,7 @@ class Screens:
         self.polls = Polls(server)
         self.news = News(server)
         self.files = FileLibrary(server)
+        self.music = SidLibrary(server)
         self.logs = LogWindows(server)
         self.internet = InternetArea(server)
         self.gallery = Gallery(server)
@@ -187,6 +190,12 @@ class Screens:
         self.new_users_changed()          # (a new account is a new user for the admins)
         karma.earn(self.server, session.user_id, "signed on")
         self.refresh_who()
+        autoplay = os.environ.get("MEGANET_SID_AUTOPLAY")     # (tests: a tune at once)
+        if autoplay:
+            from . import sidcheck
+            with open(autoplay, "rb") as f:
+                psid = sidcheck.parse(f.read())
+            session.play_sid(psid, psid.start - 1, "autoplay %s" % os.path.basename(autoplay))
 
     def notify_click(self, session, slot):
         """C.NOTIFY_CLICK for a slot whose icon this session was sent (session.py checks)."""
@@ -200,6 +209,8 @@ class Screens:
             return self.ims.notify_click(session, slot)
         if slot == SLOT_NEWS:
             return self.news.notify_click(session, slot)
+        if slot == SLOT_MUSIC:
+            return self.music.notify_click(session, slot)
         if slot == SLOT_NEW_USER:
             new = self.server.db.new_users()
             return self.admin.open_users(session, new[0]["id"] if new else None)
@@ -283,6 +294,9 @@ class Screens:
 
     def open_files(self, session, item=None):
         return self.files.open(session)
+
+    def open_music(self, session, item=None):
+        return self.music.open(session)
 
     def open_log(self, session, item=None):
         return self.logs.open(session)
@@ -532,6 +546,7 @@ class Screens:
         self.polls.permissions_changed(session)
         self.news.permissions_changed(session)
         self.files.permissions_changed(session)
+        self.music.permissions_changed(session)
         self.logs.permissions_changed(session)
         self.internet.permissions_changed(session)
         self.gallery.permissions_changed(session)
@@ -557,6 +572,7 @@ class Screens:
         self.polls.disconnected(session)
         self.news.disconnected(session)
         self.files.disconnected(session)
+        self.music.disconnected(session)
         self.logs.disconnected(session)
         self.internet.disconnected(session)
         self.gallery.disconnected(session)

@@ -17,8 +17,12 @@
 OVL_COUNT       = 2
 OVL_FILES       = 0
 OVL_ART         = 1
-OVL_END         = BRIDGE_NET ? $cd00 : $d000    ; (the bridge build's rings start at $CD00)
-OVL_BASE        = OVL_END - $1700       ; the window: as big as the biggest overlay (5.7 KB)
+OVL_END         = BRIDGE_NET ? $cd00 : $cf00    ; (the bridge build's rings start at $CD00;
+                                                ; sidplay.asm's call routine is at $CF10)
+OVL_BASE        = OVL_END - $16a0       ; the window: as big as the biggest overlay (OVL0:
+                                        ; $1668 bytes, $1694 in the bridge build; main.asm
+                                        ; stops the build if one grows past it, or the
+                                        ; resident part reaches it)
 
 st_mode:        .byte 0                 ; storage.asm: 0 idle, 1 a download arriving, 2 an
                                         ; upload going

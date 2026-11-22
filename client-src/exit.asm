@@ -84,7 +84,8 @@ exit_to_basic:
         cmp #NS_OFF
         beq +
         jsr net_close
-+       sei
++       jsr sdp_stop                     ; no SID tune (the IRQ hook goes with the takeover)
+        sei
         lda #0                          ; screen and sprites off while the ROM goes back
         sta SPR_ENABLE
         lda #1                          ; attic -> $20000-$3FFFF

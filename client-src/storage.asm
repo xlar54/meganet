@@ -41,8 +41,8 @@ C_LOCAL_DONE    = $8e
 C_UP_BEGIN      = $90
 C_UP_DATA       = $91
 C_UP_END        = $92
-CLIENT_CAPS     = 127                   ; protocol.Caps: DRIVES | SD_READ | SD_WRITE | GRID |
-                                        ; PICTURE | CANVAS | SPRITES
+CLIENT_CAPS     = 255                   ; protocol.Caps: DRIVES | SD_READ | SD_WRITE | GRID |
+                                        ; PICTURE | CANVAS | SPRITES | SID
 
 ; protocol.Local
 LK_HEADER       = 0

@@ -549,6 +549,59 @@ the chat rooms:
   (`docs/DESIGN.md`, "File transfers and local storage"). `HELLO`'s caps say which the client
   can do, and the server only offers those.
 
+## SID Music
+
+**Areas > SID Music** (`meganet/sidlib.py`; `music.listen`, New Users and up; uploading:
+`music.upload`, Members and up) is the File
+Library for C64 SID tunes, played by the client in the background while you do other things:
+- **Built on the File Library:** `SidLibrary` and `SidBrowser` are subclasses of `FileLibrary`
+  and `Browser`, with their own settings (class attributes: title, window ids `$40`-`$47`,
+  permissions, folder). Libraries are folders under `sidlibs/` (`--sidlibs`), with the same
+  access rows per role (See, **Listen**, Upload), approvals and moderator tools
+  (`music.moderate`). The database has its own copies of the
+  three tables (`sid_libraries`, `sid_access`, `sid_files`): `db.py`'s library methods take
+  `kind="files"` or `"sid"`, and each area sees the database through `filelib.LibraryDB`,
+  which fills it in.
+- **The window** lists a library's tunes from their PSID headers (Title, Author, Year, songs;
+  cached per file), the picked one's details below. **Play** (or a double click), **Stop**,
+  **Song >** (the next song of a tune with several), **Upload** and **Back**; moderators
+  **Add... / Edit... / Delete / Approve**. Plays are counted (the files' `downloads`).
+- **Only checked tunes go in:** an upload, or a file a moderator adds with Add..., must pass
+  `sidcheck.py`: a PSID (not RSID or MUS), loading outside `$C000`-`$DFFF`, with a play
+  routine, and well behaved when each song's init and a couple of minutes of play calls run in
+  a 6502 with the legal opcodes only (it may touch only its own memory, the SIDs at `$D400`-`$D43F`
+  and the CIA timers; no `$00`, CLI, BRK, RTI, `JMP ($xxFF)`, or a call that doesn't return).
+  An upload is checked once it has arrived: a tune that fails isn't kept, and the uploader
+  is told why (an alert with the whole reason when it's longer than the transfer window's
+  line). The check runs in another process (`sidcheck.problem` in a one-worker spawned
+  `ProcessPoolExecutor`: the server answers everyone meanwhile; `meganet/__main__.py` is
+  guarded so the worker doesn't start a server) and gives up after 30 s
+  (`sidcheck.CHECK_SECS`). Uploads come from drives 8-11 (a PSID file saved as PRG, SEQ or
+  USR) or the SD card (any `.SID` file: `FileLibrary.sd_wanted`).
+- **Members upload:** `music.upload` is in the Member role for a new database; an older one
+  (where it was the Sysop's only) gives it once to every role with `gallery.upload`
+  (`sidlib.give_members_uploads`, setting `music_upload_given`).
+- **Playing:** `session.play_sid(psid, song, key)` puts the tune's C64 data in resource slot 10
+  (`SID_SLOT`, with a "Loading Music" bar; sent again only when the file changes), then
+  `S.SID_PLAY` (`$35`: slot, load, length, init, play, song, rate). CIA-timed songs and NTSC
+  tunes are called 60 times a second, the rest 50. `S.SID_STOP` (`$36`) stops it. Needs
+  `Caps.SID` (128); an older client is told it needs an update.
+- **The client** (`client-src/sidplay.asm`) gives the tune a C64 of its own with MAP (its
+  `$0000`-`$BFFF` and `$E000`-`$FFFF` in chip RAM banks 4 and 5), calls play from the frame
+  interrupt, and plays it on the right SIDs (`$D400`); its own sounds moved to the left SIDs,
+  and a sound pauses the tune (no play calls, the right SIDs muted in the mixer) until it has
+  rung out. Signing off or going back to the Connect window stops it.
+- **The menu bar's note:** while a tune plays, `SLOT_MUSIC` (7) shows `Icon.NOTE` (two
+  beamed quavers; `Icon.NOTE_PAUSED`, greyed, when paused), its hint what's playing. A click
+  opens **Now Playing** (`$48`): the tune, its author, playing or paused and the song, with
+  **Pause / Resume**, **Stop**, **Song >** and **SID Music** (the library, the tune picked).
+  `SidLibrary.start / stop / pause / next_song` do the playing for both windows and keep the
+  note, Now Playing and the SID Music window's status line in step (`show_state`).
+  `S.SID_PAUSE` (`$37`, u8 paused) holds the tune on the client: no play calls, its SIDs
+  muted, apart from the pause a client sound makes (a sound ending doesn't resume a tune
+  the user paused).
+- Test switch: `MEGANET_SID_AUTOPLAY=<file.sid>` plays that tune to everyone at sign-on.
+
 ## Broadcast
 
 **Admin > Broadcast...** (`admin.broadcast`; window 31, a small dialog) sends one line to

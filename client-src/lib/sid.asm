@@ -2,7 +2,7 @@
 ; lib/sid.asm - simple SID sound effects (from mega-dust). One voice per effect class;
 ; each effect is a waveform, start pitch, per-frame pitch slide, length and envelope.
 ;
-;   sid_init       SID 1 silent, full volume
+;   sid_init       the effects' SID (SFX_SID, default SID 1) silent, full volume
 ;   sfx_play       A = effect number (index into the sfx_* tables)
 ;   sfx_frame      call once a frame (from the IRQ hook)
 ;
@@ -12,8 +12,10 @@
 
         .weak
 SFX_TABLES_OWN  = 0
+SFX_SID         = SID1                  ; the SID the effects play on
 SID_MIRROR      = 0                     ; a second SID's address: every write goes there too
-        .endweak                        ; (SID 1 and 2 are panned to opposite speakers)
+        .endweak                        ; ($D400 / $D420 are the "right" SIDs, $D440 / $D460
+                                        ; the "left": book appendix V, the mixer's sources)
 
         .if !SFX_TABLES_OWN
 SFX_SHOT        = 0
@@ -40,7 +42,7 @@ l_sfx_vidx:  .byte 0,0,0,0,0,0,0,1,0,0,0,0,0,0,2
 l_sfx_voffs: .byte 0, 7, 14
 
 L_SID_W .macro
-        sta SID1+\1,x
+        sta SFX_SID+\1,x
         .if SID_MIRROR
         sta SID_MIRROR+\1,x
         .endif
@@ -49,14 +51,14 @@ L_SID_W .macro
 sid_init:
         ldx #$18
         lda #0
--       sta SID1,x
+-       sta SFX_SID,x
         .if SID_MIRROR
         sta SID_MIRROR,x
         .endif
         dex
         bpl -
         lda #$0f
-        sta SID1+$18
+        sta SFX_SID+$18
         .if SID_MIRROR
         sta SID_MIRROR+$18
         .endif

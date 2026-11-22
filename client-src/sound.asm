@@ -12,7 +12,10 @@
 ; the server can send new sounds to old clients.
 ;=======================================================================================
 SFX_TABLES_OWN  = 1                     ; (lib/sid.asm: these tables, not its game ones)
-SID_MIRROR      = SID2
+SFX_SID         = $d440                 ; the left SIDs: the right ones ($D400) are a SID
+SID_MIRROR      = $d460                 ; tune's (sidplay.asm), which pauses while a sound plays
+SND_TAIL        = 75                    ; frames after a sound's last note before the tune
+                                        ; carries on (the bells ring out)
 
 SFX_DING        = 0
 SFX_DONG        = 1
@@ -45,6 +48,7 @@ SOUNDS          = 4                     ; (by sound number: protocol.py Sound)
 
 snd_pos:        .byte 0                 ; the next step (an index into snd_steps)
 snd_wait:       .byte 0                 ; frames until it plays, 0 = nothing to come
+snd_tail:       .byte 0                 ; frames until a paused SID tune carries on
 
 ; u8 sound
 pm_sound:
@@ -55,6 +59,9 @@ pm_sound:
         beq _out
         lda snd_first,x
         sta snd_pos
+        lda #SND_TAIL                   ; (the tune waits for it: sidplay.asm)
+        sta snd_tail
+        jsr sdp_duck
         jmp snd_step
 _out:   rts
 
@@ -77,12 +84,17 @@ _end:   lda #0
         sta snd_wait
         rts
 
-; once a frame: the effects, and the next step of a sound
+; once a frame: the effects, the next step of a sound, and a paused tune carrying on
 sound_frame:
         jsr sfx_frame
         lda snd_wait
-        beq _out
+        beq _tail
         dec snd_wait
         bne _out
         jmp snd_step
+_tail:  lda snd_tail                    ; the last note: a while to ring out, then the tune
+        beq _out
+        dec snd_tail
+        bne _out
+        jmp sdp_unduck
 _out:   rts
