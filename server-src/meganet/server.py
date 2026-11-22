@@ -19,7 +19,7 @@ from .db import Database, read_motd_file
 from .games.lobby import GameLobby
 from .screens import Screens
 from .serverlog import ServerLog
-from .session import Session, quick_ack
+from .session import Session, keepalive, quick_ack
 from .updates import Updates
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # server-src/
@@ -100,6 +100,7 @@ class Server:
         if sock is not None:
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             quick_ack(sock)
+            keepalive(sock)
         session = Session(self, reader, writer, self._next_id)
         self._next_id = self._next_id % 0xFFFF + 1
         self.sessions.add(session)

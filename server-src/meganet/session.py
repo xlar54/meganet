@@ -20,8 +20,17 @@ import asyncio
 import inspect
 import logging
 import socket
+import struct
 import time
 import traceback
+
+try:                                         # (Linux: the kernel's send queue, SIOCOUTQ)
+    import fcntl
+    import termios
+    _OUTQ = termios.TIOCOUTQ
+except (ImportError, AttributeError):         # (Windows: only asyncio's buffer is counted)
+    fcntl = None
+    _OUTQ = None
 
 from . import db as dbmod
 from . import karma
@@ -48,6 +57,31 @@ WIZARD_EVENTS = frozenset((C.CLICK, C.VALUE, C.SELECT, C.TEXT, C.WIN_CLOSED))
 # The client's answers to S.LOCAL_DIR / SAVE_BEGIN / LOAD_FILE (filelib.py)
 LOCAL_REPLIES = frozenset((C.FILE_ACK, C.LOCAL_ENTRY, C.LOCAL_DONE, C.UP_BEGIN, C.UP_DATA,
                            C.UP_END))
+
+
+# TCP keepalive on client connections: a client that vanishes without closing (switched
+# off, its network gone) is dropped after KEEPALIVE_IDLE + KEEPALIVE_COUNT * KEEPALIVE_GAP
+# seconds of silence (6 minutes), instead of staying "signed on" for ever. Generous, because
+# a MEGA65 doesn't answer while a long KERNAL disk job keeps it from polling the network;
+# a signed-on client PINGs every 30 s anyway.
+KEEPALIVE_IDLE, KEEPALIVE_GAP, KEEPALIVE_COUNT = 120, 30, 8
+
+
+def keepalive(sock):
+    """Turn on TCP keepalive with the times above (each where the system has the option)."""
+    if sock is None:
+        return
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    except OSError:
+        return
+    for name, value in (("TCP_KEEPIDLE", KEEPALIVE_IDLE), ("TCP_KEEPINTVL", KEEPALIVE_GAP),
+                        ("TCP_KEEPCNT", KEEPALIVE_COUNT)):
+        if hasattr(socket, name):
+            try:
+                sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, name), value)
+            except OSError:
+                pass
 
 
 def quick_ack(sock):
@@ -337,6 +371,28 @@ class Session:
             self.notify[slot] = (icon, hint)
         self.send(S.NOTIFY, Writer().u8(slot).u8(icon).str(hint))
 
+    def unsent(self):
+        """Bytes sent to this client that it hasn't acknowledged yet: asyncio's buffer, and
+        on Linux the kernel's send queue too. The kernel takes a lot (most of a picture), and
+        a MEGA65 reads slowly: what's in there still has to arrive before anything sent
+        after it, a Cancel's window closing included."""
+        t = self.writer.transport
+        n = t.get_write_buffer_size() if t is not None else 0
+        sock = self.writer.get_extra_info("socket")
+        if _OUTQ is not None and sock is not None:
+            try:
+                n += struct.unpack("i", fcntl.ioctl(sock.fileno(), _OUTQ, b"\0\0\0\0"))[0]
+            except (OSError, ValueError):
+                pass
+        return n
+
+    async def drained_to(self, ahead):
+        """Wait until at most `ahead` bytes are unsent (unsent()), or the connection goes:
+        big data sent this way stays a few KB ahead of the client, so whatever comes next (a
+        Cancel's window closing) reaches it soon, and a progress bar shows what's arrived."""
+        while not self.closed and self.unsent() > ahead:
+            await asyncio.sleep(0.02)
+
     def disconnect(self):
         self.closed = True
         self.writer.close()
@@ -367,6 +423,9 @@ class Session:
             self.warn("bad stream: %s" % e, area="conn")
         except (ConnectionError, asyncio.IncompleteReadError):
             pass
+        except OSError as e:                     # the network gave up on it: "No route to
+            self.log("connection lost: %s" % (e.strerror or e), area="conn")   # host",
+                                                 # a keepalive timeout (Server._connected)
         finally:
             self.closed = True
             self.writer.close()

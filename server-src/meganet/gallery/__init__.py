@@ -933,11 +933,8 @@ class Loader:
             msgs += [(base + done, t, w) for done, t, w in resource_messages(s, data, True)]
             base += len(data)
         self.total = base
-        transport = session.writer.transport
         for done, t, w in msgs:
-            while transport is not None and not session.closed and \
-                    transport.get_write_buffer_size() > PACE:
-                await asyncio.sleep(0.02)
+            await session.drained_to(PACE)       # (a Cancel stops it within PACE bytes)
             if session.closed:
                 return
             session.send(t, w)

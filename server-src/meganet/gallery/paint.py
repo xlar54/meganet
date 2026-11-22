@@ -280,11 +280,8 @@ class Paint:
             loading.add(Label(MARGIN, 4, 260 - 2 * MARGIN, 10, "Loading the picture..."))
             bar = loading.add(Progress(MARGIN, 20, 260 - 2 * MARGIN))
             loading.show(session)
-        transport = session.writer.transport
         for done, t, w in msgs:
-            while transport is not None and not session.closed and \
-                    transport.get_write_buffer_size() > PACE:
-                await asyncio.sleep(0.02)
+            await session.drained_to(PACE)
             if session.closed or self.over:
                 return
             session.send(t, w)
