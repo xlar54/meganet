@@ -60,7 +60,12 @@ Status: early.
 - **Client memory:** code used now and then lives in attic RAM as overlays and takes turns
   in one window (`client-src/overlays.asm`): the File Library's disk and SD-card work (`OVL0`)
   and the Art Gallery's pictures and Paint (`OVL1`). The disk has `MEGANET`, `OVL0` and
-  `OVL1`; a client update must send all three.
+  `OVL1`, built together.
+- **Updates:** the client's version is `client-src/VERSION` (shown on the Connect screen, and
+  on the disk as `VERSION`). Put a newer `meganet.d81` in the server's
+  `filelibs/meganet_client/` and older clients are offered it when they connect: Download
+  saves it on their SD card as `MEGANETn.D81` (or, if they're too old for the server, they
+  must, before signing on). See `server-src/README.md`, "Publishing a client update".
 - **Server Log:** everything the server logs (connections, sign-ons and failed ones, what
   people do in each area, refusals, crashes with their tracebacks) is kept in the database
   as well, for admins to read in Admin > Server Log... with filters by area, level, user and

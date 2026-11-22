@@ -637,5 +637,5 @@ login_lost:
         jmp login_status
 s_tag:          .text "The online service for the MEGA65"
 s_tag_end:      .byte 0
-s_foot:         .text "Port 6400"
+s_foot:         .text format("Version %d - port %d", CLIENT_BUILD, SERVER_PORT)
 s_foot_end:     .byte 0

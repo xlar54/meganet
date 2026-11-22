@@ -1,10 +1,7 @@
 """End-to-end tests: a real server on a random port, fake clients over real TCP."""
 
-import json
-import os
 import tempfile
 import unittest
-import zlib
 
 from meganet import db
 from meganet.protocol import S
@@ -17,7 +14,7 @@ db.PBKDF2_ITERATIONS = 1000          # keep the tests quick
 
 
 class ServerTest(unittest.IsolatedAsyncioTestCase):
-    updates_dir = None                   # a folder without manifest.json: updates off
+    updates_dir = None                   # (its filelibs/ has no client disk: no updates)
 
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -192,37 +189,6 @@ class TicTacToeTest(ServerTest):
         await b.wait_for(lambda: ("Tic-Tac-Toe", "alice left the game.") in b.alerts, "alert")
         self.assertNotIn(wa.id, a.windows)
         self.assertEqual(self.server.games.running, [])
-
-
-class UpdateTest(ServerTest):
-    async def asyncSetUp(self):
-        self.upd = tempfile.TemporaryDirectory()
-        self.data = bytes(range(256)) * 9                       # 2304 bytes: three chunks
-        with open(os.path.join(self.upd.name, "CLIENT"), "wb") as f:
-            f.write(self.data)
-        with open(os.path.join(self.upd.name, "manifest.json"), "w") as f:
-            json.dump({"build": 200, "message": "New client", "files": ["CLIENT"]}, f)
-        self.updates_dir = self.upd.name
-        await super().asyncSetUp()
-
-    async def asyncTearDown(self):
-        await super().asyncTearDown()
-        self.upd.cleanup()
-
-    async def test_old_client_is_updated(self):
-        c = await self.client("old")
-        c.send_hello(build=100)
-        await c.wait_for(lambda: c.files and c.files[-1][3] is not None, "the whole file")
-        self.assertEqual(c.update, (200, 1, "New client"))
-        name, size, data, crc = c.files[0]
-        self.assertEqual((name, size, bytes(data), crc),
-                         ("CLIENT", len(self.data), self.data, zlib.crc32(self.data)))
-        ok, _ = await self.login(c, "Frank", "pass1", new=True)
-        self.assertFalse(ok, "no sign-on until updated")
-
-    async def test_new_client_is_not(self):
-        c = await self.signed_on("Gina", build=200)
-        self.assertIsNone(c.update)
 
 
 if __name__ == "__main__":

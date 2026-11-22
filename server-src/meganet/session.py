@@ -19,6 +19,7 @@ A new-user LOGIN with an empty name and password starts the sign-up wizard inste
 import asyncio
 import inspect
 import logging
+import socket
 import time
 import traceback
 
@@ -49,6 +50,19 @@ LOCAL_REPLIES = frozenset((C.FILE_ACK, C.LOCAL_ENTRY, C.LOCAL_DONE, C.UP_BEGIN, 
                            C.UP_END))
 
 
+def quick_ack(sock):
+    """Acknowledge what the client sends at once, not after Linux's delayed-ACK timer (about
+    40 ms). mega-ip sends one segment and waits for its ACK before the next, so the delay
+    was paid on every ~240 bytes of an upload. Linux drops back to delayed ACKs by itself,
+    so this is called again after every read. Elsewhere (Windows) it does nothing."""
+    if sock is None or not hasattr(socket, "TCP_QUICKACK"):
+        return
+    try:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+    except OSError:
+        pass
+
+
 class Session:
     def __init__(self, server, reader, writer, session_id):
         self.server = server
@@ -63,7 +77,8 @@ class Session:
         self.build = None            # client build from HELLO
         self.caps = 0                # and what it can do (protocol.Caps)
         self.storage = None          # filelib.Storage: requests to the client's disks
-        self.updating = False        # True after a forced update was sent
+        self.updating = False        # True: too old to sign on (updates.py: update first)
+        self.before_sign_on = set()  # server windows usable before sign-on (the update's)
         self.windows = {}            # win id -> ui.Window
         self.menu = None             # the ui.Menu last sent (MENU_PICKs are checked against it)
         self.game = None             # games.base.Player while in a game
@@ -331,11 +346,13 @@ class Session:
     async def run(self):
         """Read and handle frames until the client goes away."""
         deframer = Deframer()
+        sock = self.writer.get_extra_info("socket")
         try:
             while True:
                 chunk = await self.reader.read(4096)
                 if not chunk:
                     break
+                quick_ack(sock)
                 for msg_type, r in deframer.push(chunk):
                     try:
                         await self.handle(msg_type, r)
@@ -366,9 +383,12 @@ class Session:
         if self.user is not None and not (   # (the client's own PINGs aren't the user, and
                 msg_type == C.NOTIFY_CLICK and r.peek_u8() == SLOT_STATUS):  # an auto-Away
             self.server.screens.presence.activity(self)   # dot clicked goes to Available)
-        if self.user is None and not (
-                msg_type in WIZARD_EVENTS and self.signup is not None
-                and self.signup.win is not None and r.peek_u8() == self.signup.win.win_id):
+        if self.user is None and msg_type in LOCAL_REPLIES and self.before_sign_on:
+            from .filelib import Storage        # (an update downloading before sign-on)
+            return Storage.of(self).handle(msg_type, r)
+        if self.user is None and not (msg_type in WIZARD_EVENTS and (
+                r.peek_u8() in self.before_sign_on or self.signup is not None
+                and self.signup.win is not None and r.peek_u8() == self.signup.win.win_id)):
             self.log("message $%02X before sign-on, ignored" % msg_type)
             return
         if msg_type == C.VALUE:
@@ -459,11 +479,8 @@ class Session:
         version, self.build, self.caps, name = r.u8(), r.u16(), r.u8(), r.str()
         self.log("hello v%d build %d caps $%02X %s" % (version, self.build, self.caps, name))
         self.send(S.HELLO, Writer().u8(VERSION).u16(self.id))
-        updates = self.server.updates
-        if updates.needs(self.build):
-            self.updating = True
-            updates.push(self)
-        # Otherwise nothing: the client shows its own sign-on window and sends LOGIN.
+        self.server.updates.offer(self)      # (a newer client: the update window)
+        # The client shows its own sign-on window and sends LOGIN.
 
     def login_result(self, ok, message):
         self.send(S.LOGIN_RESULT, Writer().u8(1 if ok else 0).str(message))
@@ -488,6 +505,10 @@ class Session:
         """LOGIN_RESULT ok, then the session is signed on as `name` (an existing account):
         the menu bar, the welcome window and the rest (screens.signed_on)."""
         self.login_result(True, message)
+        from .updates import WIN_UPDATE
+        if WIN_UPDATE in self.windows:           # (Later, by signing on)
+            self.windows[WIN_UPDATE].close()
+        self.before_sign_on.clear()
         self.user = self.server.db.canonical_name(name)
         row = self.server.db.user(name)
         self.user_id = row["id"]
@@ -504,7 +525,7 @@ class Session:
         if self.build is None:
             return "Say HELLO first."
         if self.updating:
-            return "Please let the update finish."
+            return "This server needs a newer MegaNet: Download it first."
         if self.user is not None:
             return "You are already signed on."
         return None

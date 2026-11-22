@@ -19,7 +19,7 @@
 ;=======================================================================================
 
         .weak
-CLIENT_BUILD    = 1
+CLIENT_BUILD    = 1                     ; (gen/version.asm sets it: client-src/VERSION)
         .endweak
 PROTO_VERSION   = 1
 PF_MAX          = 2048                  ; the biggest frame kept (bigger ones are skipped)

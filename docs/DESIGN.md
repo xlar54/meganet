@@ -238,8 +238,9 @@ The File Library (`server-src/meganet/filelib.py`) runs every window on the serv
   entries too. On the SD card, the size is in bytes and the long file name follows.
 - **A download:** `SAVE_BEGIN (req, dev, kind, u32 size, path)`. The client checks the device
   answers and that no file of that name is there (**saves never overwrite**), then answers
-  `FILE_ACK 0`, or `LOCAL_DONE` with the problem. The server then sends `FILE_DATA`, keeping
-  at most `FILE_WINDOW` (4 KB) beyond the client's last `FILE_ACK`, and `FILE_END (crc)`. The
+  `FILE_ACK 0`, or `LOCAL_DONE` with the problem. The server then sends `FILE_DATA` of
+  at most `FILE_CHUNK` (1,000 bytes, so a frame fits mega-ip's 1,024-byte receive window),
+  keeping at most `FILE_WINDOW` (4 chunks) beyond the client's last `FILE_ACK`, and `FILE_END (crc)`. The
   client stages it in attic (`$8300000`, at most `LOCAL_MAX` = 1 MB), keeps the CRC as it
   comes, checks it, writes the file and answers `LOCAL_DONE`.
 - **An upload:** `LOAD_FILE (req, dev, kind, path)`. The client reads the file into attic and
@@ -257,28 +258,31 @@ The File Library (`server-src/meganet/filelib.py`) runs every window on the serv
 
 The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
 
-## Forced auto-update
+## Client updates
 
-1. `HELLO` carries the client's **build number** (`u16`), stamped in by `build.bat`.
-2. The server compares it with `server-src/updates/manifest.json`. If the client is older, it
-   sends `UPDATE` (new build, number of files, message) instead of the sign-on screen, then each
-   file as `FILE_BEGIN/DATA/END`.
-3. The client shows a progress window, stages every file in attic, checks each CRC, and only
-   then writes them to disk.
-4. To make writing safe, the disk holds a tiny **stub** (`MEGANET`, run by `AUTOBOOT.C65`) that
-   loads the real client (`CLIENT`) and its overlays. The updater replaces only `CLIENT` and the
-   overlays, never the stub. It writes each file under a temporary name, scratches the old one,
-   then renames the new one (DOS command channel). A dropped connection or a power cut therefore
-   leaves the old version or the new one, never half of each. Afterwards it restarts through the
-   stub.
-5. Publishing an update: build, copy the client files into `server-src/updates/`, and bump
-   `build` in the manifest. Every client that connects after that is updated before it can sign on.
+1. **The version** is `client-src/VERSION` (`build=`, `oldest=`). `build.bat` compiles the build
+   in (`HELLO`'s `u16` build, the Connect screen's footer) and writes the file onto the D81 as
+   `VERSION`.
+2. **A release** is a D81 in the server's `filelibs/meganet_client/` folder: the File Library's
+   "MegaNet Client" library. The server reads each disk's `VERSION` from the image; the highest
+   build is the release.
+3. **When an older client connects,** the server's "MegaNet Update" window comes up over the
+   Sign On: Download or Later; if the client is older than the release's `oldest`, Download or
+   Disconnect, and it can't sign on.
+4. **Download** is the File Library's download of a D81 to the SD card's root (`MEGANETn.D81`):
+   the client stages it in attic, checks the CRC and writes it, never over an existing file. So
+   every client that can write to its SD card can update, the first one included, and the disk
+   it's running from is never touched: a dropped connection or a power cut can't leave half an
+   update. The user then mounts the new disk (the Freeze Menu) and resets.
+5. A later client could update in place (write its files to the disk it runs from under
+   temporary names, scratch the old ones, rename the new ones, restart): no remounting, but it
+   needs new client code, so only clients from then on could do it.
 
 ## Server
 
 - **Python 3.11 or later, standard library only** (asyncio, sqlite3, hashlib, json, zlib,
   unittest), so anyone can run it and hack on it without installing anything. Run it with
-  `python -m meganet` in `server-src/` (`--port`, default 6400; `--db`; `--updates`;
+  `python -m meganet` in `server-src/` (`--port`, default 6400; `--db`;
   `--motd FILE`).
 - **Storage: SQLite** (`sqlite3`), a single file, `server-src/data/meganet.db` by default,
   created on first run. Users (PBKDF2-SHA256 password hashes with a salt) are in use; boards,

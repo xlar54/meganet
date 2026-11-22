@@ -75,7 +75,7 @@ def build():
     parts = m.write_parts('LOGO', data)
     m.write_manifest([(n, LOGO_ATTIC + off, ln) for n, off, ln in parts])
     default_server()
-    extra = [assemble_stack()]
+    extra = [assemble_stack(), client_version()]
     if '--mock' in sys.argv:            # replay build: the recorded server session
         src = sys.argv[sys.argv.index('--mock') + 1]
         data = open(src, 'rb').read()
@@ -101,6 +101,36 @@ def default_server():
     m.write_gen('server.asm', ['DEFAULT_SERVER = "%s"' % addr],
                 "the Connect window's server address (private/server_address.txt)")
     print('Default server: %s' % (addr or '(none)'))
+
+
+VERSION_FILE = os.path.join(m.ROOT, 'client-src', 'VERSION')
+
+
+def read_version(path=VERSION_FILE):
+    """client-src/VERSION's numbers: {"build": n, "oldest": n}."""
+    out = {}
+    for line in open(path, encoding='utf-8'):
+        line = line.split('#', 1)[0].strip()
+        if '=' in line:
+            key, value = (s.strip() for s in line.split('=', 1))
+            out[key] = int(value)
+    if not 1 <= out.get('build', 0) <= 65535 or not 1 <= out.get('oldest', 1) <= out['build']:
+        sys.exit('client-src/VERSION: build=1..65535 and oldest=1..build')
+    out.setdefault('oldest', 1)
+    return out
+
+
+def client_version():
+    """client-src/gen/version.asm (CLIENT_BUILD, sent in HELLO) and target/assets/version (the
+    file VERSION on the disk, which the server reads: updates.py)."""
+    v = read_version()
+    m.write_gen('version.asm', ['CLIENT_BUILD = %d' % v['build'],
+                                'CLIENT_OLDEST = %d' % v['oldest']],
+                "the client's version (client-src/VERSION)")
+    with open(os.path.join(m.ASSETS, 'version'), 'w', newline='\n') as f:
+        f.write('build=%d\noldest=%d\n' % (v['build'], v['oldest']))
+    print('Client version: build %d (oldest %d)' % (v['build'], v['oldest']))
+    return 'version'
 
 
 def assemble_stack():

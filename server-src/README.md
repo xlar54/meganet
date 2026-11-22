@@ -23,7 +23,7 @@ python -m meganet --motd motd.txt   # load the message of the day from a text fi
 | `--port` | 6400 | TCP port |
 | `--host` | 0.0.0.0 | address to listen on |
 | `--db` | `data/meganet.db` | SQLite file, created (with its tables) on first run |
-| `--updates` | `updates/` | folder with `manifest.json` and the client files for forced updates; no manifest = updates off |
+| `--updates` | `updates/` | (no longer used for updates: a newer client disk goes in the File Library's `meganet_client` folder; see "Publishing a client update") |
 | `--filelibs` | `filelibs/` | the file libraries' folders, one per library (made as needed) |
 | `--motd` | | text file to load into the message of the day at start (it replaces the saved one; see below) |
 | `--cafile` | | a PEM file of trusted certificates for the Web Browser's https, for a Python with no list of its own (an MSYS2 Python without its `ca-certificates` package) |
@@ -86,7 +86,7 @@ Edit gadgets first, as the real client does).
 | `meganet/pages.py` | Help > Page Admin: paging, the private chat with an admin, messages to the admins, Admin > Messages from users |
 | `meganet/mail.py` | Areas > Private Messages: inbox, Sent folder, compose |
 | `meganet/compose.py` | The message composer (To, Subject, a text area, Send / Cancel) used by pages.py and mail.py |
-| `meganet/updates.py` | Forced client updates from `updates/manifest.json` |
+| `meganet/updates.py`, `meganet/d81.py` | Client updates: a newer disk in `filelibs/meganet_client/` offered to older clients (its `VERSION` file read from the D81) |
 | `meganet/serverlog.py` | The server log: every line kept in the database too, and Admin > Server Log to read it |
 | `meganet/games/` | The games framework (`base.py`, `lobby.py`, `challenge.py`: a game's lobby for picking an opponent) and the games themselves (`tictactoe.py`; `chess.py` with `chess_rules.py` and the piece art `chess_art.py`; `one.py` with `one_rules.py` and the card art `one_art.py`) |
 | `tests/` | unittest tests and the fake client |
@@ -1078,12 +1078,24 @@ full detail with `step=2`. One's flights (`games/one.py`) are the example.
 
 ## Publishing a client update
 
-Copy the built client files into `updates/` and write `updates/manifest.json`. The client is
-the program and its overlays (`MEGANET`, `OVL0`, `OVL1`: `client-src/overlays.asm`); send them
-all, since they are built together:
+1. **Raise the version** in `client-src/VERSION`: `build=` for every release; `oldest=` when
+   older clients can't work with this server any more (they must update before signing on).
+   `build.bat` compiles the build in (`CLIENT_BUILD`, sent in `HELLO`, shown on the Connect
+   screen) and puts the file on the disk as `VERSION`.
+2. **Build** (`build.bat`) and put `target/meganet.d81` in the server's
+   `filelibs/meganet_client/` folder, under any name ending `.d81` (the live server:
+   `deploy.ps1 -PublishClient`). No restart: the server looks there when a client connects.
 
-```json
-{"build": 3, "message": "New version", "files": ["CLIENT", "OVL0"]}
-```
+The server reads each disk's `VERSION` (`d81.py`); the highest build is the release. The folder
+is the File Library's **MegaNet Client** library, made when the first disk appears, with an
+entry for each disk, so anyone can download one by hand too.
 
-Every client whose build is lower is sent the files before it may sign on.
+When a client connects with an older build, the server shows **MegaNet Update** (`$49`) over
+the Sign On window: the versions, **Download** (the disk to the SD card's root as `MEGANETn.D81`,
+by the File Library's download: staged, CRC-checked, never over a file that's there) and
+**Later** (or **Disconnect**, when the client is older than the release's `oldest`: LOGIN is
+refused until then). Afterwards it says how to start it: the Freeze Menu (hold RESTORE), 0 for
+drive 8, pick the disk, reset. The disk the client is running from isn't touched. Every client
+with `Caps.SD_WRITE` can do this (the first client too: it needs nothing new); one without is
+told to ask the Sysop. The windows and the download's replies are accepted before sign-on
+(`session.before_sign_on`).

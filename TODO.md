@@ -31,8 +31,19 @@
 - [ ] Remember the server address and screen name (kfile)
 - [ ] Overlay layout once the program nears $C800 (resident core + GUI/file/updater overlays)
 - [ ] Stub loader `MEGANET` -> `CLIENT` + overlays; build number stamped by build.bat
-- [ ] Updater: stage in attic, check CRCs, write under temp names, scratch, rename, restart
+- [x] Client updates (2026-11-22, branch client-update): client-src/VERSION (build, oldest)
+      compiled in and put on the disk; a newer D81 in the server's filelibs/meganet_client/
+      ("MegaNet Client" library) is offered to older clients before they sign on: Download
+      (to the SD card as MEGANETn.D81, by the File Library's download) and Later, or
+      Disconnect when too old. deploy.ps1 -PublishClient. Tried in Xemu: the offer window
+- [ ] Update in place (no remounting): write the files to the running disk under temp
+      names, scratch, rename, restart; needs new client code (a DOS command message)
 - [x] File download to disk (storage.asm, through kstream rather than kfile)
+- [ ] Faster transfers: a D81 took about 15 minutes each way on the live server. mega-ip's
+      transmit is stop-and-wait (one ~240-byte segment, then wait for its ACK), and its
+      receive window is 1 KB. The server now quick-ACKs and sends 1,000-byte chunks that fit
+      the window (2026-11-22). Next: let mega-ip keep several segments in flight, and offer
+      a bigger receive window; measure with tcpdump on the droplet first
 - [ ] Copy lib/gui into the project template (see private/CLAUDE.md) once it settles
 
 ## Server (server-src/, Python)

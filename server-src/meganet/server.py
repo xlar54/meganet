@@ -19,7 +19,7 @@ from .db import Database, read_motd_file
 from .games.lobby import GameLobby
 from .screens import Screens
 from .serverlog import ServerLog
-from .session import Session
+from .session import Session, quick_ack
 from .updates import Updates
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # server-src/
@@ -56,8 +56,8 @@ class Server:
         if motd_file:
             lines = self.db.set_motd(read_motd_file(motd_file))
             self.serverlog.write("message of the day: %d lines from %s" % (len(lines), motd_file))
-        self.updates = Updates(updates_dir)
         self.screens = Screens(self)
+        self.updates = Updates(self)          # (a newer client for older ones)
         self.games = GameLobby(games.discover())
         self.db.sync_permissions()           # the game plugins may have registered keys
         for user_id, chips in self.db.poker_chips().items():   # (left on a poker table when
@@ -99,6 +99,7 @@ class Server:
         sock = writer.get_extra_info("socket")
         if sock is not None:
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            quick_ack(sock)
         session = Session(self, reader, writer, self._next_id)
         self._next_id = self._next_id % 0xFFFF + 1
         self.sessions.add(session)
