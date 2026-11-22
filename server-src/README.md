@@ -1029,6 +1029,31 @@ Drop a Python file into `meganet/games/` with a `Game` subclass and restart the 
   Computers now and then say something after a big pot (`COMPUTER_CHAT`, 30%) or going
   all in.
 
+**Blackjack** (`games/blackjack.py`, rules in `blackjack_rules.py`, the table and cards in
+`blackjack_art.py`, permission `games.blackjack`) is 1-3 players against the house's
+dealer, played for credits, with cards bigger than poker's (32 x 28 pixels):
+- Join sits you at a running table with a free seat, or opens a new one at once
+  (`Game.start_at_once`: no queue, one person can play). `join_problem` refuses an overdue
+  loan or fewer than 10 credits.
+- Six decks (a new shoe below a quarter left); the dealer stands on all 17s and checks for
+  blackjack with an Ace or a ten up; blackjack pays 3 to 2; Double on any two cards, Split a
+  pair (by value) once, split Aces one card each. No insurance or surrender. Bets 10-500.
+- A round: type a bet and click Bet. The deal comes when everyone seated has bet, or 15 s
+  after the first bet (the others sit it out). Then each player in seat order (30 s, then you
+  stand), then the dealer, a card every 0.8 s. A bet, double or split leaves your balance at
+  once ("blackjack bet") and is held on the table (`db.to_poker_table`, the record poker
+  uses: given back at start-up if the server stops); what the round pays comes back when it's
+  over ("blackjack win"). Leaving mid-round: your hands stand and are paid all the same; a
+  bet not yet dealt is given back ("blackjack bet back").
+- The window (dynamic id, 632x171): the dealer's line, a 13 x 3 `GRID` of 32 x 32 tiles
+  (slot 11: 11 table tiles, the rest cards drawn on them for each viewer, as poker's), each
+  seat's two lines (name and bet; the hand's total, "> " on its turn, the outcome, or what
+  they said), Bet, Hit / Stand / Double / Split; the panel: the chat (the dealer's lines:
+  who sits down, the results), your turn and balance, a line to type in, Leave. Cards fly
+  from the shoe (`Caps.SPRITES`); a win plays ka-ching. Test switches:
+  `MEGANET_BJ_BET_SECS`, `MEGANET_BJ_DEALER_DELAY`, `MEGANET_BJ_NEXT_ROUND`,
+  `MEGANET_BJ_FLY_FRAMES`.
+
 **One** (`games/one.py`, rules in `one_rules.py`, the cards in `one_art.py`) is the card game
 for 2-4, by the usual official rules: 108 cards; match the colour, number or symbol, or play
 a Wild; Skip, Reverse (a Skip with two), Draw Two, Wild, and Wild Draw Four (only with

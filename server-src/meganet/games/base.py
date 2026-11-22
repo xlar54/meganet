@@ -38,6 +38,8 @@ class Game:
     tick_interval = 0         # seconds between tick() calls; 0 = no ticks
     permission = "games.play" # who may play: a key from permissions.py (register your own)
     computer = False          # True: Join offers "vs Computer..." (the game plays the seats)
+    start_at_once = False     # True: Join starts a game at once when none has a free seat
+                              # (open_seat): one person can play (blackjack, vs the dealer)
 
     @classmethod
     def join_problem(cls, session):

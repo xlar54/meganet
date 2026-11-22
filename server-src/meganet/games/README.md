@@ -50,6 +50,7 @@ Class attributes:
 | `permission` | The permission key needed to see and join the game: `"games.play"` (the default), or your own (below). Everyone also needs `games.play` to open the Games window. |
 | `challenge` | `True` for a two-player game with a lobby (`challenge.py`): Join opens "*Name* Lobby", where players wait, pick an opponent and Challenge; the other Accepts or Declines. The challenger is `players[0]`. Default `False`: the first players to join are matched. |
 | `needs_caps` | `protocol.Caps` bits the client must have (`Caps.GRID` for a `Grid` board); the lobby refuses older clients with a message. |
+| `start_at_once` | `True`: Join starts a game at once when no running one has a free seat (`open_seat`), so one person can play: blackjack against the dealer. |
 | `computer` | `True`: Join asks "Wait for Others" (the queue) or "vs Computer..." (how many computer players, up to `max_players - 1`; the game starts at once with one person). `self.computers` says how many were asked for; the game plays those seats itself, usually from `tick()`. `one.py` is the example. |
 
 Hooks (override what you need; any of them may be `async def`):

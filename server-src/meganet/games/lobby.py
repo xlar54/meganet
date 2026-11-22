@@ -161,6 +161,8 @@ class GameLobby:
         for game in self.running:              # a game with a free seat takes them now
             if type(game) is cls and not game.over and game.open_seat(session):
                 return self.join_running(game, session)
+        if getattr(cls, "start_at_once", False):   # (blackjack: a new table, alone for now)
+            return self.start(cls, [session], queued=False)
         queue = self.queues[cls]
         queue.append(session)
         win = self.windows.get(session)

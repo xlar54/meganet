@@ -1728,12 +1728,13 @@ class Database:
         return {r["user_id"]: r["chips"] for r in
                 self.conn.execute("SELECT user_id, chips FROM poker_chips")}
 
-    def to_poker_table(self, user_id, amount):
-        """Buy in (or buy more chips): credits to the table. The balance, or None."""
+    def to_poker_table(self, user_id, amount, reason="poker buy-in"):
+        """Buy in (or buy more chips): credits to the table. The balance, or None. (Blackjack
+        holds its bets here too: a user is at one table at most.)"""
         now = int(time.time())
         try:
             with self.conn:
-                bal = self._credit(user_id, -amount, "poker buy-in", "", None, None, now)
+                bal = self._credit(user_id, -amount, reason, "", None, None, now)
                 if bal is None:
                     raise _Rollback
                 self.conn.execute("INSERT INTO poker_chips (user_id, chips, since) VALUES "
@@ -1749,7 +1750,7 @@ class Database:
             self.conn.execute("UPDATE poker_chips SET chips = ? WHERE user_id = ?",
                               (chips, user_id))
 
-    def from_poker_table(self, user_id, chips=None, memo=""):
+    def from_poker_table(self, user_id, chips=None, memo="", reason="poker cash-out"):
         """Cash out: the chips (None: as stored) go back to the balance. The balance, or None
         if they had nothing on a table."""
         now = int(time.time())
@@ -1763,8 +1764,7 @@ class Database:
             room = CREDITS_MAX - self.credits(user_id)
             if min(chips, room) <= 0:
                 return self.credits(user_id)
-            return self._credit(user_id, min(chips, room), "poker cash-out", memo, None, None,
-                                now)
+            return self._credit(user_id, min(chips, room), reason, memo, None, None, now)
 
     def credits_total(self):
         """All the credits there are: (balances, on poker tables, owed on loans)."""
