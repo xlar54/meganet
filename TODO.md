@@ -145,7 +145,14 @@
       two), people sit down at a running table. The table: a green felt Grid (35 tiles) with
       cards, the button and chips drawn on its tiles per viewer (TileCache); cards dealt one
       at a time as sprites. Tried in Xemu: buying in, a hand against two computers, the deal
-- [ ] Poker: chat at the table; pre-action boxes (check/fold); showing who won with a
+- [x] Poker chat (2026-11-21): a chat panel at the right of the table (with the dealer's
+      lines), what someone says shown at their seat for 6 s, now and then a remark from a
+      computer. The seats moved to three along each long side to make room. Tried in Xemu:
+      a line typed and sent with RETURN, at the seat and in the chat
+- [x] Poker winner (2026-11-21): ka-ching (Sound.KACHING, a new client sound; sound.asm now
+      plays lists of notes) and gold stars flashing either side of the winner's "Wins N"
+      for 2 s. Tried in Xemu: the sound played to its end, both stars shown
+- [ ] Poker: pre-action boxes (check/fold); showing who won with a
       flight of chips to the winner; the house's credits (vs Computer) are made and lost from
       nothing: watch Bank Settings' totals; table stakes other than 5/10
 - [ ] Bank: a richest-users list; gifts only from accounts older than a day (new accounts

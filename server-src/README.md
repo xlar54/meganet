@@ -414,6 +414,9 @@ The slots are the `protocol.SLOT_*` constants; use those, not the numbers.
 own sounds on the SID, on both speakers (`client-src/sound.asm`). `Sound.CHIME` (1) is a
 two-note "ding-dong". Every admin who can answer gets it once when someone new starts paging,
 with the flashing icon. A hint changing ("3 users are paging") doesn't chime again.
+`Sound.KACHING` (2) is a cash register (a click of noise, then two high notes ringing
+together): a poker hand won. A sound is a list of (effect, frames to the next) steps in
+`sound.asm`; clients older than the ka-ching ignore numbers they don't know.
 
 ## Page Admin
 
@@ -941,17 +944,33 @@ Drop a Python file into `meganet/games/` with a `Game` subclass and restart the 
 `poker_art.py`, permission `games.poker`) is no-limit poker for 2-6, played for credits:
 - Join asks Wait for Others (a running table with a free seat takes you at once) or vs
   Computer... (1-5). `Game.join_problem` refuses players with fewer than 100 credits or an
-  overdue loan. Buy Chips... brings 100-1,000 credits to the table (`db.to_poker_table`);
+  overdue loan. Chips... brings 100-1,000 credits to the table (`db.to_poker_table`);
   what's in front of you after each hand is saved (`db.set_poker_chips`), and Leave or a
   disconnect cashes it out (`db.from_poker_table`). At start-up, chips left on a table go
   back to their owners.
-- Blinds 5/10. Fold, Check / Call, Raise (to the amount in the box), 1/2 Pot and Pot (fill
-  the box), All In; Sit Out / I'm Back. 30 s a turn, then check or fold for you; two in a
-  row sit you out. Each hand you act in earns "poker hand" credits.
-- The table window (dynamic id, 624x171): a 13 x 5 `GRID` of the felt (slot 9) with cards,
-  the button and chips drawn on its tiles for each viewer; seat labels round it (name,
-  chips, last action, "Wins N" or the hand shown); the pot, the hand number, your status and
-  your best hand in the corners.
+- Blinds 5/10. Fold, Check / Call, Raise (to the amount in the box), 1/2 and Pot (fill the
+  box), All In; Sit Out / I'm Back. 30 s a turn, then check or fold for you; two in a row
+  sit you out. Each hand you act in earns "poker hand" credits.
+- The table window (dynamic id, 632x171): a 13 x 5 `GRID` of the felt (slot 9) at the left,
+  with cards, the button and chips drawn on its tiles for each viewer (`poker_art.compose`:
+  an item may span two tiles, and a tile may hold several). Three seats along the bottom
+  (you in the middle) and three along the top, each with a label of two lines: name and
+  chips, then the last action ("> " first on the turn), "Wins N", the hand shown, or for
+  6 s what they just said.
+- A hand won: once the last cards land, the winner hears ka-ching (`Sound.KACHING`), and
+  everyone with `Caps.SPRITES` sees two gold stars (the server's sprites 0 and 1, a star
+  drawn on a felt tile) flash either side of the biggest winner's "Wins N" for 2 s. The next
+  deal ends them early. Test switches: `MEGANET_POKER_CPU_FOLDS=1` (the computers always
+  fold), `MEGANET_POKER_NEXT_HAND`, `MEGANET_POKER_FLASH_SECS` / `_FLASH_EVERY` (equal: the
+  stars stay on), `MEGANET_POKER_FLY_FRAMES`.
+- The panel at the right: the pot, blinds and hand number; the table's chat, with a few of
+  the dealer's lines in it (who sits down and leaves, the hands shown, who won: not every
+  check and call, as each line redraws the chat box and the seat labels show them); whose
+  turn it is (the seconds left only on your own turn: a once-a-second label for everyone
+  else was redraw for nothing), and your best hand; a line to type in (Send is the default
+  button, so RETURN sends; Raise needs a click). Chat at the table earns nothing.
+  Computers now and then say something after a big pot (`COMPUTER_CHAT`, 30%) or going
+  all in.
 
 **One** (`games/one.py`, rules in `one_rules.py`, the cards in `one_art.py`) is the card game
 for 2-4, by the usual official rules: 108 cards; match the colour, number or symbol, or play

@@ -5,8 +5,9 @@ art is drawn in square "fat" pixels, two screen pixels each).
 - TABLE_TILES: the table's distinct tiles (the felt repeats, so a few dozen), and TABLE_CELLS,
   which of them each cell shows. These are sent once (resource slot RESOURCE_SLOT).
 - Cards, the dealer button and the pot's chips are drawn ON a cell's table tile by
-  overlay(): the table sends each viewer the tiles it needs as they come (poker.TileCache),
-  into the slot's tiles after the table's. So a card can sit anywhere, rail and all.
+  compose(): the table sends each viewer the tiles it needs as they come (poker.TileCache),
+  into the slot's tiles after the table's. So a card can sit anywhere, across two tiles
+  (each draws its part), rail and all.
 
 Colours: protocol.GAME_COLOURS and the GUI's (0-15). Edit freely.
 """
@@ -179,7 +180,19 @@ def chips():
     return g
 
 
-OVERLAYS = {"button": _disc_button(), "chips": chips(), "back": card_back()}
+def star():
+    """A gold star, 9 x 9 fat pixels: the winner's, flashing beside their seat (a sprite:
+    STAR_COLOURS show, the felt round it doesn't)."""
+    rows = ["....#....", "...###...", "...###...", "#########", ".#######.", "..#####..",
+            "..##.##..", ".##...##.", ".#.....#."]
+    g = [[GOLD if ch == "#" else None for ch in row] for row in rows]
+    for x, y in ((4, 1), (4, 3), (4, 4), (3, 4), (5, 4)):
+        g[y][x] = WHITE
+    return g
+
+
+STAR_COLOURS = [GOLD, WHITE]
+OVERLAYS = {"button": _disc_button(), "chips": chips(), "back": card_back(), "star": star()}
 
 
 def overlay_pixels(what):
@@ -189,23 +202,34 @@ def overlay_pixels(what):
     return card_face(what)
 
 
-def overlay(base, what, dx):
-    """Table tile `base` (bytes) with `what` drawn on it, its left edge `dx` screen pixels in
-    (even), centred top to bottom. The tile's bytes."""
+def overlay_width(what):
+    """How wide an overlay is, in screen pixels."""
+    return 2 * len(overlay_pixels(what)[0])
+
+
+def compose(base, items):
+    """Table tile `base` (bytes) with each (what, dx) of `items` drawn on it in turn, its left
+    edge `dx` screen pixels in (even; it may start left of the tile or run off its right: only
+    the part on this tile is drawn), centred top to bottom. The tile's bytes."""
     px = bytearray(base)
-    g = overlay_pixels(what)
-    gh, gw = len(g), len(g[0])
-    y0 = (TILE_H - gh) // 2
-    for gy, row in enumerate(g):
-        for gx, v in enumerate(row):
-            if v is None:
-                continue
-            for k in (0, 1):
-                x = dx + 2 * gx + k
-                y = y0 + gy
-                if 0 <= x < TILE_W and 0 <= y < TILE_H:
-                    px[y * TILE_W + x] = v
+    for what, dx in items:
+        g = overlay_pixels(what)
+        y0 = (TILE_H - len(g)) // 2
+        for gy, row in enumerate(g):
+            for gx, v in enumerate(row):
+                if v is None:
+                    continue
+                for k in (0, 1):
+                    x = dx + 2 * gx + k
+                    y = y0 + gy
+                    if 0 <= x < TILE_W and 0 <= y < TILE_H:
+                        px[y * TILE_W + x] = v
     return bytes(px)
+
+
+def overlay(base, what, dx):
+    """compose() with one item."""
+    return compose(base, [(what, dx)])
 
 
 def interior():
@@ -216,7 +240,7 @@ def interior():
 
 
 def preview(cells_overlays, path):
-    """A PNG of the table with overlays {(col, row): (what, dx)} (tests, art checks)."""
+    """A PNG of the table with overlays {(col, row): [(what, dx), ...]} (art checks)."""
     from PIL import Image
     from ..protocol import palette_rgb
     img = Image.new("RGB", (W, H * 2))
@@ -224,7 +248,7 @@ def preview(cells_overlays, path):
         for col in range(COLS):
             t = TABLE_TILES[TABLE_CELLS[row * COLS + col]]
             if (col, row) in cells_overlays:
-                t = overlay(t, *cells_overlays[(col, row)])
+                t = compose(t, cells_overlays[(col, row)])
             for y in range(TILE_H):
                 for x in range(TILE_W):
                     rgb = palette_rgb(t[y * TILE_W + x])

@@ -12,19 +12,22 @@ Each hand you take part in earns the bank's "poker hand" credits (nothing extra 
 winning: winning is its own reward). If the server stops, the chips you had at the start of
 the hand go back to your balance (db.poker_chips). An overdue loan keeps you from the table.
 
-The table (one window a player, a dynamic id; Caps.GRID clients). You sit at the bottom left;
-the others clockwise from there, two at each end and two across the top:
+The table (one window a player, a dynamic id; Caps.GRID clients). You sit at the bottom in
+the middle; the others clockwise from there, three along the bottom and three along the top.
+Each seat's second line is what they did, or for a few seconds what they said in the chat:
 
-          Pot: 120         bob    1,250        Computer 2   980         Hand 12
-          Blinds 5/10      Call 20             Fold
-               +----------------------------------------------------------+
-     Computer 1|  [][]                          [][]                     |Computer 3
-     1,000     | [][]   [] [] [] [] []                       [][]        |1,020
-     Raise 40  |  [][] (D)                      [][]                     |Check
-               +----------------------------------------------------------+
-     status         you          1,180           Computer 4    900       Your hand:
-                    Bet 40                       Fold                    Pair of Kings
-     [Fold] [Call 20] [Raise] [ 60 ] [1/2 Pot] [Pot] [All In]                   [Leave]
+      Computer 2   980   bob        1,250  Computer 3 1,020 | Pot: 120
+      Fold               Call 20           "nice hand"      | Blinds 5/10    Hand 12
+     +--------------------------------------------------+   | the chat: what people say,
+     |     [][]  (D)       [][]              [][]       |   | and the dealer's lines
+     |  (chips) [] [] [] [] []                          |   | ("bob wins 120.")
+     |     [][]            [][]              [][]       |   | Your turn (25 s): call 20
+     +--------------------------------------------------+   | Your hand: Pair of Kings
+      Computer 1   1,000   you      1,180  Computer 4   900 | [type here     ] [Send]
+      Raise 40             Bet 40          Fold             |
+     [Fold][Call 20][Raise][ 60 ][1/2][Pot][All In]          [Sit Out][Chips...][Leave]
+
+RETURN sends the chat line (Send is the default button; Raise needs a click).
 
 The table is a Grid of tiles (poker_art.py); the cards, the dealer button and the pot's chips
 are drawn on its tiles for each viewer (TileCache). Cards fly from the dealer to the seats
@@ -40,11 +43,12 @@ import zlib
 from collections import OrderedDict
 
 from .. import permissions as perms
-from ..protocol import Caps, GFlag, WFlag, clean_text
-from ..ui import Button, Grid, Label, TextBox, Window, add_buttons, centre, closer, MARGIN
+from ..protocol import Caps, GFlag, Sound, WFlag, clean_text
+from ..ui import (Button, Grid, Label, TextBox, TextView, Window, add_buttons, centre, closer,
+                  MARGIN)
 from .base import Game
 from .poker_art import (TABLE, TABLE_TILES, TABLE_CELLS, N_TABLE, TILE_W, TILE_H, COLS,
-                        CARD_COLOURS, overlay, interior)
+                        CARD_COLOURS, STAR_COLOURS, compose, overlay_width)
 from .poker_rules import Hand, RulesError, computer_move, evaluate, describe, short
 
 RESOURCE_SLOT = 9                # (1 chess, 2-7 the Art Gallery, 8 One)
@@ -58,32 +62,70 @@ COMPUTER_NAMES = ["Computer %d" % n for n in range(1, SEATS)]
 TURN_SECS = 30                   # then the computer checks or folds for you
 TIMEOUTS_OUT = 2                 # timeouts in a row before you're sat out
 BOT_DELAY = 1.2
-NEXT_HAND = 4.0                  # seconds between hands (after a showdown; less otherwise)
+NEXT_HAND = float(os.environ.get("MEGANET_POKER_NEXT_HAND", 4.0))   # seconds between hands
+                                                                     # (half without a showdown)
 FLY_FRAMES = int(os.environ.get("MEGANET_POKER_FLY_FRAMES", 8))   # 0.16 s a card
 FLY_GAP = 0.04
+CPU_FOLDS = os.environ.get("MEGANET_POKER_CPU_FOLDS") == "1"   # (tests: you win every hand)
+FLASH_SECS = float(os.environ.get("MEGANET_POKER_FLASH_SECS", 2.0))    # the winner's stars:
+FLASH_EVERY = float(os.environ.get("MEGANET_POKER_FLASH_EVERY", 0.25))  # on, off, on... (tests:
+                                                                        # EVERY = SECS: on)
+STAR_FAT = 9                                 # the star: 9 x 9 fat pixels
+STAR_PX = 2 * STAR_FAT
+STAR_Y = (TILE_H - STAR_FAT) // 2            # its first row in its tile
 
-WIN_W, WIN_H = 624, 171
-TX, TY = 104, 24                 # the table grid in the window
-# by place round the table (0 = you, then clockwise): the two hole-card cells (col, row)
-# and how far in each card is drawn (they sit close together), the dealer button's cell,
-# and the seat's label (x, y, width, lines)
-HOLE_CELLS = [((3, 3), (4, 3)), ((1, 2), (2, 2)), ((3, 1), (4, 1)), ((8, 1), (9, 1)),
-              ((10, 2), (11, 2)), ((8, 3), (9, 3))]
-HOLE_DX = (7, 1)
-BUTTON_CELLS = [(5, 3), (3, 2), (5, 1), (7, 1), (9, 2), (7, 3)]
-LABELS = [(168, 136, 128, 2), (0, 64, 100, 3), (168, 2, 128, 2), (328, 2, 128, 2),
-          (524, 64, 100, 3), (328, 136, 128, 2)]
-BOARD_CELLS = [(4 + k, 2) for k in range(5)]
-BOARD_DX = 4
-CHIPS_CELL, CHIPS_DX = (6, 1), 6
+CHAT_MAX = 120                   # characters a chat line
+LOG_KEEP = 60                    # lines of it a newcomer sees
+SAY_SECS = 6.0                   # a chat line shows at the seat this long
+COMPUTER_CHAT = 0.3              # how often a computer says something when it might
+BIG_POT = 200                    # (what's worth a remark)
+WIN_LINES = ["Nice.", "I'll take that.", "Thank you!", "Read you like a book.", "Ship it!"]
+LOSE_LINES = ["Nice hand.", "Ouch.", "Well played.", "I'll be back.", "Unlucky river..."]
+ALL_IN_LINES = ["I'm all in!", "All of it.", "Let's gamble."]
+
+WIN_W, WIN_H = 632, 171
+TX, TY = 0, 24                   # the table grid in the window
+PANEL_X, PANEL_W = 420, 212      # the right: the pot, the chat and the dealer's lines
+# by place round the table (0 = you, then clockwise: three seats along the bottom, three
+# along the top): the middle of the seat's two cards (table pixels) and its row of tiles
+SEAT_X = [208, 80, 80, 208, 336, 336]
+SEAT_ROW = [3, 3, 1, 1, 1, 3]
+CARD_W = 24                      # screen pixels
+BOARD_ROW = 2
+CHIPS_AT = (2, 102)              # (row, x): the pot, left of the board
 
 
-def cell(cr):
-    return cr[1] * COLS + cr[0]
+def hole_x(place, k):
+    """Table x of a seat's card k (0 or 1): side by side, 2 pixels apart."""
+    return SEAT_X[place] - CARD_W - 2 + k * (CARD_W + 2)
 
 
-def cell_xy(cr):
-    return TX + cr[0] * TILE_W, TY + cr[1] * TILE_H
+def button_x(place):
+    """The dealer button sits beside the cards, on the side towards the table's middle."""
+    c = SEAT_X[place]
+    return c - CARD_W - 2 - 4 - 18 if c > 208 else c + CARD_W + 6
+
+
+def board_x(k):
+    return 4 * TILE_W + 4 + k * TILE_W
+
+
+def label_at(place):
+    """A seat's two lines (x, y, width): above the table for the top row, below it for the
+    bottom row."""
+    return SEAT_X[place] - 64 + TX, (2 if SEAT_ROW[place] == 1 else 136), 128
+
+
+def cells_for(items):
+    """{cell: [(what, dx), ...]} for items [(row, x, what), ...]: each drawn on every tile it
+    covers."""
+    out = {}
+    for row, x, what in items:
+        w = overlay_width(what)
+        for col in range(x // TILE_W, (x + w - 1) // TILE_W + 1):
+            if 0 <= col < COLS:
+                out.setdefault(row * COLS + col, []).append((what, x - col * TILE_W))
+    return out
 
 
 def num(n):
@@ -91,16 +133,17 @@ def num(n):
 
 
 class TileCache:
-    """One viewer's tiles past the table's: (base tile, what, dx) -> tile number, sent the
-    first time it's needed; the least used goes when there's no room (never one on show)."""
+    """One viewer's tiles past the table's: (base tile, ((what, dx), ...)) -> tile number,
+    sent the first time it's needed; the least used goes when there's no room (never one on
+    show)."""
 
     def __init__(self, session):
         self.session = session
         self.map = OrderedDict()
         self.free = list(range(N_TABLE, N_TILES))
 
-    def get(self, base, what, dx, keep):
-        key = (base, what, dx)
+    def get(self, base, items, keep):
+        key = (base, tuple(items))
         if key in self.map:
             self.map.move_to_end(key)
             return self.map[key]
@@ -112,7 +155,7 @@ class TileCache:
                 old = next(iter(self.map))
             t = self.map.pop(old)
         self.session.send_resource_at(RESOURCE_SLOT, t * TILE_W * TILE_H,
-                                      overlay(TABLE_TILES[base], what, dx))
+                                      compose(TABLE_TILES[base], key[1]))
         self.map[key] = t
         return t
 
@@ -131,6 +174,8 @@ class Seat:
         self.timeouts = 0
         self.acted = False            # did something themselves this hand (the bank pays)
         self.view = None              # a person's window and what it shows
+        self.said = ""                # their last chat line, shown at the seat until
+        self.said_until = 0.0
 
     @property
     def empty(self):
@@ -151,9 +196,10 @@ class View:
         self.seat = seat
         self.session = session
         self.cache = TileCache(session)
-        self.hidden = set()           # cells whose card is still flying there
+        self.hidden = set()           # cards still flying: ("hole", seat, k), ("board", k)
         self.fly_free = 0.0
         self.fly_n = 1
+        self.flash = 0                # the winner's stars: which flash is on (see _flash)
         self.win = None
         self.buy_win = None
 
@@ -194,7 +240,7 @@ class Poker(Game):
         self.hand_no = 0
         self.button = None
         self.next_at = time.monotonic() + 1.0
-        self.last_event = ""
+        self.log = []                            # the chat so far (for people sitting down)
         self.events_seen = 0
         self.moves_seen = 0
         self.turn_since = 0.0
@@ -218,7 +264,7 @@ class Poker(Game):
     def _seat(self, player, i):
         s = self.seats[i]
         s.player, s.name, s.computer, s.chips = player, player.name, False, 0
-        s.sitting_out, s.timeouts = False, 0
+        s.sitting_out, s.timeouts, s.said = False, 0, ""
         player.session.send_resource(RESOURCE_SLOT, TABLE_KEY, TABLE, title="Poker")
         s.view = View(s, player.session)
         self._window(s)
@@ -243,30 +289,37 @@ class Poker(Game):
         v.grid = win.add(Grid(TX, TY, COLS, 5, TILE_W, TILE_H, RESOURCE_SLOT,
                               cells=TABLE_CELLS))
         v.labels = []
-        for lx, ly, lw, lines in LABELS:
-            v.labels.append([win.add(Label(lx, ly + 10 * k, lw, 10, "",
-                                           flags=GFlag.CENTRE if lw == 128 else 0))
-                             for k in range(lines)])
-        v.pot = win.add(Label(0, 2, 160, 10, "", flags=GFlag.BOLD))
-        win.add(Label(0, 12, 160, 10, "Blinds %d/%d" % (SMALL, BIG)))
-        v.hand_no = win.add(Label(464, 2, 160, 10, ""))
-        v.sit_b = win.add(Button(0, 98, 96, 16, "Sit Out", on_click=lambda b: self.sit_out(s)))
-        v.buy_b = win.add(Button(0, 116, 96, 16, "Buy Chips...",
-                                 on_click=lambda b: self.ask_buy(s)))
-        v.status = [win.add(Label(0, 136 + 10 * k, 160, 10, "")) for k in range(2)]
-        v.mine = [win.add(Label(464, 136 + 10 * k, 160, 10, "")) for k in range(2)]
+        for place in range(SEATS):
+            lx, ly, lw = label_at(place)
+            v.labels.append([win.add(Label(lx, ly + 10 * k, lw, 10, "", flags=GFlag.CENTRE))
+                             for k in range(2)])
+        # the panel at the right: the pot, the chat (and the dealer's lines), your turn and
+        # hand, a line to type in, and the seat's buttons
+        px, pw = PANEL_X, PANEL_W
+        v.pot = win.add(Label(px, 2, pw, 10, "", flags=GFlag.BOLD))
+        v.hand_no = win.add(Label(px, 12, pw, 10, ""))
+        v.chat = win.add(TextView(px, 24, pw, 86, list(self.log)))
+        v.status = [win.add(Label(px, 112 + 10 * k, pw, 10, "")) for k in range(2)]
+        v.entry = win.add(TextBox(px, 138, pw - 60, 12))
+        win.add(Button(px + pw - 56, 136, 56, 16, "Send", GFlag.DEFAULT,
+                       on_click=lambda b: self.say(s)))
         y = WIN_H - 16
-        v.fold_b = win.add(Button(0, y, 56, 16, "Fold", on_click=lambda b: self.do(s, "fold")))
-        v.call_b = win.add(Button(62, y, 96, 16, "Check", on_click=lambda b: self.do(s, "call")))
-        v.raise_b = win.add(Button(164, y, 64, 16, "Raise", GFlag.DEFAULT,
+        v.sit_b = win.add(Button(px, y, 76, 16, "Sit Out", on_click=lambda b: self.sit_out(s)))
+        v.buy_b = win.add(Button(px + 80, y, 76, 16, "Chips...",
+                                 on_click=lambda b: self.ask_buy(s)))
+        win.add(Button(px + pw - 52, y, 52, 16, "Leave", on_click=lambda b: self.quit(s)))
+        # betting, under the table
+        v.fold_b = win.add(Button(0, y, 44, 16, "Fold", on_click=lambda b: self.do(s, "fold")))
+        v.call_b = win.add(Button(48, y, 92, 16, "Check", on_click=lambda b: self.do(s, "call")))
+        v.raise_b = win.add(Button(144, y, 52, 16, "Raise",
                                    on_click=lambda b: self.do(s, "raise")))
-        v.amount = win.add(TextBox(234, y + 2, 64, 12))
-        v.half_b = win.add(Button(304, y, 72, 16, "1/2 Pot", on_click=lambda b: self.size(s, 2)))
-        v.pot_b = win.add(Button(382, y, 48, 16, "Pot", on_click=lambda b: self.size(s, 1)))
-        v.allin_b = win.add(Button(436, y, 64, 16, "All In",
+        v.amount = win.add(TextBox(200, y + 2, 48, 12))
+        v.half_b = win.add(Button(252, y, 36, 16, "1/2", on_click=lambda b: self.size(s, 2)))
+        v.pot_b = win.add(Button(292, y, 36, 16, "Pot", on_click=lambda b: self.size(s, 1)))
+        v.allin_b = win.add(Button(332, y, 60, 16, "All In",
                                    on_click=lambda b: self.do(s, "allin")))
-        win.add(Button(WIN_W - 56, y, 56, 16, "Leave", on_click=lambda b: self.quit(s)))
         self.show(p, win)
+        v.entry.focus()                  # (type to chat straight away)
 
     @staticmethod
     def _put(gadget, text):
@@ -281,7 +334,33 @@ class Poker(Game):
         return (seat.index - viewer.index) % SEATS
 
     def tell(self, line):
-        self.last_event = line[:40]
+        """A line in everyone's chat: the dealer's (placeholders {i} filled), or a person's."""
+        line = self.fill(line)
+        self.log.append(line)
+        del self.log[:-LOG_KEEP]
+        for s in self.people():
+            if s.player in self.players and s.view is not None and s.view.win is not None:
+                s.view.chat.append(line)
+
+    def speak(self, t, text):
+        """Seat t says `text`: in the chat, and at the seat for a few seconds."""
+        self.tell("%s: %s" % (t.name, text))
+        t.said, t.said_until = text, time.monotonic() + SAY_SECS
+        self.redraw()
+
+    def say(self, s):
+        if s.player is None or s.player not in self.players:
+            return None
+        text = clean_text(s.view.entry.value).strip()[:CHAT_MAX]
+        if not text:
+            return None
+        s.view.entry.set_text("")
+        self.speak(s, text)
+        return None
+
+    def computer_says(self, t, lines):
+        if t.computer and self.rng.random() < COMPUTER_CHAT:
+            self.speak(t, self.rng.choice(lines))
 
     def name_of(self, i):
         return self.seats[i].name or "?"
@@ -298,97 +377,107 @@ class Poker(Game):
             if s.player in self.players and s.view.win is not None and s.view.win.shown:
                 self.draw(s)
 
+    def items(self, me):
+        """What's on the table for `me`: [(row, x, what), ...] (table pixels): the cards
+        (yours face up, the others' backs until a showdown), the board, the pot's chips and
+        the dealer button. Cards still flying aren't there yet."""
+        v, h = me.view, self.hand
+        out = []
+        for t in self.seats:
+            if h is None or t.index not in h.hole or t.index in h.folded:
+                continue
+            place = self.place(me, t)
+            shown = t is me or t.index in h.shown
+            for k, c in enumerate(h.hole[t.index]):
+                if ("hole", t.index, k) not in v.hidden:
+                    out.append((SEAT_ROW[place], hole_x(place, k), c if shown else "back"))
+        if h is not None:
+            for k, c in enumerate(h.board):
+                if ("board", k) not in v.hidden:
+                    out.append((BOARD_ROW, board_x(k), c))
+            if h.pot() and not h.over:
+                out.append(CHIPS_AT + ("chips",))
+        if self.button is not None:
+            place = self.place(me, self.seats[self.button])
+            out.append((SEAT_ROW[place], button_x(place), "button"))
+        return out
+
     def draw(self, me):
         v, h = me.view, self.hand
         cells = list(TABLE_CELLS)
-        over = {}                                # cell -> (what, dx)
-        mine = None
-        for t in self.seats:
-            place = self.place(me, t)
-            cards = None
-            if h is not None and t.index in h.hole and t.index not in h.folded:
-                if t is me or t.index in h.shown:
-                    cards = h.hole[t.index]
-                else:
-                    cards = ["back", "back"]
-            if cards:
-                for cr, dx, c in zip(HOLE_CELLS[place], HOLE_DX, cards):
-                    if cell(cr) not in v.hidden:
-                        over[cell(cr)] = (c, dx)
-            self.draw_label(v, me, t, place)
-        if h is not None:
-            for k, c in enumerate(h.board):
-                cr = BOARD_CELLS[k]
-                if cell(cr) not in v.hidden:
-                    over[cell(cr)] = (c, BOARD_DX)
-            if h.pot() and not h.over:
-                over[cell(CHIPS_CELL)] = ("chips", CHIPS_DX)
-            if me.index in h.hole and me.index not in h.folded:
-                mine = evaluate(h.hole[me.index] + h.board) if h.board else None
-        if self.button is not None:
-            over[cell(BUTTON_CELLS[self.place(me, self.seats[self.button])])] = ("button", 8)
         keep = set(v.grid.cells)
-        for c, (what, dx) in over.items():
-            t = v.cache.get(TABLE_CELLS[c], what, dx, keep)
+        for c, items in cells_for(self.items(me)).items():
+            t = v.cache.get(TABLE_CELLS[c], items, keep)
             keep.add(t)
             cells[c] = t
         v.grid.set_cells(cells)
-        # the text round the table
-        self._put(v.pot, "Pot: %s" % num(h.pot()) if h is not None and h.pot() else "")
-        self._put(v.hand_no, "Hand %d" % self.hand_no if self.hand_no else "")
-        self._put(v.mine[0], "Your hand:" if mine else "")
-        self._put(v.mine[1], describe(mine)[:20] if mine else "")
+        for t in self.seats:
+            self.draw_label(v, me, t, self.place(me, t))
+        # the panel
+        pot = h.pot() if h is not None else 0
+        self._put(v.pot, "Pot: %s" % num(pot) if pot else "")
+        self._put(v.hand_no, "Blinds %d/%d%s" % (SMALL, BIG, "    Hand %d" % self.hand_no
+                                                 if self.hand_no else ""))
         line1, line2 = self.status_lines(me)
-        self._put(v.status[0], line1[:19])         # (19: clear of your seat's label)
-        self._put(v.status[1], line2[:19])
+        self._put(v.status[0], line1[:PANEL_W // 8])
+        self._put(v.status[1], line2[:PANEL_W // 8])
         self.buttons(me)
 
     def draw_label(self, v, me, t, place):
-        lines = v.labels[place]
-        if t.empty:
-            texts = ["(empty seat)" if place else "", ""]
-        else:
-            h = self.hand
-            mark = "> " if h is not None and h.turn == t.index and not h.over else ""
-            chips = h.stack[t.index] if h is not None and t.index in h.hole else t.chips
-            act = ""
-            if h is not None and t.index in h.hole:
-                act = h.last_action.get(t.index, "")
-                if h.over:
-                    won = next((w for j, w, _ in h.results if j == t.index), 0)
-                    value = next((val for j, _, val in h.results if j == t.index), None)
-                    act = ("Wins %s" % num(won)) if won else (
-                        short(value) if value is not None and t.index in h.shown else
-                        "Fold" if t.index in h.folded else "")
-            elif t.sitting_out:
-                act = "Sitting out"
-            elif t.chips <= 0:
-                act = "No chips"
-            name = mark + t.name
-            if len(lines) == 3:
-                texts = [name[:12], num(chips), act[:12]]
-            else:
-                texts = [("%-10s %5s" % (name[:10], num(chips)))[:16], act[:16]]
-        for g, text in zip(lines, texts + [""] * 3):
+        for g, text in zip(v.labels[place], self.label_texts(t, place)):
             self._put(g, text)
 
-    def status_lines(self, me):
+    def label_texts(self, t, place):
+        """A seat's two lines: name and chips, then what they did or said."""
+        if t.empty:
+            return ["(empty seat)" if place else "", ""]
         h = self.hand
+        mark = "> " if h is not None and h.turn == t.index and not h.over else ""   # (line 2)
+        chips = h.stack[t.index] if h is not None and t.index in h.hole else t.chips
+        act = ""
+        if h is not None and t.index in h.hole:
+            act = h.last_action.get(t.index, "")
+            if h.over:
+                won = next((w for j, w, _ in h.results if j == t.index), 0)
+                value = next((val for j, _, val in h.results if j == t.index), None)
+                act = ("Wins %s" % num(won)) if won else (
+                    short(value) if value is not None and t.index in h.shown else
+                    "Fold" if t.index in h.folded else "")
+        elif t.sitting_out:
+            act = "Sitting out"
+        elif t.chips <= 0:
+            act = "No chips"
+        if t.said and time.monotonic() < t.said_until:
+            act = '"%s"' % (t.said if len(t.said) <= 13 else t.said[:10].rstrip() + "...")
+        # (15 characters at most: the labels are 128 wide and side by side, so there's
+        # always a gap between one seat's and the next)
+        # (the chips without commas, and the name gives way to them: "Computer 2 1000")
+        room = 15 - 1 - len(str(chips))
+        return ["%s %d" % (t.name[:min(10, room)].rstrip(), chips), (mark + act)[:15]]
+
+    def status_lines(self, me):
+        """Two lines over the chat box: whose turn it is (and the seconds left), and your
+        hand."""
+        h = self.hand
+        mine = ""
+        if h is not None and me.index in h.hole and me.index not in h.folded and h.board:
+            mine = "Your hand: " + describe(evaluate(h.hole[me.index] + h.board))
         if me.chips <= 0 and (h is None or me.index not in h.hole):
-            return "No chips: Buy", "Chips... or Leave."
+            return "No chips: Chips... or Leave.", ""
         if me.sitting_out:
-            return "You're sitting out.", "Click I'm Back."
+            return "You're sitting out: I'm Back.", ""
         if h is None or h.over:
             if sum(1 for t in self.seats if t.ready()) < 2:
-                return "Waiting for players", "to sit down..."
-            return self.fill(self.last_event)[:19], "Next hand soon..."
+                return "Waiting for players...", mine
+            return "Next hand soon...", mine
+        left = max(0, int(TURN_SECS - (time.monotonic() - self.turn_since)))
         if h.turn == me.index:
             call = h.to_call(me.index)
-            left = max(0, int(TURN_SECS - (time.monotonic() - self.turn_since)))
-            return ("Your turn (%d s):" % left,
-                    "call %s or raise" % num(call) if call else "check or bet")
-        last = self.fill(h.events[-1]) if h.events else ""
-        return last[:19], last[19:38]
+            return ("Your turn (%d s): %s" % (left, "call %s" % num(call) if call
+                                               else "check or bet"), mine)
+        if self.seats[h.turn].computer:
+            return "%s is thinking..." % self.name_of(h.turn), mine
+        return "Waiting for %s..." % self.name_of(h.turn)[:12], mine
 
     def buttons(self, me):
         v, h = me.view, self.hand
@@ -471,6 +560,11 @@ class Poker(Game):
         if self.over:
             return
         now = time.monotonic()
+        done = [t for t in self.seats if t.said and now >= t.said_until]
+        for t in done:                           # (what they said goes from the seat)
+            t.said = ""
+        if done:
+            self.redraw()
         h = self.hand
         if h is None or h.over:
             if now >= self.next_at:
@@ -479,7 +573,8 @@ class Poker(Game):
         t = self.seats[h.turn]
         if t.computer:
             if now - self.turn_since >= BOT_DELAY:
-                action, amount = computer_move(h, h.turn, self.rng)
+                action, amount = (("fold", None) if CPU_FOLDS
+                                  else computer_move(h, h.turn, self.rng))
                 self.act(t, action, amount)
             return
         left = TURN_SECS - (now - self.turn_since)
@@ -492,7 +587,8 @@ class Poker(Game):
                     t.player.session.toast("You were sat out: click I'm Back to play.")
                 self.redraw()
         elif int(left) != int(left + self.tick_interval) and t.view is not None:
-            self.draw(t)                         # (the turn's countdown, once a second)
+            self.draw(t)                         # (their countdown, once a second: only
+                                                 # theirs changes)
 
     def new_hand(self):
         for t in self.seats:                     # the house keeps its players in chips
@@ -529,13 +625,18 @@ class Poker(Game):
             t.acted = True
             t.timeouts = 0
         self.after_move()
+        if action == "allin":
+            self.computer_says(t, ALL_IN_LINES)
         return True
 
     def after_move(self):
         h = self.hand
         self.turn_since = time.monotonic()
-        if h.events[self.events_seen:]:
-            self.tell(h.events[-1])
+        for e in h.events[self.events_seen:]:
+            # (only the hands shown and who won: each line redraws everyone's chat box, and
+            # the seat labels already say who called or folded, the table shows the board)
+            if " shows " in e or " wins " in e:
+                self.tell(e)
         self.events_seen = len(h.events)
         moves = h.moves[self.moves_seen:]
         self.moves_seen = len(h.moves)
@@ -569,9 +670,78 @@ class Poker(Game):
                 bank.earn(t.user_id, "poker hand")
         showdown = bool(h.shown)
         self.next_at = time.monotonic() + (NEXT_HAND if showdown else NEXT_HAND / 2)
+        # now and then a computer has something to say about a big pot
+        won = {j: w for j, w, _ in h.results if w}
+        if sum(won.values()) >= BIG_POT:
+            for t in self.seats:
+                if t.computer and t.index in h.hole and t.index in won:
+                    self.computer_says(t, WIN_LINES)
+                    break
+                if t.computer and t.index in h.hole and h.stack[t.index] == 0:
+                    self.computer_says(t, LOSE_LINES)
+                    break
+        self._celebrate(h)
         if self.people():
             self.people()[0].player.session.log("poker: hand %d: %s" % (
                 self.hand_no, "; ".join(self.fill(e) for e in h.events if "wins" in e)))
+
+    # ---- the winner: ka-ching, and stars flashing at their seat ----
+
+    def _celebrate(self, h):
+        """After the last cards land: each winner hears ka-ching (Sound.KACHING), and everyone
+        (Caps.SPRITES) sees two gold stars flash either side of the biggest winner's "Wins N"
+        for FLASH_SECS."""
+        won = sorted(((w, j) for j, w, _ in h.results if w), reverse=True)
+        if not won:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        top, winners = won[0][1], {j for _, j in won}
+        now = time.monotonic()
+        for s in self.people():
+            v = s.view
+            if s.player not in self.players or v is None or v.win is None:
+                continue
+            at = max(now, v.fly_free) - now          # (when the river has landed)
+            if s.index in winners:
+                loop.call_later(at, self._kaching, s)
+            if not s.player.session.caps & Caps.SPRITES:
+                continue
+            v.flash += 1
+            k = 0
+            while k * FLASH_EVERY < FLASH_SECS:
+                loop.call_later(at + k * FLASH_EVERY, self._flash, s, v.flash, top, k % 2 == 0)
+                k += 1
+            loop.call_later(at + FLASH_SECS, self._flash, s, v.flash, top, False)
+
+    def _kaching(self, s):
+        if s.player is not None and s.player in self.players:
+            s.player.session.sound(Sound.KACHING)
+
+    def _flash(self, s, gen, winner, on):
+        """The stars on (or off) for viewer s: `gen` is the flash it belongs to (a new deal
+        or a newer win ends it)."""
+        v = s.view
+        if (v is None or v.flash != gen or s.player not in self.players or self.over
+                or not v.win.shown):
+            return
+        session = s.player.session
+        if not on:
+            session.sprite_off()
+            return
+        t = self.seats[winner]
+        place = self.place(s, t)
+        text = self.label_texts(t, place)[1]
+        lx, ly, lw = label_at(place)
+        cx, half = lx + lw // 2, 4 * len(text)
+        tile = v.cache.get(TABLE_CELLS[BOARD_ROW * COLS + COLS // 2], [("star", 0)],
+                           set(v.grid.cells))
+        offset = tile * TILE_W * TILE_H + STAR_Y * TILE_W
+        for n, x in ((0, cx - half - STAR_PX - 4), (1, cx + half + 4)):
+            session.sprite_show(n, v.win, RESOURCE_SLOT, offset, STAR_FAT, STAR_FAT,
+                                (max(0, x), ly + 9), STAR_COLOURS, stride=TILE_W, step=2)
 
     # ---- flying cards (Caps.SPRITES) ----
 
@@ -584,40 +754,47 @@ class Poker(Game):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        src = cell_xy(BUTTON_CELLS[self.place(s, self.seats[self.button])])
+        if any(m[0] == "deal" for m in moves):  # a new hand: the last one's stars are done
+            v.flash += 1
+            s.player.session.sprite_off()
+        bp = self.place(s, self.seats[self.button])
+        src = (TX + button_x(bp), TY + SEAT_ROW[bp] * TILE_H)
         now = time.monotonic()
         for m in moves:
             if m[0] == "deal":                   # one card at a time, round the table twice
-                cr = HOLE_CELLS[self.place(s, self.seats[m[1]])][m[2]]
-                targets = [(cr, "back", HOLE_DX[m[2]])]
+                place = self.place(s, self.seats[m[1]])
+                targets = [(("hole", m[1], m[2]), SEAT_ROW[place], hole_x(place, m[2]),
+                            "back")]
             elif m[0] == "board":
-                targets = [(BOARD_CELLS[k], h.board[k], BOARD_DX)
+                targets = [(("board", k), BOARD_ROW, board_x(k), h.board[k])
                            for k in range(m[1], m[1] + m[2])]
             else:
                 continue
-            for cr, what, dx in targets:
-                v.hidden.add(cell(cr))           # (the cell stays bare until it lands)
+            for key, row, x, what in targets:
+                v.hidden.add(key)                # (not drawn until it lands)
                 start = max(now, v.fly_free)
                 land = start + FLY_FRAMES / 50.0
                 v.fly_free = land + FLY_GAP
-                dst = cell_xy(cr)
                 loop.call_later(start - now, self._send_fly, s, what, src,
-                                (dst[0] + dx - 4, dst[1]))
-                loop.call_later(land - now, self._landed, s, [cell(cr)])
+                                (TX + x - 4, TY + row * TILE_H))
+                loop.call_later(land - now, self._landed, s, [key])
 
     def _send_fly(self, s, what, src, dst):
         v = s.view
         if self.over or s.player is None or s.player not in self.players or not v.win.shown:
             return
-        t = v.cache.get(TABLE_CELLS[cell(BOARD_CELLS[2])], what, 4, set(v.grid.cells))
+        felt = TABLE_CELLS[BOARD_ROW * COLS + COLS // 2]       # (left out of the sprite)
+        t = v.cache.get(felt, [(what, 4)], set(v.grid.cells))
         v.fly_n ^= 1
         s.player.session.fly(v.win, RESOURCE_SLOT, t * TILE_W * TILE_H, TILE_W // 2, TILE_H,
                              src, dst, FLY_FRAMES, CARD_COLOURS, step=2, n=v.fly_n)
 
-    def _landed(self, s, cells):
+    def _landed(self, s, keys):
         v = s.view
-        for c in cells:
-            v.hidden.discard(c)
+        if v is None:
+            return
+        for k in keys:
+            v.hidden.discard(k)
         if not self.over and s.player is not None and s.player in self.players and v.win.shown:
             self.draw(s)
 

@@ -78,6 +78,7 @@ TOAST_NO_SLOT = 0xFF
 class Sound(IntEnum):
     """S.SOUND sounds (the client's own, played on its SID)."""
     CHIME = 1            # a two-note "ding-dong": someone is paging (with the flashing icon)
+    KACHING = 2          # a cash register: you won a poker hand (older clients play nothing)
 
 
 class Icon(IntEnum):

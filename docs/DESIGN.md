@@ -410,9 +410,13 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   tiles of 32 x 22 in resource slot 9: a green felt stadium with a wooden rail, 35 distinct
   tiles); cards, the dealer button and the pot's chips are drawn onto the cell's own felt
   tile and sent to each viewer as needed (`session.send_resource_at`, a per-viewer
-  `TileCache` in tiles 35-63), so everyone sees their own cards face up and the others' face
-  down. You sit at the bottom left, the others clockwise; seat labels sit round the table.
-  Cards are dealt one at a time as sprites from the dealer button.
+  `TileCache` in tiles 35-63: a full table needs 24), so everyone sees their own cards face
+  up and the others' face down. Items are placed in table pixels and may span two tiles
+  (`poker_art.compose` draws each tile's part). You sit at the bottom in the middle, the
+  others clockwise, three seats along each long side; their labels are above and below the
+  table, and the chat panel is at the right (a `TextView` with the dealer's lines, a
+  `TextBox` with Send as the default button). Cards are dealt one at a time as sprites from
+  the dealer button.
 - **The bank** (`bank.py`): `users.credits` and the `credit_log` ledger; earning
   (`Bank.earn`, daily limits, called by games through `Game.credit`), gifts, loans, Areas >
   Bank, Admin > Bank Settings.
