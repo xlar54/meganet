@@ -39,11 +39,14 @@
 - [ ] Update in place (no remounting): write the files to the running disk under temp
       names, scratch, rename, restart; needs new client code (a DOS command message)
 - [x] File download to disk (storage.asm, through kstream rather than kfile)
-- [ ] Faster transfers: a D81 took about 15 minutes each way on the live server. mega-ip's
-      transmit is stop-and-wait (one ~240-byte segment, then wait for its ACK), and its
-      receive window is 1 KB. The server now quick-ACKs and sends 1,000-byte chunks that fit
-      the window (2026-11-22). Next: let mega-ip keep several segments in flight, and offer
-      a bigger receive window; measure with tcpdump on the droplet first
+- [ ] Faster transfers: a D81 took about 15 minutes each way on the live server (upload
+      2.3 KB/s, download 4.4 KB/s). The server now quick-ACKs (2026-11-22). The vendored
+      mega-ip (client-src/mega-ip) now has a 2 KB send ring with a sliding window, Nagle's
+      rule, single bytes sent at the next poll, the MSS option (1460) on SYN/SYN-ACK and a
+      2,920-byte receive window (two full frames). On mega-ip's simulator at 100 ms RTT:
+      upload 2.0 -> 16 KB/s, download 10 -> 29 KB/s. Not yet tried on a MEGA65; once it
+      works, copy it to the mega-ip repo with its tests (private/temp/megaip_upstream/)
+      and update mega-ip's README (ML send byte, window, the zero-window limitation)
 - [ ] Copy lib/gui into the project template (see private/CLAUDE.md) once it settles
 
 ## Server (server-src/, Python)

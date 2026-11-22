@@ -421,7 +421,9 @@ LOCAL_DRIVES = (8, 9, 10, 11)
 LOCAL_MAX = 1 << 20      # the biggest file the client stages in attic (a D81 is 819,200)
 FILE_CHUNK = 1000        # S.FILE_DATA bytes at most: with its 7-byte header a frame fits
                          # mega-ip's 1024-byte receive window, so none is split in two
-FILE_WINDOW = 4 * FILE_CHUNK  # bytes sent ahead of the client's last FILE_ACK (whole chunks)
+FILE_WINDOW = 8 * FILE_CHUNK  # bytes sent ahead of the client's last FILE_ACK (whole chunks):
+                              # more than a TCP window (mega-ip's is 2,920), so the
+                              # FILE_ACKs never hold the stream back
 UP_CHUNK = 240           # C.UP_DATA bytes at most (the client's frames are under 256 bytes)
 
 LOGIN_NEW_USER = 0x01    # C.LOGIN flags bit 0

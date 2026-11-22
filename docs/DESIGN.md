@@ -240,7 +240,7 @@ The File Library (`server-src/meganet/filelib.py`) runs every window on the serv
   answers and that no file of that name is there (**saves never overwrite**), then answers
   `FILE_ACK 0`, or `LOCAL_DONE` with the problem. The server then sends `FILE_DATA` of
   at most `FILE_CHUNK` (1,000 bytes, so a frame fits mega-ip's 1,024-byte receive window),
-  keeping at most `FILE_WINDOW` (4 chunks) beyond the client's last `FILE_ACK`, and `FILE_END (crc)`. The
+  keeping at most `FILE_WINDOW` (8 chunks) beyond the client's last `FILE_ACK`, and `FILE_END (crc)`. The
   client stages it in attic (`$8300000`, at most `LOCAL_MAX` = 1 MB), keeps the CRC as it
   comes, checks it, writes the file and answers `LOCAL_DONE`.
 - **An upload:** `LOAD_FILE (req, dev, kind, path)`. The client reads the file into attic and
