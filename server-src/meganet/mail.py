@@ -91,6 +91,8 @@ class Mail:
         self.db.send_private_message(session.user_id, user["id"], clean_text(subject), lines)
         session.log("private message to %s (%d lines)" % (user["name"], len(lines)))
         composer.close()
+        if user["id"] != session.user_id:
+            self.arrived(user["id"])
         self.changed(user["id"])
         self.changed(session.user_id)
         sent(session, "Your message to %s has been sent." % user["name"])   # (last)
@@ -105,6 +107,13 @@ class Mail:
                 n, "" if n == 1 else "s"))
         else:
             session.set_notify(SLOT_MAIL, Icon.NONE)
+
+    def arrived(self, user_id):
+        """A new private message for `user_id`: the ring, if they're signed on (session.ring
+        decides whether it sounds)."""
+        s = self.session_of(user_id)
+        if s is not None:
+            s.ring()
 
     def changed(self, user_id):
         """`user_id`'s messages changed: their icon and open inbox follow (if signed on)."""

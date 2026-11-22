@@ -384,10 +384,15 @@ class Radio(CheckBox):
 
 
 class ListBox(Gadget):
-    """A scrolling list. The server keeps all the rows; the client caches the ones it has seen
-    and asks for others with LIST_NEED. `selected` is the last row the client selected."""
+    """A scrolling list. The server keeps all the rows and sends the client every one it can
+    hold (CLIENT_ROWS), CHUNK rows to a LIST_ROWS message, whenever the window opens or the
+    rows change. (The client never asks for rows: it has no LIST_NEED. It draws all `total`
+    rows from its own block, so a row it wasn't sent shows whatever that memory held: on real
+    hardware, garbage.) `selected` is the last row the client selected."""
     kind = Kind.LISTBOX
-    SEND_ROWS = 20          # rows sent at once when the window opens or the rows change
+    CLIENT_ROWS = 128       # the rows a client list holds (gui.asm GUI_LIST_ROWS)
+    CHUNK = 16              # rows to a message: 16 x (1 + 63) bytes stays well under the
+                            # client's biggest frame (proto.asm PF_MAX, 2048; bigger ones it drops)
     ROW_MAX = 63            # the client cuts rows after this many characters
 
     def __init__(self, x, y, w, h, rows=(), **kw):
@@ -396,7 +401,13 @@ class ListBox(Gadget):
         self.selected = None
 
     def send_contents(self):
-        self.send_rows(0, self.SEND_ROWS)
+        self.send_all()
+
+    def send_all(self):
+        """Every row the client holds, CHUNK at a time (an empty list: just its total)."""
+        n = min(len(self.rows), self.CLIENT_ROWS)
+        for first in range(0, max(n, 1), self.CHUNK):
+            self.send_rows(first, min(self.CHUNK, n - first))
 
     def send_rows(self, first, n):
         part = self.rows[first:first + min(n, 255)]
@@ -410,7 +421,7 @@ class ListBox(Gadget):
         self.rows = list(rows)
         if self.selected is not None and self.selected >= len(self.rows):
             self.selected = None
-        self.send_rows(0, self.SEND_ROWS)
+        self.send_all()
 
     def handle_select(self, index, double):
         self.selected = index if index < len(self.rows) else None
@@ -492,14 +503,14 @@ class DropDown(ListBox):
         return (self.w - self.PAD - SCROLLBAR_W) // CHAR_W
 
     def send_contents(self):
-        self.send_rows(0, self.MAX_ROWS)
-        self.set_value(DROPDOWN_NONE if self.selected is None else self.selected)
+        self.send_all()                 # (CHUNK rows a message: 128 long rows in one would be
+        self.set_value(DROPDOWN_NONE if self.selected is None else self.selected)   # too big)
 
     def set_rows(self, rows, selected=None):
         """New rows (and selection: None = none)."""
         self._check(rows)
         self.rows = list(rows)
-        self.send_rows(0, self.MAX_ROWS)
+        self.send_all()
         self.set_selected(selected)
 
     def set_selected(self, index):

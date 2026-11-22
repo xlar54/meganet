@@ -66,7 +66,7 @@ on the sign-on screen). The bar is:
 | Button | pressed look while held; the click is sent on release inside the button; DEFAULT = RETURN |
 | Label | static text, clipped |
 | Text box / password | caret, typing, cursor keys, DEL, scrolling inside the box; it sends VALUE before any CLICK in the same window, so the server sees the current contents |
-| List box | scroll bar, keyboard and wheel scrolling, selection, double-click; rows are cached and the client asks for rows it doesn't have (LIST_NEED) |
+| List box | scroll bar, keyboard and wheel scrolling, selection, double-click; the client holds up to 128 rows, and the server sends all of them (16 to a LIST_ROWS) whenever the list is shown or changes. The client never asks for rows: `LIST_NEED` is in the protocol, but the client doesn't send it, so a row the server didn't send would show stale memory |
 | Text view | scrolling multi-line text (chat, articles); APPEND adds lines; old lines are dropped from a ring in attic |
 | Check box / radio | toggles locally, then sends SELECT |
 | Progress bar | set by the server (downloads, updates) |

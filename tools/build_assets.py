@@ -10,6 +10,7 @@ and writes:
   client-src/gen/palette.asm   palette_rgb: 3 x 256 bytes (r, g, b), entries 16+ the art's
   client-src/gen/logo.asm      LOGO_CW / LOGO_CH (cells), LOGO_ATTIC
   client-src/gen/manifest.asm  the packed files and their attic addresses (lib/manifest.asm)
+  client-src/gen/server.asm    DEFAULT_SERVER, from private/server_address.txt (default_server)
   target/assets/*              the packed files, and files.txt for build.bat
 The logo is stored cell by cell, row-major (lib/fcm640.asm's layout), so each row of cells
 is one DMA copy into the framebuffer.
@@ -73,6 +74,7 @@ def build():
                              'LOGO_ATTIC = $%07x' % LOGO_ATTIC], 'sign-on logo size')
     parts = m.write_parts('LOGO', data)
     m.write_manifest([(n, LOGO_ATTIC + off, ln) for n, off, ln in parts])
+    default_server()
     extra = [assemble_stack()]
     if '--mock' in sys.argv:            # replay build: the recorded server session
         src = sys.argv[sys.argv.index('--mock') + 1]
@@ -81,6 +83,24 @@ def build():
         extra.append('mockrx')
     with open(os.path.join(m.ASSETS, 'files.txt'), 'a') as fh:
         fh.write('\n'.join(extra) + '\n')
+
+
+SERVER_FILE = os.path.join(m.ROOT, 'private', 'server_address.txt')
+
+
+def default_server():
+    """client-src/gen/server.asm: DEFAULT_SERVER, the address already in the Connect window's
+    Server box. It comes from $MEGANET_SERVER, else the first line of
+    private/server_address.txt (kept out of git), else nothing (the box starts empty)."""
+    addr = os.environ.get('MEGANET_SERVER', '').strip()
+    if not addr and os.path.exists(SERVER_FILE):
+        addr = (open(SERVER_FILE).read().splitlines() or [''])[0].strip()
+    parts = addr.split('.')
+    if addr and not (len(parts) == 4 and all(p.isdigit() and int(p) < 256 for p in parts)):
+        sys.exit('default server %r: four numbers, like 192.168.1.10' % addr)
+    m.write_gen('server.asm', ['DEFAULT_SERVER = "%s"' % addr],
+                "the Connect window's server address (private/server_address.txt)")
+    print('Default server: %s' % (addr or '(none)'))
 
 
 def assemble_stack():

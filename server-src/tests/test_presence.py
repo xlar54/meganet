@@ -2,8 +2,11 @@
 instant messages (toast + speech-bubble icon), and Admin > System Settings."""
 
 from meganet import im
+from meganet.account import WIN_ACCOUNT
 from meganet.admin import WIN_SETTINGS
-from meganet.protocol import Kind, Icon, SLOT_IM, SLOT_STATUS
+from meganet.mail import WIN_COMPOSE, WIN_INBOX
+from meganet.protocol import Kind, Icon, MENU_MY_ACCOUNT, SLOT_IM, SLOT_STATUS, Sound
+from meganet.session import RING_GAP
 from meganet.screens import WIN_WHO, M_AVAILABLE, M_AWAY, M_OFFLINE
 from tests.test_pages import PagesBase
 from tests.test_roles import gadget_of, status_of
@@ -178,6 +181,67 @@ class InstantMessageTest(PresenceBase):
         bob.click_text(im.id, "Send")
         await bob.wait_for(lambda: "* alice isn't signed on." in view(bob, im), "refused")
         self.assertNotIn("bob: three", view(alice, aim))
+
+
+class DoorbellTest(PresenceBase):
+    """A new instant or private message rings the doorbell (Sound.DOORBELL): always while
+    Available, while Away only with My Account's "Ring when Away" (on by default), and once
+    for a burst."""
+
+    def rings(self, c):
+        return c.sounds.count(Sound.DOORBELL)
+
+    async def test_instant_messages(self):
+        alice, bob = self.alice, self.bob
+        ims, a, b = self.server.screens.ims, self.session("alice"), self.session("bob")
+        ims.send(b, a, "hello")                          # (her window isn't open)
+        await alice.wait_for(lambda: self.rings(alice) == 1, "the doorbell")
+        ims.send(b, a, "are you there?")                 # (a burst: once)
+        await self.roundtrip(alice)
+        self.assertEqual(self.rings(alice), 1)
+        a.last_ring = -RING_GAP                          # (later)
+        alice.pick_id(M_AWAY)                            # Away: rings (the default is on)
+        await alice.wait_for(lambda: a.status == "away", "away")
+        ims.send(b, a, "knock knock")
+        await alice.wait_for(lambda: self.rings(alice) == 2, "rings while Away")
+        a.last_ring, a.ring_away = -RING_GAP, False      # unticked: Away is quiet
+        ims.send(b, a, "anyone?")
+        await self.roundtrip(alice)
+        self.assertEqual(self.rings(alice), 2)
+        alice.pick_id(M_AVAILABLE)                       # back: rings whatever the option
+        await alice.wait_for(lambda: a.status == "available", "available")
+        ims.send(b, a, "there you are")
+        await alice.wait_for(lambda: self.rings(alice) == 3, "rings when Available")
+        self.assertEqual(self.rings(bob), 0, "not the sender")
+
+    async def test_private_message_and_the_option(self):
+        alice, bob = self.alice, self.bob
+        a = self.session("alice")
+        bob.pick("Private Messages")
+        await bob.wait_window("Private Messages")
+        bob.click_text(WIN_INBOX, "New...")
+        win = await bob.wait_window("New Message")
+        bob.value(WIN_COMPOSE, gadget_of(win, Kind.TEXTBOX, 0), "alice")
+        bob.value(WIN_COMPOSE, gadget_of(win, Kind.TEXTBOX, 1), "hi")
+        bob.text(WIN_COMPOSE, gadget_of(win, Kind.EDIT), ["ding dong"])
+        bob.click_text(WIN_COMPOSE, "Send")
+        await alice.wait_for(lambda: self.rings(alice) == 1, "the doorbell for mail")
+        # My Account: the box, ticked; untick it and OK: saved, and the session follows
+        alice.pick_id(MENU_MY_ACCOUNT)
+        acc = await alice.wait_window("My Account")
+        box = gadget_of(acc, Kind.CHECKBOX)
+        self.assertEqual(acc.gadgets[box]["text"], "Ring when Away")
+        self.assertEqual(acc.gadgets[box].get("value"), 1, "on by default")
+        alice.select(WIN_ACCOUNT, box, 0)
+        for i, name in enumerate(("Alice", "Smith")):    # (required to save)
+            alice.value(WIN_ACCOUNT, gadget_of(acc, Kind.TEXTBOX, i), name)
+        alice.click_text(WIN_ACCOUNT, "OK")
+        await alice.wait_for(lambda: WIN_ACCOUNT not in alice.windows, "saved")
+        self.assertFalse(a.ring_away)
+        self.assertEqual(self.server.db.user("alice")["ring_away"], 0)
+        alice.pick_id(MENU_MY_ACCOUNT)
+        acc = await alice.wait_window("My Account")
+        self.assertFalse(acc.gadgets[gadget_of(acc, Kind.CHECKBOX)].get("value"), "unticked")
 
 
 class SettingsTest(PresenceBase):

@@ -16,22 +16,29 @@ if not exist target\userprofile\AppData\Roaming mkdir target\userprofile\AppData
 set "USERPROFILE=%CD%\target\userprofile"
 set "APPDATA=%USERPROFILE%\AppData\Roaming"
 
-del target\*.d81 2>nul
-del target\*.lst 2>nul
-del target\*.lbl 2>nul
-del target\%PROJECT% 2>nul
-
 REM build.bat mock FILE: the Xemu replay build (no network there). FILE is a server session
 REM recorded by private\tools\record_mock.py; it replaces the network.
+REM build.bat bridge: the live Xemu build. private\tools\xemu_bridge.py (bridge.bat) carries
+REM its traffic to and from the real server through Xemu's monitor.
+REM Neither touches the Ethernet: they get their own disks (meganet-mock.d81,
+REM meganet-bridge.d81), so target\meganet.d81 is always the build for a real MEGA65.
 set MOCKDEF=
 set MOCKARG=
+set DISK=%PROJECT%
 if /i "%~1"=="mock" (
     set MOCKDEF=-D MOCK_NET=1
     set "MOCKARG=--mock %~2"
+    set DISK=%PROJECT%-mock
 )
-REM build.bat bridge: the live Xemu build. private\tools\xemu_bridge.py (bridge.bat) carries
-REM its traffic to and from the real server through Xemu's monitor.
-if /i "%~1"=="bridge" set MOCKDEF=-D BRIDGE_NET=1
+if /i "%~1"=="bridge" (
+    set MOCKDEF=-D BRIDGE_NET=1
+    set DISK=%PROJECT%-bridge
+)
+
+del target\%DISK%.d81 2>nul
+del target\*.lst 2>nul
+del target\*.lbl 2>nul
+del target\%PROJECT% 2>nul
 
 REM Assets: client-src\assets (the logo PNG) -> client-src\gen\*, target\assets\*; the
 REM TCP/IP stack (client-src\mega-ip) -> target\assets\ethbin
@@ -66,23 +73,23 @@ if exist client-src\basic\*.bas for %%f in (client-src\basic\*.bas) do (
     if errorlevel 1 (echo petcat failed on %%f & exit /b 1)
 )
 cd target
-..\c1541.exe -format "%PROJECT%,01" d81 %PROJECT%.d81 >nul
+..\c1541.exe -format "%PROJECT%,01" d81 %DISK%.d81 >nul
 if errorlevel 1 (cd .. & exit /b 1)
-..\c1541.exe -attach %PROJECT%.d81 -write autoboot autoboot.c65 >nul
+..\c1541.exe -attach %DISK%.d81 -write autoboot autoboot.c65 >nul
 if errorlevel 1 (cd .. & exit /b 1)
-..\c1541.exe -attach %PROJECT%.d81 -write %PROJECT% %PROJECT% >nul
+..\c1541.exe -attach %DISK%.d81 -write %PROJECT% %PROJECT% >nul
 if errorlevel 1 (cd .. & exit /b 1)
 for %%n in (%OVERLAYS%) do (
-    ..\c1541.exe -attach %PROJECT%.d81 -write ovl%%n ovl%%n >nul
+    ..\c1541.exe -attach %DISK%.d81 -write ovl%%n ovl%%n >nul
     if errorlevel 1 (echo failed writing ovl%%n & cd .. & exit /b 1)
 )
 if exist ..\client-src\basic\*.bas for %%f in (..\client-src\basic\*.bas) do (
-    ..\c1541.exe -attach %PROJECT%.d81 -write %%~nf %%~nf >nul
+    ..\c1541.exe -attach %DISK%.d81 -write %%~nf %%~nf >nul
     if errorlevel 1 (echo failed writing %%~nf & cd .. & exit /b 1)
 )
 REM asset files listed by tools\build_assets.py (written lower case = PETSCII upper case)
 if exist assets\files.txt for /f %%f in (assets\files.txt) do (
-    ..\c1541.exe -attach %PROJECT%.d81 -write assets\%%f %%f >nul
+    ..\c1541.exe -attach %DISK%.d81 -write assets\%%f %%f >nul
     if errorlevel 1 (echo failed writing %%f & cd .. & exit /b 1)
 )
 cd ..
@@ -93,4 +100,8 @@ for %%f in (target\*) do (
 )
 for /d %%d in (target\*) do rmdir /s /q "%%d"
 
-echo Built target\%PROJECT%.d81
+if "%DISK%"=="%PROJECT%" (
+    echo Built target\%DISK%.d81: the real MEGA65 build ^(Ethernet^)
+) else (
+    echo Built target\%DISK%.d81: Xemu only, NO Ethernet. target\%PROJECT%.d81 is the real one.
+)

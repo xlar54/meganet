@@ -5,6 +5,8 @@
 ;       flashing page icon when someone pages an admin
 ;   2 = ka-ching: a cash register (a click of noise, then two high square-wave notes, B6
 ;       and E7, that ring out together): you won a poker hand
+;   3 = the doorbell: the four Westminster notes (E5 C5 D5 G4, bells on three voices that
+;       overlap): a new instant or private message
 ; A sound is a list of steps: (effect, frames to the next step), ending with effect $FF.
 ; 0 frames plays the next step at once (notes together). Other numbers are ignored, so
 ; the server can send new sounds to old clients.
@@ -17,21 +19,29 @@ SFX_DONG        = 1
 SFX_KA          = 2
 SFX_CHING1      = 3
 SFX_CHING2      = 4
-;               ding  dong  ka    ching ching
-sfx_voice:  .byte 0,    7,    14,   0,    7      ; voice register offset
-sfx_wave:   .byte $11,  $11,  $81,  $41,  $41    ; triangle / noise / pulse, + gate
-sfx_fhi:    .byte $45,  $37,  $c0,  $83,  $af    ; C6, A-flat 5; noise; B6, E7 (PAL SID)
-sfx_fstep:  .byte $00,  $00,  $00,  $00,  $00    ; no slide
-sfx_len:    .byte 10,   14,   2,    3,    3      ; frames the gate is held
-sfx_ad:     .byte $09,  $0a,  $00,  $09,  $09    ; no attack; a long decay rings like a bell
-sfx_sr:     .byte $09,  $0a,  $00,  $0a,  $0a    ; no sustain; it rings out on release
+SFX_BELL_E      = 5
+SFX_BELL_C      = 6
+SFX_BELL_D      = 7
+SFX_BELL_G      = 8
+;               ding  dong  ka    ching ching bellE bellC bellD bellG
+sfx_voice:  .byte 0,    7,    14,   0,    7,    0,    7,    14,   0     ; voice register offset
+sfx_wave:   .byte $11,  $11,  $81,  $41,  $41,  $11,  $11,  $11,  $11   ; triangle / noise /
+                                                                        ; pulse, + gate
+sfx_fhi:    .byte $45,  $37,  $c0,  $83,  $af,  $2c,  $23,  $27,  $1a   ; C6, A-flat 5; noise;
+                                                ; B6, E7; E5, C5, D5, G4 (PAL SID values)
+sfx_fstep:  .byte $00,  $00,  $00,  $00,  $00,  $00,  $00,  $00,  $00   ; no slide
+sfx_len:    .byte 10,   14,   2,    3,    3,    8,    8,    8,    14    ; frames the gate is held
+sfx_ad:     .byte $09,  $0a,  $00,  $09,  $09,  $0a,  $0a,  $0a,  $0b   ; no attack; a long
+sfx_sr:     .byte $09,  $0a,  $00,  $0a,  $0a,  $0a,  $0a,  $0a,  $0b   ; decay rings like a
+                                                                        ; bell, on release too
 
 SND_END         = $ff
 snd_steps:
 _chime: .byte SFX_DING, 13, SFX_DONG, 0, SND_END
 _kaching: .byte SFX_KA, 3, SFX_CHING1, 0, SFX_CHING2, 0, SND_END
-snd_first:      .byte 0, _chime - snd_steps, _kaching - snd_steps     ; by sound number
-SOUNDS          = 3
+_doorbell: .byte SFX_BELL_E, 16, SFX_BELL_C, 16, SFX_BELL_D, 16, SFX_BELL_G, 0, SND_END
+snd_first:      .byte 0, _chime - snd_steps, _kaching - snd_steps, _doorbell - snd_steps
+SOUNDS          = 4                     ; (by sound number: protocol.py Sound)
 
 snd_pos:        .byte 0                 ; the next step (an index into snd_steps)
 snd_wait:       .byte 0                 ; frames until it plays, 0 = nothing to come

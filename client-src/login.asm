@@ -52,7 +52,9 @@ l_stgid:        .byte CG_STATUS
 l_ipshown:      .byte 0                 ; our own address is on the Connect window
 l_wait:         .byte 0                 ; frames before starting the network (so the
                                         ; window is drawn before the 4 s Ethernet reset)
-l_server:       .fill 16                ; the server's address as typed (kept for Back)
+l_server:       .text DEFAULT_SERVER    ; the server's address as typed (kept for Back);
+        .fill 16 - len(DEFAULT_SERVER)  ; at first the build's default (gen/server.asm)
+        .cerror len(DEFAULT_SERVER) > 15, "DEFAULT_SERVER is too long"
 l_myip:         .fill 16                ; our address as text
 
 login_open:
@@ -461,7 +463,11 @@ s_cw_title:     .null "Connect"
 s_cw_myip:      .null "Your address:"
 s_cw_getting:   .null "Getting one..."
 s_cw_server:    .null "Server:"
-s_cw_hint:      .null "Type the server, then Connect."
+        .if MOCK_NET || BRIDGE_NET              ; (so a test disk is never taken for the real one)
+s_cw_hint:      .null "Xemu test build: no Ethernet."
+        .else
+s_cw_hint:      .null "Check the server, then Connect."
+        .endif
 s_cw_connect:   .null "Connect"
 s_cw_badip:     .null "Server: four numbers, like 192.168.1.10"
 s_cw_conn:      .null "Connecting to the server..."

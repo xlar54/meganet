@@ -17,6 +17,8 @@ from meganet.gallery.paint import canvas_offset
 
 TIMEOUT = 5.0
 ROW_MAX = 63             # list box / drop-down rows
+CLIENT_LIST_ROWS = 128   # the rows a client list holds (gui.asm GUI_LIST_ROWS)
+CLIENT_PF_MAX = 2048     # the client drops frames this big or bigger (proto.asm PF_MAX)
 INNER = 6 + 11           # a drop-down's or EDIT's margins plus its arrow button / scroll bar
 
 
@@ -377,6 +379,11 @@ class FakeClient:
         try:
             await asyncio.wait_for(loop(), TIMEOUT)
         except asyncio.TimeoutError:
+            # (a check in _handle that failed stopped the reading: that's the real problem)
+            task = getattr(self, "_task", None)
+            if task is not None and task.done() and not task.cancelled() and task.exception():
+                raise AssertionError("%s: while waiting for %s, the client stopped reading: "
+                                     "%s" % (self.name, what, task.exception())) from None
             raise AssertionError("%s: timed out waiting for %s" % (self.name, what)) from None
 
     async def wait_window(self, title_start):
@@ -417,6 +424,9 @@ class FakeClient:
             if not chunk:
                 break
             for t, r in d.push(chunk):
+                # the real client drops a frame this big whole (proto.asm PF_MAX)
+                assert 1 + len(r.b) < CLIENT_PF_MAX, "frame type $%02x of %d bytes: the " \
+                    "client drops frames of %d or more" % (t, 1 + len(r.b), CLIENT_PF_MAX)
                 try:
                     self._handle(t, r)
                 except KeyError:
@@ -514,7 +524,14 @@ class FakeClient:
             win, gid, flags = r.u8(), r.u8(), r.u8()
             self.windows[win].gadgets[gid]["flags"] = flags
         elif t == S.WIN_DONE:
-            self.windows[r.u8()].done = True
+            w = self.windows[r.u8()]
+            w.done = True
+            for gid, g in w.gadgets.items():         # every list row the client holds is here
+                if g["kind"] in (Kind.LISTBOX, Kind.DROPDOWN) and g.get("rows"):
+                    missing = [i for i, row in enumerate(g["rows"][:CLIENT_LIST_ROWS])
+                               if row is None]
+                    assert not missing, "window %r list %d: rows %s never sent (the client " \
+                        "would show garbage there)" % (w.title, gid, missing[:5])
         elif t == S.WIN_CLOSE:
             gone = self.windows.pop(r.u8(), None)
             self.events.append(("close", gone.title if gone else None))
@@ -542,10 +559,19 @@ class FakeClient:
             for i in range(n):
                 rows[first + i] = r.str()
             g["rows"] = rows
+            # The real client never asks for rows (it has no LIST_NEED) and shows all `total`
+            # (up to CLIENT_LIST_ROWS): the server must send every one it holds, in order.
+            held = min(total, CLIENT_LIST_ROWS)
+            assert first + n <= held or n == 0, \
+                "rows %d-%d past the client's %d" % (first, first + n - 1, held)
+            if first + n >= held:                        # (the last chunk: all there now)
+                missing = [i for i in range(held) if rows[i] is None]
+                assert not missing, "list %d:%d: rows %s never sent (the client would show " \
+                    "garbage there)" % (win, gid, missing[:5])
             if g["kind"] == Kind.DROPDOWN:
                 assert total <= DROPDOWN_ROWS, "drop-down with %d rows" % total
-                assert None not in rows, "drop-down rows must all be sent at once"
-                assert all(len(row) <= ROW_MAX for row in rows), "drop-down row too long"
+                assert all(len(row) <= ROW_MAX for row in rows if row is not None), \
+                    "drop-down row too long"
         elif t == S.APPEND:
             win, gid = r.u8(), r.u8()
             g = self.windows[win].gadgets[gid]

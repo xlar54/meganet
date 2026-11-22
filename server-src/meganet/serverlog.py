@@ -176,7 +176,7 @@ class LogHandler(logging.Handler):
 
 WIN_LOG = 49
 LOG_W, LOG_H = 632, 168
-PAGE = 200                       # rows a page of the list holds
+PAGE = ListBox.CLIENT_ROWS       # rows a page of the list holds (all the client's list can)
 SHOW = [("Everything", INFO), ("Warnings, errors", WARNING), ("Errors only", ERROR)]
 ALL_AREAS = "All areas"
 

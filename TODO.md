@@ -152,6 +152,16 @@
 - [x] Poker winner (2026-11-21): ka-ching (Sound.KACHING, a new client sound; sound.asm now
       plays lists of notes) and gold stars flashing either side of the winner's "Wins N"
       for 2 s. Tried in Xemu: the sound played to its end, both stars shown
+- [x] Doorbell (2026-11-22): new instant and private messages ring a Westminster doorbell
+      (Sound.DOORBELL, a new client sound); My Account's "Ring when Away" (on by default)
+      lets it ring while Away. Tried in Xemu: an IM from another user rang all four notes;
+      the checkbox in My Account
+- [x] Long lists showed garbage past row 20 on a MEGA65 (2026-11-22; the Server Log): the
+      server sent 20 rows and expected LIST_NEED for the rest, which the client never sends.
+      Now the server sends every row the client holds (128, 16 to a message); the fake client
+      checks every row arrives and no frame passes the client's 2 KB limit. Tried in Xemu
+- [ ] Lists longer than 128 rows show only the first 128 (the client's limit): the Server
+      Log pages at 128; file libraries, boards and the user list could pass it one day
 - [ ] Poker: pre-action boxes (check/fold); showing who won with a
       flight of chips to the winner; the house's credits (vs Computer) are made and lost from
       nothing: watch Bank Settings' totals; table stakes other than 5/10

@@ -27,6 +27,7 @@
         .include "lib/zp.asm"
         .include "zp.asm"
         .include "gen/logo.asm"         ; (constants only)
+        .include "gen/server.asm"       ; (constants only: DEFAULT_SERVER)
 
 F640_BUF0       = $20000
 F640_BUF1       = $40000                ; (not used)

@@ -187,6 +187,9 @@ class IMs:
             theirs.unread += 1
             partner.toast("IM from %s" % line, TOAST_SECS, SLOT_IM)
             self.refresh_icon(partner)
+            partner.ring()
+        elif partner.status != "available":      # (open, but they may have walked away)
+            partner.ring()
         session.log("IM to %s" % partner.user)
 
     # ---- the icon ----

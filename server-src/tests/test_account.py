@@ -148,7 +148,7 @@ class AccountTest(PagesBase):
         self.assertLessEqual(status[1] + status[3], cancel[1], "status above the buttons")
         self.assertGreaterEqual(status[1], ys[-1] + 10, "below Karma Points, not over it")
         self.assertGreaterEqual(status[2] // 8, len(PARTIAL), "room for the messages")
-        win.find("This is your first sign-on.")
+        win.find("First sign-on")
 
     async def test_save_reload_clear(self):
         bob, d = self.bob, self.server.db

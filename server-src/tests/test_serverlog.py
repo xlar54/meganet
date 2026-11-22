@@ -135,6 +135,11 @@ class ServerLogTest(RolesBase):
         old = d.add_log(now - 100 * 86400, INFO, "server", None, None, None, None, "ancient")
         self.assertIn("ancient", self.texts(text="ancient"))
         w = await self.open_log(self.alice)
+        # every row of the page reached the client (it never asks for rows: one it wasn't
+        # sent shows whatever its memory held, which looked like a corrupted log on a MEGA65)
+        rows = w.gadgets[gadget_of(w, Kind.LISTBOX)]["rows"]
+        self.assertEqual(len(rows), serverlog.PAGE)
+        self.assertNotIn(None, rows)
         self.assertFalse(self.alice.enabled(WIN_LOG, "Newer"))
         self.assertTrue(self.alice.enabled(WIN_LOG, "Older"))
         self.alice.click_text(WIN_LOG, "Older")

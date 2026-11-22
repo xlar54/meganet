@@ -265,6 +265,7 @@ class Bank:
         lines += ["", "See Areas > Bank for your balance."]
         self.db.send_private_message(session.user_id, to["id"],
                                      "A gift of %s" % credits(amount), lines)
+        self.server.screens.mail.arrived(to["id"])
         self.server.screens.mail.changed(to["id"])
         for s in self.sessions_of(to["id"]):
             s.toast("%s gave you %s!" % (session.user, credits(amount)))

@@ -673,7 +673,7 @@ DNS_FRAME_TICK:
 
     lda ARP_CUR_RASTER_LO
     cmp DNS_LAST_RASTER_LO
-    bcc _dns_frame_elapsed
+    bne _dns_frame_elapsed
 
 _dns_no_frame:
     lda ARP_CUR_RASTER_LO
@@ -748,6 +748,16 @@ DNS2_SRC_CHECK:
     bne DNS2_NOT_DNS
     dex
     bpl DNS2_SRC_CHECK
+
+    ; ...and the destination must be us: a frame sent to our MAC but another
+    ; IPv4 address is not our answer.
+    ldx #3
+DNS2_DST_CHECK:
+    lda ETH_RX_FRAME_PAYLOAD+16,x
+    cmp LOCAL_IP,x
+    bne DNS2_NOT_DNS
+    dex
+    bpl DNS2_DST_CHECK
 
     lda #$12
     lda #$00

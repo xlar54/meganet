@@ -64,9 +64,12 @@ Status: early.
 Build and run
 -------------
 
-Client: `build.bat` assembles `client-src/main.asm` and writes `target/meganet.d81`. `run.bat`
-builds it and starts Xemu. On a MEGA65, plug in Ethernet on a network with DHCP, run the
-server on a PC, type its IP address on the sign-on screen, and click Sign On. The first time,
+Client: `build.bat` assembles `client-src/main.asm` and writes `target/meganet.d81`, the disk
+for a real MEGA65. `run.bat` builds it and starts Xemu. On a MEGA65, plug in Ethernet on a
+network with DHCP, run the server on a PC (or use a hosted one), check its IP address on the
+sign-on screen, and click Connect, then Sign On. The address starts filled in with the first
+line of `private/server_address.txt` (or `MEGANET_SERVER`), when there is one: the build writes
+it to `client-src/gen/server.asm`, so it stays out of git. The first time,
 click New User instead: a step-by-step sign-up (screen name, password, about you, about me, then
 a review page, then the Terms of Service to read and agree to) creates the account and signs
 you in. The Sysop edits the Terms in Admin > Terms of Service...
@@ -80,7 +83,10 @@ Xemu:
 through Xemu's monitor port, replacing mega-ip and the Ethernet chip; everything else is real.
 Sign on with any server address, using New User the first time. It's slower than a real
 network: a few KB a second. `private/tools/bridge_test.py` runs the same thing headless.
-Afterwards, `build.bat` makes the normal disk again.
+
+The two test builds below have **no Ethernet**, so they write their own disks,
+`target/meganet-bridge.d81` and `target/meganet-mock.d81`, and say "Xemu test build: no
+Ethernet." on the Connect window. `target/meganet.d81` is always the real build.
 
 **Replay (scripted):**
 1. `python private/tools/record_mock.py` records a session from the real server.

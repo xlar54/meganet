@@ -4,7 +4,8 @@ protocol.MENU_MY_ACCOUNT), and the Reset Password dialog.
     9  = My Account: Username (and the Role beside it), First Name and Last Name (required),
          Email Address, Location (63-character text boxes that scroll), Birthdate (Month / Day /
          Year drop-downs, "--" = not set), About Me (an EDIT text area, up to db.ABOUT_LINES
-         lines), Last Login (the sign-on before this one), Karma Points (karma.describe:
+         lines), Last Login (the sign-on before this one) and "Ring when Away" beside it (the
+         doorbell for new messages while Away: session.ring), Karma Points (karma.describe:
          "42 (OK)", shown, not edited) and the Credits beside it (bank.py: it follows the
          balance while the window is open); a status line; Reset Password at the bottom left, OK (default) and Cancel at the
          bottom right
@@ -22,7 +23,8 @@ import time
 from . import db as dbmod
 from . import karma
 from .protocol import WFlag, GFlag, clean_text
-from .ui import add_buttons, closer, Window, Button, Label, TextBox, Password, DropDown, TextArea
+from .ui import (add_buttons, closer, Window, Button, CheckBox, Label, TextBox, Password, DropDown,
+                 TextArea)
 
 WIN_ACCOUNT = 9
 WIN_PASSWORD = 19
@@ -68,6 +70,8 @@ def year_rows(today=None, stored=None):
 
 
 KARMA_W = 120                    # "Karma Points:" "42 (Excellent)", then the credits beside it
+RING_X = 132                     # after Last Login's "2026-11-21 21:33" (16 characters)
+RING_TEXT = "Ring when Away"     # (the box, then 14 characters: FIELD_W - RING_X = 128)
 
 
 def credits_text(n):
@@ -172,8 +176,11 @@ class Account:
         y += ABOUT_H + 1
         label("Last Login:", y)
         last = session.previous_login
-        win.add(Label(FIELD_X, y + 2, FIELD_W, 10,
-                      when(last) if last else "This is your first sign-on."))
+        win.add(Label(FIELD_X, y + 2, RING_X, 10, when(last) if last else "First sign-on"))
+        # beside it: whether new instant and private messages ring the doorbell while
+        # they're Away (session.ring); when they're Available it always rings
+        win.ring = win.add(CheckBox(FIELD_X + RING_X, y, FIELD_W - RING_X, BOX_H, RING_TEXT,
+                                    bool(user["ring_away"])))
         y += ROW
         label("Karma Points:", y)                # (as the User Editor says it)
         win.karma = win.add(Label(FIELD_X, y + 2, KARMA_W, 10, karma.describe(user["karma"])))
@@ -236,6 +243,8 @@ class Account:
         if problem:
             return win.status.set_text(problem)
         self.db.set_profile(session.user_id, first, last, email, location, birthdate, about)
+        session.ring_away = win.ring.checked
+        self.db.set_ring_away(session.user_id, session.ring_away)
         session.log("saved My Account")
         return win.close()
 

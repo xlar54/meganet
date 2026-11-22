@@ -30,9 +30,11 @@ from .protocol import (TOAST_NO_SLOT, clean_text, S, C, Writer, Deframer, Protoc
                        NOTIFY_HINT_MAX, SLOT_STATUS, Icon, WFlag, Caps, palette_rgb, SPRITES,
                        SPRITE_W, SPRITE_H, SPRITE_COLOURS,
                        RESOURCE_SLOTS, RESOURCE_SIZE,
-                       RESOURCE_CHUNK)
+                       RESOURCE_CHUNK, Sound)
 
 log = logging.getLogger("meganet")
+
+RING_GAP = 3.0               # seconds: a burst of messages rings once (ring)
 
 FIRST_DYNAMIC_WIN = 0x40     # ids below this are the fixed screens in screens.py
 WIN_LOADING_RES = 55         # "Loading Chess": a resource coming (send_resource)
@@ -72,6 +74,8 @@ class Session:
         self.last_chat = ""          # the last one (the bank pays only for a new line)
         self.active_minutes = 0      # towards the bank's "hour online" (bank.check_online)
         self.status = "available"    # Status menu: available / away / offline (presence.py)
+        self.ring_away = True        # My Account's "Ring when I'm Away" (ring())
+        self.last_ring = -RING_GAP
         self.auto_away = False       # away because of no activity (back with the next one)
         self.last_active = time.time()   # the last message that wasn't a PING
         self.suspicious = 0          # events for things never offered (karma.suspicious)
@@ -164,6 +168,21 @@ class Session:
     def sound(self, sound):
         """Play one of the client's sounds (S.SOUND)."""
         self.send(S.SOUND, Writer().u8(int(sound)))
+
+    def ring(self):
+        """A new instant or private message: the doorbell (Sound.DOORBELL). Not while Away
+        (or appearing Offline) unless My Account's "Ring when I'm Away" is ticked, and at most
+        once every RING_GAP seconds (a burst of messages rings once)."""
+        if self.user is None or self.closed:
+            return False
+        if self.status != "available" and not self.ring_away:
+            return False
+        now = time.monotonic()
+        if now - self.last_ring < RING_GAP:
+            return False
+        self.last_ring = now
+        self.sound(Sound.DOORBELL)
+        return True
 
     def send_resource(self, slot, key, data, title=None):
         """Put `data` (at most RESOURCE_SIZE bytes: a grid's tiles, say) in the client's
@@ -437,7 +456,9 @@ class Session:
         the menu bar, the welcome window and the rest (screens.signed_on)."""
         self.login_result(True, message)
         self.user = self.server.db.canonical_name(name)
-        self.user_id = self.server.db.user(name)["id"]
+        row = self.server.db.user(name)
+        self.user_id = row["id"]
+        self.ring_away = bool(row["ring_away"])
         self.previous_login = self.server.db.record_login(self.user_id)
         self.load_permissions()
         self.log("signed on as %s (%s, build %s)%s" % (self.user, self.role, self.build,

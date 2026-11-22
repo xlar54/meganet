@@ -79,6 +79,8 @@ class Sound(IntEnum):
     """S.SOUND sounds (the client's own, played on its SID)."""
     CHIME = 1            # a two-note "ding-dong": someone is paging (with the flashing icon)
     KACHING = 2          # a cash register: you won a poker hand (older clients play nothing)
+    DOORBELL = 3         # a four-note Westminster doorbell: a new instant or private message
+                         # (session.ring: not while Away unless My Account says so)
 
 
 class Icon(IntEnum):

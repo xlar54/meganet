@@ -415,7 +415,11 @@ own sounds on the SID, on both speakers (`client-src/sound.asm`). `Sound.CHIME` 
 two-note "ding-dong". Every admin who can answer gets it once when someone new starts paging,
 with the flashing icon. A hint changing ("3 users are paging") doesn't chime again.
 `Sound.KACHING` (2) is a cash register (a click of noise, then two high notes ringing
-together): a poker hand won. A sound is a list of (effect, frames to the next) steps in
+together): a poker hand won. `Sound.DOORBELL` (3) is the four-note Westminster doorbell:
+`session.ring()` plays it for a new instant message (when its window isn't open, or the
+recipient isn't Available) and a new private message (gifts' notes too). While Away or
+appearing Offline it rings only with My Account's "Ring when Away" ticked (`users.ring_away`,
+on by default), and a burst of messages rings once (`RING_GAP`, 3 s). A sound is a list of (effect, frames to the next) steps in
 `sound.asm`; clients older than the ka-ching ignore numbers they don't know.
 
 ## Page Admin

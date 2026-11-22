@@ -163,6 +163,8 @@ TIME_WAIT_LAST_RASTER_LO: .byte $00
 TIME_WAIT_LAST_RASTER_HI: .byte $00
 CHARACTER_MODE:         .byte $00                   ; $00 = C= gfx (no translation), $01 = ASCII->PETSCII
 
+TCP_CLOSE_PENDING:      .byte 0                     ; 1 = app asked to close; FIN waits for TX to drain
+ETH_TX_SRC:             .word ETH_TX_FRAME_HEADER   ; buffer ETH_PACKET_SEND transmits from
 ACK_REPLY_PENDING:      .byte 0
 ACK_REPLY_LEN_L:        .byte 0
 ACK_REPLY_LEN_H:        .byte 0
@@ -520,11 +522,13 @@ ETH_TCP_CONNECT_START:
     adc #$00
     sta LOCAL_PORT+0
 
-    ; Initialize connection state
+    ; Initialize connection state.  Bytes still unread from a previous
+    ; connection must not appear at the start of this one.
     jsr CLEAR_TCP_PAYLOAD
     jsr TCP_TX_RESET
     jsr CLEAR_REMOTE_ISN
     jsr TCP_OOO_CLEAR
+    jsr RBUF_FLUSH_RX
 
     jsr TCP_SEED_LOCAL_ISN
 
@@ -837,8 +841,17 @@ ETH_CONNECT_CANCEL:
     lda CONNECT_SYN_SENT
     beq _clear_only
 
-    ; We sent SYN; send RST to abandon handshake
-    lda #TCP_FLAG_RST
+    ; We sent SYN; send RST to abandon handshake.  The SYN used sequence
+    ; number ISS, so the RST must carry ISS+1: a peer in SYN-RECEIVED
+    ; ignores a RST at ISS (below its RCV.NXT).
+    inc LOCAL_ISN+3
+    bne +
+    inc LOCAL_ISN+2
+    bne +
+    inc LOCAL_ISN+1
+    bne +
+    inc LOCAL_ISN+0
++   lda #TCP_FLAG_RST
     jsr ETH_BUILD_TCPIP_PACKET
     bcc +
     jmp _clear_only               ; build failed -> just clear
@@ -864,15 +877,20 @@ _done:
 ;=============================================================================
 ETH_TCP_LISTEN_START:
 
+    ; only if no active connection in progress.  Check before touching the
+    ; ports: changing LOCAL_PORT under a live connection breaks it.
+    pha
+    lda TCP_STATE
+    cmp #TCP_STATE_CLOSED
+    beq +
+    pla
+    bra _busy_fail
++   pla
+
     sta TCP_LISTEN_PORT
     sta LOCAL_PORT
     stx TCP_LISTEN_PORT+1
     stx LOCAL_PORT+1
-
-    ; only if no active connection in progress
-    lda TCP_STATE
-    cmp #TCP_STATE_CLOSED
-    bne _busy_fail
 
     lda #0
     sta TCP_ACCEPT_FLAGS        ; clear accepted/fail
@@ -883,9 +901,9 @@ ETH_TCP_LISTEN_START:
     jsr TCP_TX_RESET
     jsr TCP_OOO_CLEAR
 
-    ; clean RX/TX rings (optional but safest for 'fresh' accept)
-    ;jsr RBUF_RESET_RX
-    ;jsr RBUF_RESET_TX
+    ; Bytes still unread from a previous connection must not appear at the
+    ; start of the next accepted one (TCP_TX_RESET above clears TX).
+    jsr RBUF_FLUSH_RX
 
     rts
 _busy_fail:
@@ -921,19 +939,11 @@ ETH_TCP_DISCONNECT:
     rts
 
 _disconnect_established:
-    lda #TCP_FLAG_FIN|TCP_FLAG_ACK
-    jsr ETH_BUILD_TCPIP_PACKET
-    bcs _not_connected
-    jsr ETH_PACKET_SEND
-    bcs _not_connected
-
-    jsr CALC_LOCAL_ISN
-    jsr TCP_FIN_RETRY_INIT
-
-    lda #TCP_STATE_FIN_WAIT_1
-    sta TCP_STATE
-
-    rts
+    ; Graceful close: queued and unacknowledged data go out first.  The FIN
+    ; is sent now if TX is idle, otherwise by ETH_STATUS_POLL once it drains.
+    lda #$01
+    sta TCP_CLOSE_PENDING
+    jmp TCP_TRY_PENDING_FIN
 
 _disconnect_close_wait:
     lda #TCP_FLAG_FIN|TCP_FLAG_ACK
@@ -951,6 +961,50 @@ _disconnect_close_wait:
     sta TCP_STATE
 
 _not_connected:
+    rts
+
+;=============================================================================
+; Send the FIN for a pending close once all queued and unacknowledged data
+; has been sent and ACKed.  Called by ETH_TCP_DISCONNECT and on every
+; ETH_STATUS_POLL.  A busy transmitter leaves the close pending for the next
+; poll.  If the peer closed first (CLOSE_WAIT), hand over to the passive close.
+;=============================================================================
+TCP_TRY_PENDING_FIN:
+    lda TCP_CLOSE_PENDING
+    beq _done
+
+    lda TCP_STATE
+    cmp #TCP_STATE_ESTABLISHED
+    beq _check_tx_idle
+    ldx #$00
+    stx TCP_CLOSE_PENDING
+    cmp #TCP_STATE_CLOSE_WAIT
+    bne _done
+    jmp ETH_TCP_DISCONNECT            ; sends FIN, enters LAST_ACK
+
+_check_tx_idle:
+    lda TXQ_COUNT
+    ora TX_UNACK_PENDING
+    bne _done                         ; data still draining
+
+    lda #$00
+    sta TCP_DATA_PAYLOAD_SIZE
+    sta TCP_DATA_PAYLOAD_SIZE+1
+    lda #TCP_FLAG_FIN|TCP_FLAG_ACK
+    jsr ETH_BUILD_TCPIP_PACKET
+    bcs _done
+    jsr ETH_PACKET_SEND
+    bcs _done
+
+    jsr CALC_LOCAL_ISN
+    jsr TCP_FIN_RETRY_INIT
+
+    lda #TCP_STATE_FIN_WAIT_1
+    sta TCP_STATE
+    lda #$00
+    sta TCP_CLOSE_PENDING
+
+_done:
     rts
 
 ;=============================================================================
@@ -1231,6 +1285,17 @@ _no_fin_in_established:
     rts
 
 _not_retx_synack:
+    ; A zero-length segment behind RCV.NXT is a keepalive probe
+    ; (SEG.SEQ = RCV.NXT-1): answer with an ACK so the peer keeps the
+    ; connection.  A pure ACK at RCV.NXT needs no reply.
+    lda TCP_RX_DATA_PAYLOAD_SIZE
+    ora TCP_RX_DATA_PAYLOAD_SIZE+1
+    bne _copy_payload_and_ack
+    jsr TCP_SEQ_CMP_SEG_SEQ_REMOTE
+    bpl _est_done
+    jsr TCP_DEFER_DUP_ACK
+    rts
+
 _copy_payload_and_ack:
     ; Any payload?
     lda TCP_RX_DATA_PAYLOAD_SIZE
@@ -1304,8 +1369,9 @@ _dup_entire:
     sta REMOTE_ISN_BUMP
     lda #TCP_FLAG_ACK
     jsr ETH_BUILD_TCPIP_PACKET
+    bcs +                          ; no frame built: don't queue a stale one
     jsr DEFER_CURRENT_TX
-    jsr _apply_peer_fin_state
++   jsr _apply_peer_fin_state
     plp
     rts
 
@@ -1318,8 +1384,9 @@ _dup_entire_ack:
     jsr CALC_REMOTE_ISN
     lda #TCP_FLAG_ACK
     jsr ETH_BUILD_TCPIP_PACKET
+    bcs +                          ; no frame built: don't queue a stale one
     jsr DEFER_CURRENT_TX
-    plp
++   plp
     rts
 
 _have_tail:
@@ -1509,35 +1576,10 @@ _ack_no_fin_bump:
 
     lda #TCP_FLAG_ACK
     jsr ETH_BUILD_TCPIP_PACKET
-    
-    ; Copy the built frame into a side buffer and flag it for mainline
-    ; Clamp frame size to buffer limit
-    lda ETH_TX_LEN_LSB
-    ldx ETH_TX_LEN_MSB
-    cpx #0                   ; High byte non-zero?
-    bne _clamp_to_60         ; Yes, definitely > 60
-    cmp #61                  ; Check low byte
-    bcc _size_ok             ; < 61, we're good
-    
-_clamp_to_60:
-    lda #60
-    ldx #0
-    
-_size_ok:
-    sta ACK_REPLY_LEN_L
-    stx ACK_REPLY_LEN_H
-    tax                      ; X = length for copy
-    beq _ack_defer_done
+    bcs _ack_defer_done            ; no frame built: don't queue a stale one
 
-_ack_defer_copy:
-    dex
-    lda ETH_TX_FRAME_DEST_MAC,x
-    sta ACK_REPLY_PACKET,x
-    cpx #$00
-    bne _ack_defer_copy
-
-    lda #$01
-    sta ACK_REPLY_PENDING
+    ; Queue the ACK for mainline (or send it now if the slot is taken)
+    jsr DEFER_CURRENT_TX
 
 _ack_defer_done:
     lda REMOTE_ISN_BUMP
@@ -1697,7 +1739,18 @@ _check_FIN_WAIT_1:
 
 _fin_wait_1_seq_ok:
     jsr TCP_SEQ_CMP_SEG_ACK_LOCAL_ISN
-    bne _done
+    beq _got_FIN_WAIT_1_ACK
+    bpl _done                       ; ACK beyond SND.NXT: ignore
+
+    ; Our FIN isn't ACKed yet, but the peer may still send data (or its own
+    ; FIN) before it sees ours.  Take and ACK it, and stay in FIN_WAIT_1.
+    lda TCP_RX_DATA_PAYLOAD_SIZE
+    ora TCP_RX_DATA_PAYLOAD_SIZE+1
+    bne _copy_payload_and_ack
+    lda ETH_RX_TCP_FLAGS
+    and #TCP_FLAG_FIN
+    bne _got_FIN_ACK
+    jmp _done
 
 _got_FIN_WAIT_1_ACK:
     lda #TCP_STATE_FIN_WAIT_2
@@ -1743,12 +1796,14 @@ _got_FIN_ACK:
     lda #$00
     sta REMOTE_ISN_BUMP
 
-    ; send final ACK
+    ; send final ACK.  The FIN is already consumed, so enter TIME_WAIT even if
+    ; the ACK can't be built: TIME_WAIT re-ACKs the peer's retransmitted FIN,
+    ; while staying in FIN_WAIT_2 would hang (no timer, FIN now looks old).
     lda #TCP_FLAG_ACK
     jsr ETH_BUILD_TCPIP_PACKET
-    bcs _done
+    bcs +
     jsr DEFER_CURRENT_TX
-
++
     ; reset TIME_WAIT counter
     jsr TCP_TIME_WAIT_RESET
     lda #$00
@@ -1826,14 +1881,18 @@ _last_ack_seq_ok:
     jsr TCP_SEQ_CMP_SEG_ACK_LOCAL_ISN
     bne _done
 
-    ; peer ACKed your FIN, now go TIME_WAIT
-    jsr TCP_TIME_WAIT_RESET
+    ; peer ACKed our FIN.  The passive closer goes straight to CLOSED
+    ; (RFC 793); only the active closer waits in TIME_WAIT.
     lda #$00
     sta CONNECT_RETRY_TICKS
     sta CONNECT_RETRY_LEFT
 
-    lda #TCP_STATE_TIME_WAIT
+    lda #TCP_STATE_CLOSED
     sta TCP_STATE
+
+    lda TCP_EVENT_FLAG
+    ora #EV_LOCAL_CLOSE
+    sta TCP_EVENT_FLAG
     rts
 
     ;---------------------------------------------------------------------------
@@ -1843,15 +1902,11 @@ _check_SYN_RCVD:
     cmp #TCP_STATE_SYN_RECEIVED
     bne _done
 
-    ; Expect a pure ACK (no SYN/FIN/RST), payload len 0
+    ; Expect an ACK without SYN/RST.  It may already carry data or a FIN
+    ; (e.g. when the client's pure ACK was lost); those are handled below.
     lda ETH_RX_TCP_FLAGS
-    and #(TCP_FLAG_ACK | TCP_FLAG_SYN | TCP_FLAG_FIN | TCP_FLAG_RST)
+    and #(TCP_FLAG_ACK | TCP_FLAG_SYN | TCP_FLAG_RST)
     cmp #TCP_FLAG_ACK
-    bne _done
-
-    ; Optional sanity: require zero payload
-    lda TCP_RX_DATA_PAYLOAD_SIZE
-    ora TCP_RX_DATA_PAYLOAD_SIZE+1
     bne _done
 
     jsr TCP_SEQ_CMP_SEG_SEQ_REMOTE
@@ -1882,6 +1937,13 @@ _synrcvd_ack_check:
     lda #$00
     sta TCP_LISTEN_ENABLED
 
+    ; Process any data or FIN on the final ACK as ESTABLISHED.
+    lda TCP_RX_DATA_PAYLOAD_SIZE
+    ora TCP_RX_DATA_PAYLOAD_SIZE+1
+    bne _copy_payload_and_ack
+    lda ETH_RX_TCP_FLAGS
+    and #TCP_FLAG_FIN
+    bne _got_FIN_IN_ESTABLISHED
     rts
 
 _done:
@@ -2022,15 +2084,11 @@ TCP_OOO_TRY_FLUSH:
     rts
 
 TCP_OOO_FLUSH_CHECK_SEQ:
-    ldx #$00
-TCP_OOO_FLUSH_SEQ_LOOP:
-    lda TCP_OOO_SEQ,x
-    cmp REMOTE_ISN,x
-    bcc TCP_OOO_FLUSH_STALE
+    ; Modular (mod 2^32) compare: a segment just past the sequence wrap is
+    ; still in the future, not stale.
+    jsr TCP_SEQ_CMP_OOO_REMOTE
+    bmi TCP_OOO_FLUSH_STALE
     bne TCP_OOO_FLUSH_NO
-    inx
-    cpx #$04
-    bne TCP_OOO_FLUSH_SEQ_LOOP
 
     php
     sei
@@ -2415,6 +2473,15 @@ _tcp_rst_restore_loop:
 ; Defers transmit until out of IRQ
 ; ================================================================================
 DEFER_CURRENT_TX:
+    ; The single slot may already hold an unsent frame (a FIN, RST, ACK or
+    ; ARP request).  Send that older frame first, so frames leave in order,
+    ; then queue this one.  If the transmitter is busy, this frame replaces
+    ; the old one.
+    lda ACK_REPLY_PENDING
+    beq _defer
+    jsr ETH_SEND_DEFERRED_SLOT
+
+_defer:
     lda ETH_TX_LEN_LSB
     ldx ETH_TX_LEN_MSB
     cpx #$00
@@ -2440,6 +2507,57 @@ _copy:
     sta ACK_REPLY_PENDING
 _done
     rts
+
+;=============================================================================
+; Transmit the deferred slot (ACK_REPLY_PACKET) straight from the slot,
+; leaving the frame being built in ETH_TX_FRAME untouched.  The slot is
+; zero-padded to the 60-byte minimum and sent as 60 bytes, so ETH_PACKET_SEND
+; never pads (which would write into ETH_TX_FRAME).
+; Out: C=0 sent (slot now free), C=1 transmitter busy (slot unchanged).
+;=============================================================================
+ETH_SEND_DEFERRED_SLOT:
+    ldx ACK_REPLY_LEN_L
+_pad:
+    cpx #60
+    bcs _padded
+    lda #$00
+    sta ACK_REPLY_PACKET,x
+    inx
+    bra _pad
+_padded:
+    lda ETH_TX_LEN_LSB
+    sta _save_len
+    lda ETH_TX_LEN_MSB
+    sta _save_len+1
+    lda #60
+    sta ETH_TX_LEN_LSB
+    lda #$00
+    sta ETH_TX_LEN_MSB
+    lda #<ACK_REPLY_PACKET
+    sta ETH_TX_SRC
+    lda #>ACK_REPLY_PACKET
+    sta ETH_TX_SRC+1
+
+    jsr ETH_PACKET_SEND
+    php
+
+    lda #<ETH_TX_FRAME_HEADER
+    sta ETH_TX_SRC
+    lda #>ETH_TX_FRAME_HEADER
+    sta ETH_TX_SRC+1
+    lda _save_len
+    sta ETH_TX_LEN_LSB
+    lda _save_len+1
+    sta ETH_TX_LEN_MSB
+
+    plp
+    bcs _slot_busy
+    lda #$00
+    sta ACK_REPLY_PENDING
+_slot_busy:
+    rts
+
+_save_len: .word 0
 
 ;=============================================================================
 ; TIME_WAIT_TICK
@@ -2486,7 +2604,7 @@ TIME_WAIT_FRAME_TICK:
 
     lda ARP_CUR_RASTER_LO
     cmp TIME_WAIT_LAST_RASTER_LO
-    bcc _tw_frame_elapsed
+    bne _tw_frame_elapsed
 
 _tw_no_frame:
     lda ARP_CUR_RASTER_LO
@@ -2579,6 +2697,13 @@ _pad_min_frame:
     sta ETH_TX_LEN_LSB
 
 _tx_len_ready:
+    ; make sure ethernet is not under reset, then wait for the previous frame
+    ; to finish (TXIDLE) before touching TXSIZE or the hardware TX buffer.
+    lda #$03
+    sta MEGA65_ETH_CTRL1
+    jsr ETH_WAIT_CLEAR_TO_SEND
+    bcs _tx_fail
+
     lda ETH_TX_LEN_LSB
     sta MEGA65_ETH_TXSIZE_LSB
     sta _len_lsb
@@ -2586,9 +2711,9 @@ _tx_len_ready:
     sta MEGA65_ETH_TXSIZE_MSB
     sta _len_msb
 
-    lda #<ETH_TX_FRAME_HEADER
+    lda ETH_TX_SRC
     sta _ETH_BUF_SRC
-    lda #>ETH_TX_FRAME_HEADER
+    lda ETH_TX_SRC+1
     sta _ETH_BUF_SRC+1
 
 php
@@ -2613,13 +2738,6 @@ _ETH_BUF_SRC:
     .word $0000                 ; modulo (ignored)
 plp
 
-    ; make sure ethernet is not under reset
-    lda #$03
-    sta MEGA65_ETH_CTRL1
-
-    ; be sure we can send
-    jsr ETH_WAIT_CLEAR_TO_SEND
-    bcs _tx_fail
     ; transmit now
     lda #$01
     sta MEGA65_ETH_COMMAND
@@ -2634,7 +2752,9 @@ _tx_fail:
 ;=============================================================================
 ETH_WAIT_100MS:
 
-    ldx #>1600                  ; high byte
+    ; The dey/dex loop runs Y + 256*(X-1) raster lines, so X needs the
+    ; high byte rounded up: 1600 = $40 + 256*6 with X=7.
+    ldx #>(1600+255)            ; high byte, rounded up
     ldy #<1600                  ; low byte
 
 _wait_outer
@@ -2691,11 +2811,14 @@ ETH_BUILD_TCPIP_PACKET:
 
     pha                             ; push the TCP_FLAG to stack
 
-    lda TCP_STATE                   ; dont do a ARP if we already have a TCP peer
+    ; Use the saved peer MAC for every state of a live connection.  Closing
+    ; states must not depend on the ARP cache: a passive peer is never cached,
+    ; and an active peer's entry can age out during the connection.
+    lda TCP_STATE
     cmp #TCP_STATE_ESTABLISHED
     beq _use_tcp_peer_mac
-    cmp #TCP_STATE_SYN_SENT
-    bne _route_lookup
+    cmp #TCP_STATE_CLOSED
+    beq _route_lookup
     lda TCP_PEER_MAC_VALID
     bne _use_tcp_peer_mac
 
@@ -3436,10 +3559,7 @@ TCP_HARD_RESET:
     jsr CLEAR_REMOTE_ISN
 
     ; flush RX ring (optional, but avoids BASIC reading stale bytes)
-    lda RBUF_HEAD_HI
-    sta RBUF_TAIL_HI
-    lda RBUF_HEAD_LO
-    sta RBUF_TAIL_LO
+    jsr RBUF_FLUSH_RX
     jsr TCP_TX_RESET
 
     ; mark closed
@@ -3509,6 +3629,7 @@ _check_fin_tick:
 _tick_fin_retry:
     jsr TCP_FIN_RETRY_TICK
 _after_tcp_ticks:
+    jsr TCP_TRY_PENDING_FIN
     jsr ARP_RETRY_TICK
     jsr DNS_TICK
     jsr DHCP_STATUS_TICK
@@ -3714,6 +3835,8 @@ ETH_DNS_LOOKUP:
 
     ; A$ should contain the host name to lookup
     jsr COPY_ASTR_TO_DNS_HOST
+    lda host_str
+    beq DNS_LOOKUP_FAIL         ; empty A$: nothing to look up
 
 DNS_LOOKUP_HOSTSTR:
 
@@ -3776,8 +3899,8 @@ COPY_ASTR_TO_DNS_HOST:
     ; get size of A$ if defined
     FAR_PEEK $00, $FD60
 
-    ; if zero length, exit
-    beq _exit
+    ; empty A$: clear host_str so callers don't reuse the previous name
+    beq _empty
 
     cmp #DNS_HOST_BUFFER_SIZE
     bcc _dns_len_ok
@@ -3831,8 +3954,10 @@ _dest_addr:
     lda #$00
     ldy _var_len
     sta host_str, y
+    rts
 
-_exit:
+_empty:
+    sta host_str                ; A = 0
     rts
 
 ;=============================================================================
@@ -3869,9 +3994,9 @@ ETH_RCV:
     rts
 
 _latch_frame:
-    ; weather65 change: rotate FIRST. The buffer the CPU sees is the last frame, already
-    ; handled; the rotate is what makes the waiting frame visible (MEGA65 book, U-4).
-    ; Reading before rotating left every frame hidden until the next one arrived.
+    ; Rotate FIRST. The buffer the CPU sees is the last frame, already handled; the
+    ; rotate is what makes the waiting frame visible (MEGA65 book, U-4). Reading before
+    ; rotating left every frame hidden until the next one arrived.
     jsr ETH_RX_ROTATE
 
     ; --- Early filter using NIC's 2 status bytes (before any DMA) ---
@@ -4523,7 +4648,7 @@ CONNECT_FRAME_WRAP_TICK:
 
     lda ARP_CUR_RASTER_LO
     cmp CONNECT_LAST_RASTER_LO
-    bcc _connect_frame_elapsed
+    bne _connect_frame_elapsed
 
 _connect_no_frame:
     lda ARP_CUR_RASTER_LO
@@ -4964,6 +5089,8 @@ DHCP_REMEMBER_OFFER_SERVER_IMPL:
 DHCP_REMEMBER_OFFER_COPY:
     lda DHCP_SERVER_ID,x
     sta DHCP_SELECTED_SERVER_ID,x
+    lda DHCP_OFFER_IP,x
+    sta DHCP_SELECTED_IP,x
     inx
     cpx #$04
     bne DHCP_REMEMBER_OFFER_COPY
