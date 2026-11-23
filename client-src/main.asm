@@ -31,24 +31,28 @@
         .include "gen/logo.asm"         ; (constants only)
         .include "gen/server.asm"       ; (constants only: DEFAULT_SERVER)
         .include "gen/version.asm"      ; (constants only: CLIENT_BUILD, from client-src/VERSION)
+        .include "gen/mipvars.asm"      ; (constants only: mega-ip's variables, for netlog.asm)
+
+        .weak
+MOCK_NET        = 0                     ; -D MOCK_NET=1 (build.bat mock FILE): replay build
+BRIDGE_NET      = 0                     ; -D BRIDGE_NET=1 (build.bat bridge): Xemu + bridge
+DEBUG_NET       = 0                     ; -D DEBUG_NET=1 (build.bat debug): the connection log
+        .endweak                        ; (netlog.asm)
 
 F640_BUF0       = $20000
 F640_BUF1       = $40000                ; (not used)
 MOUSE_MAX_X     = 639
 ; the GUI's limits (lib/gui/gui.asm's defaults are 8 / 48 / 8): an admin with the User Editor,
-; Message Boards, Private Messages and a chat room open needs more than 48 gadgets
+; Message Boards, Private Messages and a chat room open needs more than 48 gadgets. The debug
+; build has 60: the rest of the texts' space holds the connection log (netlog.asm NL_HI)
 GUI_MAXWIN      = 12                    ; windows open at once
-GUI_MAXGAD      = 80                    ; gadgets in all of them (< 128: some loops use bpl)
+GUI_MAXGAD      = DEBUG_NET ? 60 : 80   ; gadgets in all of them (< 128: some loops use bpl)
 GUI_MAXBIG      = 16                    ; lists, views, text areas, drop-downs (attic, 8 KB each)
 GUI_NSLOTS      = 9                     ; menu-bar icons: link.asm's, then the server's 0-7
                                         ; (7: the SID tune playing, sidplay.asm)
 GUI_TBUF        = $eb00                 ; the gadget texts (80 x 64): under the KERNAL ROM,
                                         ; after proto.asm's frame buffers ($E000-$EAFF)
         .cerror GUI_TBUF + GUI_MAXGAD * 64 > $fffa, "the gadget texts run into the vectors"
-        .weak
-MOCK_NET        = 0                     ; -D MOCK_NET=1 (build.bat mock FILE): replay build
-BRIDGE_NET      = 0                     ; -D BRIDGE_NET=1 (build.bat bridge): Xemu + bridge
-        .endweak
 UNPACK_BUF      = $40000                ; boot only
 
 ; the layout (lib/overlay.asm, overlays.asm): the resident part, then the overlays, each its
@@ -59,6 +63,10 @@ UNPACK_BUF      = $40000                ; boot only
         .dsection ovl0
         * = $110000
         .dsection ovl1
+        .if DEBUG_NET
+        * = $120000
+        .dsection ovl2
+        .endif
 
         .section res
         .word $2001                     ; (the PRG's load address)
@@ -123,6 +131,9 @@ entry:
         jsr pal_stash                   ; (first: the variables reuse the palette's bytes)
         jsr ovl_init
         jsr net_install
+        .if DEBUG_NET
+        #FAR OVL_DEBUG, nl_install      ; (the log's recorder -> NL_HI)
+        .endif
         jsr irq_install
         jsr rom_save                    ; the ROM image to attic: Exit puts it back
         jsr rom_unprotect               ; the framebuffer lives in $20000-$3FFFF
@@ -145,7 +156,11 @@ main_loop:
         inc frames
         bne +
         inc frames+1
-+       jsr busy_frame                  ; (the hourglass while waiting for the server)
++
+        .if DEBUG_NET
+        jsr nl_frame                    ; (the connection log: netlog.asm)
+        .endif
+        jsr busy_frame                 ; (the hourglass while waiting for the server)
         jsr link_frame                  ; (the connectivity icon; PING when it's quiet)
         jsr sound_frame                 ; (the chime's notes)
         jsr storage_frame               ; (an upload going out)
@@ -162,6 +177,9 @@ _step:  jsr login_step
 
 ; a gui event: the client's own windows ($F0-$FF) here, the server's go to the server
 on_event:
+        .if DEBUG_NET
+        jsr nl_event                    ; (F1 and the log's window: it doesn't come back)
+        .endif
         lda ge_type                     ; a notification icon: the connectivity icon is ours,
         cmp #GE_NOTIFY                  ; the rest the server's (its slot = ours - 1)
         bne +
@@ -322,3 +340,15 @@ ovl1_end:
         .cerror * > OVL_END, format("overlay 1 is too big: to $%04x", *)
         .endlogical
         .send ovl1
+
+; ---- overlay 2 (OVL_DEBUG, the debug build only): the connection log's window ----
+        .if DEBUG_NET
+        .section ovl2
+        .word 0
+        .logical OVL_BASE
+        .include "netlog.asm"
+ovl2_end:
+        .cerror * > OVL_END, format("overlay 2 is too big: to $%04x", *)
+        .endlogical
+        .send ovl2
+        .endif

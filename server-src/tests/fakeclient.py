@@ -7,7 +7,7 @@ import zlib
 from meganet.protocol import (SPRITES, SPRITE_W, SPRITE_H, SPRITE_COLOURS, Local, LocalStatus, LOCAL_SD, LOCAL_MAX, FILE_CHUNK, UP_CHUNK,
                               BROADCAST_MAX, DESK_SLOTS, DESK_ICON_W, DESK_ICON_H, DESK_LABEL_MAX,
                               DESK_CLEAR, GFlag, S, C, Kind, Writer, Deframer, LOGIN_NEW_USER, MENU_FIRST,
-                              MENU_LAST, MENU_SEPARATOR, NOTIFY_SLOTS, NOTIFY_HINT_MAX, Icon,
+                              MENU_LAST, MENU_SEPARATOR, MEGANET_MENU, NOTIFY_SLOTS, NOTIFY_HINT_MAX, Icon,
                               window_fits, DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES,
                               EDIT_COLS_MAX, Caps, GRID_PARAMS, GRID_CELLS_MAX, RESOURCE_SLOTS,
                               RESOURCE_CHUNK, RESOURCE_SIZE, PIC_LORES, PIC_HIRES,
@@ -322,6 +322,8 @@ class FakeClient:
     def menu_items(self, title):
         """The labels under `title`, in order (separators included as "-")."""
         ids = [i for i, parent, label in self.menu if parent == 0 and label == title]
+        if title == "MegaNet":                       # the client's own (its items aren't sent)
+            ids = [MEGANET_MENU]
         if not ids:
             return []
         return [label for _id, parent, label in self.menu if parent == ids[0]]
@@ -461,7 +463,7 @@ class FakeClient:
         elif t == S.MENU:
             n = r.u8()
             menu = []
-            titles = set()
+            titles = {MEGANET_MENU}                  # (the client's own MegaNet title)
             for _ in range(n):
                 item_id, parent, label = r.u8(), r.u8(), r.str()
                 assert MENU_FIRST <= item_id <= MENU_LAST, "server used a client menu id"

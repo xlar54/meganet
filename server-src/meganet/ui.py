@@ -21,7 +21,7 @@ session has at most one, and showing another replaces it.
 """
 
 from .protocol import (S, Kind, WFlag, GFlag, Writer, SELECT_DOUBLE, MENU_FIRST, MENU_LAST,
-                       MENU_SEPARATOR, SCREEN_W, SCREEN_H, MENU_BAR_H, FRAME_W, FRAME_H,
+                       MENU_SEPARATOR, MEGANET_MENU, SCREEN_W, SCREEN_H, MENU_BAR_H, FRAME_W, FRAME_H,
                        DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES, EDIT_COLS_MAX,
                        GRID_PARAMS, GRID_CELLS_MAX)
 
@@ -766,7 +766,8 @@ class Menu:
         if (not MENU_FIRST <= item_id <= MENU_LAST or item_id in self.entries
                 or item_id in self.hidden):
             raise ValueError("bad or duplicate menu id %r" % item_id)
-        if parent != 0 and (parent not in self.entries or self.entries[parent].parent != 0):
+        if parent not in (0, MEGANET_MENU) and (parent not in self.entries
+                                                 or self.entries[parent].parent != 0):
             raise ValueError("menu id %r: parent %r is not a title" % (item_id, parent))
         if len(self.entries) == 255:
             raise ValueError("too many menu entries")

@@ -100,8 +100,8 @@ INTERNET_USE = register("internet.use", "Use the Internet area", like="files.dow
 GALLERY_MODERATE = register("gallery.moderate", "Manage art galleries", like="boards.moderate")
 ADMIN_TOS = register("admin.tos", "Admin: terms of service", like=ADMIN_MOTD)
 BANK_USE = register("bank.use", "Use the bank", like="chat.use")
-ADMIN_BANK = register("admin.bank", "Admin: the bank")
-MUSIC_MODERATE = register("music.moderate", "Manage SID music libraries", like="files.moderate")
+ADMIN_BANK = register("admin.bank", "Admin: bank settings")
+MUSIC_MODERATE = register("music.moderate", "Manage SID libraries", like="files.moderate")
 MUSIC_LISTEN, MUSIC_UPLOAD = "music.listen", "music.upload"
 GALLERY_VIEW, GALLERY_UPLOAD = "gallery.view", "gallery.upload"
 FILES_DOWNLOAD, FILES_UPLOAD = "files.download", "files.upload"

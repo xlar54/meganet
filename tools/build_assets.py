@@ -137,13 +137,41 @@ def assemble_stack():
     """client-src/mega-ip (weather65's copy of mega-ip) -> target/assets/ethbin: a flat image
     for $2000 in bank 4, with a PRG header for load_file (loaded to $42000)"""
     out = os.path.join(m.ROOT, 'target', 'eth.tmp')
+    lbl = os.path.join(m.ROOT, 'target', 'eth.tmp.lbl')
     subprocess.check_call([os.path.join(m.ROOT, '64tass.exe'), '-q', '--nostart',
-                           os.path.join(m.ROOT, 'client-src', 'mega-ip', 'eth.asm'), '-o', out])
+                           os.path.join(m.ROOT, 'client-src', 'mega-ip', 'eth.asm'),
+                           '-l', lbl, '-o', out])
     data = open(out, 'rb').read()
     os.remove(out)
     assert len(data) < 0x6000, 'the stack overflows the bank 4 window'
     open(os.path.join(m.ASSETS, 'ethbin'), 'wb').write(bytes([0x00, 0x20]) + data)
+    stack_labels(lbl)
+    os.remove(lbl)
     return 'ethbin'
+
+
+# mega-ip's variables the debug build (client-src/netlog.asm) copies each frame, as seen with
+# bank 4 at $2000: two blocks, LOCAL_IP..LOCAL_ISN and TXQ_HEAD..TCP_PEER_MAC
+STACK_VARS = ['LOCAL_IP', 'LOCAL_PORT', 'REMOTE_IP', 'REMOTE_PORT', 'GATEWAY_IP', 'SUBNET_MASK',
+              'ETH_STATE', 'TCP_STATE', 'REMOTE_ISN', 'LOCAL_ISN',
+              'TXQ_HEAD', 'TXQ_COUNT', 'TXQ_INFLIGHT', 'TX_PEER_WINDOW', 'SEG_WND',
+              'TX_UNACK_PENDING', 'TX_UNACK_RETRY_LEFT', 'TX_UNACK_SEQ',
+              'TCP_PEER_MAC_VALID', 'TCP_PEER_MAC', 'TCP_TX_MAX_RETRIES']
+
+
+def stack_labels(lbl):
+    """mega-ip's label file -> client-src/gen/mipvars.asm (MIPV_NAME = address)"""
+    found = {}
+    for line in open(lbl):
+        parts = line.split('=')
+        if len(parts) == 2 and parts[0].strip() in STACK_VARS:
+            found[parts[0].strip()] = int(parts[1].strip().lstrip('$'), 16)
+    missing = [n for n in STACK_VARS if n not in found]
+    assert not missing, 'mega-ip labels missing: %s' % missing
+    assert 0 < found['LOCAL_ISN'] + 4 - found['LOCAL_IP'] <= 64, 'mega-ip block A moved'
+    assert 0 < found['TCP_PEER_MAC'] + 6 - found['TXQ_HEAD'] <= 64, 'mega-ip block B moved'
+    m.write_gen('mipvars.asm', ['MIPV_%s = $%04x' % (n, found[n]) for n in STACK_VARS],
+                "mega-ip's variables (bank 4 view), for the debug build")
 
 
 if __name__ == '__main__':

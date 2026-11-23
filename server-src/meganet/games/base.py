@@ -58,6 +58,7 @@ class Game:
     def __init__(self):
         self.players = []     # Player objects still in the game
         self.computers = 0    # computer players asked for (set before start(); computer games)
+        self.options = {}     # what the lobby asked for besides (chess: {"level": "Hard"})
         self.over = False
         self._lobby = None    # set by the framework
 

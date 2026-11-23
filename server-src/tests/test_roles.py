@@ -58,6 +58,21 @@ class RolesBase(ServerTest):
         c.select(win.id, listbox, index)
         return index
 
+    async def page_with(self, roles, text):
+        """Next > in the Roles window until a box says `text`; the window."""
+        c = self.alice
+        for _ in range(8):
+            if any(g["text"] == text for g in roles.gadgets.values()):
+                return roles
+            page = next(g["text"] for g in roles.gadgets.values()
+                        if (g["text"] or "").startswith("Page "))
+            c.click_text(WIN_ROLES, "Next >")
+            await c.wait_for(lambda: c.windows.get(WIN_ROLES) is not None
+                             and c.windows[WIN_ROLES].done
+                             and not has_text(c, WIN_ROLES, page), "the next page")
+            roles = c.windows[WIN_ROLES]
+        raise AssertionError("no box %r on any page" % text)
+
     async def edit_role(self, c, role):
         roles = await self.open_admin(c, "Roles")
         await self.pick_row(c, roles, gadget_of(roles, Kind.LISTBOX), role)
@@ -210,16 +225,8 @@ class RolesTest(RolesBase):
         self.assertEqual(status, "alice is the last user who can edit roles.")
         self.assertEqual(dbase.user("alice")["role"], "Sysop")
         # ...nor take admin.roles away from Sysop...
-        roles = await self.edit_role(self.alice, "Sysop")
-        self.alice.click_text(WIN_ROLES, "Next >")           # (the admin keys are on page 2)
-
-        def page2():
-            win = self.alice.windows.get(WIN_ROLES)
-            return win is not None and win.done and any(
-                g["text"] == "Admin: edit roles" for g in win.gadgets.values())
-        await self.alice.wait_for(page2, "roles page 2")
-        roles = self.alice.windows[WIN_ROLES]
-        box = roles.find("Admin: edit roles")
+        roles = await self.page_with(await self.edit_role(self.alice, "Sysop"), "Edit roles")
+        box = roles.find("Edit roles")
         self.alice.select(WIN_ROLES, box, 0)
         self.alice.click_text(WIN_ROLES, "Save")
         await self.alice.wait_for(lambda: status_of(roles).startswith("Nobody else"), "refused")
@@ -251,6 +258,7 @@ class RolesTest(RolesBase):
         self.alice.value(WIN_ROLES, name, "Guest")
         self.alice.click_text(WIN_ROLES, "Rename")
         await self.alice.wait_for(lambda: status_of(roles) == "Renamed to Guest.", "renamed")
+        roles = await self.page_with(roles, "Play games")
         box = roles.find("Play games")
         self.alice.select(WIN_ROLES, box, 1)
         self.alice.click_text(WIN_ROLES, "Save")
@@ -364,7 +372,7 @@ class MenuTest(RolesBase):
         self.assertEqual(self.bob.menus_received, n)
         # A role change for bob's own role's permissions does.
         self.alice.windows.pop(WIN_ROLES)                    # wait for the redrawn one
-        roles = await self.edit_role(self.alice, "Member")
+        roles = await self.page_with(await self.edit_role(self.alice, "Member"), "Play games")
         self.alice.select(WIN_ROLES, roles.find("Play games"), 0)
         self.alice.click_text(WIN_ROLES, "Save")
         await self.bob.wait_for(lambda: "Games" not in self.bob.menu_items("Areas"),
@@ -442,7 +450,7 @@ class UserEditorTest(RolesBase):
                          ("Robert", "Jones", "", "York", "1970-01-02", "about bob", "New User"))
 
         # Set Password: must match, then bob signs on with it.
-        c.click_text(WIN_USERS, "Set Password...")
+        c.click_text(WIN_USERS, "Password...")
         pw = await c.wait_window("Set Password")
         boxes = [gadget_of(pw, Kind.PASSWORD, i) for i in (0, 1)]
         c.value(pw.id, boxes[0], "newpass")
@@ -461,6 +469,51 @@ class UserEditorTest(RolesBase):
         await b2.wait_for(lambda: b2.hello, "HELLO")
         ok, msg = await self.login(b2, "bob", "newpass")
         self.assertTrue(ok, msg)
+
+    async def test_lock_and_unlock(self):
+        c, dbase = self.alice, self.server.db
+        win = await self.open_admin(c, "User Editor")
+        listbox = gadget_of(win, Kind.LISTBOX)
+        await self.pick_row(c, win, listbox, "bob")
+        await c.wait_for(lambda: c.enabled(WIN_USERS, "Lock"), "Lock")
+        c.click_text(WIN_USERS, "Lock")
+        ask = await c.wait_window("Lock Account")         # asked first
+        self.assertFalse(dbase.user("bob")["locked"])
+        c.click_text(ask.id, "Lock")
+        await self.bob.wait_for(lambda: ("MegaNet", "Your account has been locked by an "
+                                         "admin.") in self.bob.alerts, "bob told")
+        await c.wait_for(lambda: self.server.find_user("bob") is None, "bob signed off")
+        await c.wait_for(lambda: status_of(win) == "Locked bob: signed off.", "status")
+        self.assertTrue(dbase.user("bob")["locked"])
+        await c.wait_for(lambda: has_text(c, WIN_USERS, "bob (locked)"), "marked")
+        self.assertTrue(any(r.startswith("bob") and r.endswith("lock")
+                            for r in win.gadgets[listbox]["rows"]))
+        self.assertTrue(c.enabled(WIN_USERS, "Unlock"))
+
+        async def sign_on(password):
+            b = await self.client("bob-again")
+            b.send_hello()
+            await b.wait_for(lambda: b.hello, "HELLO")
+            result = await self.login(b, "bob", password)
+            await b.close()
+            self.clients.remove(b)
+            return result
+        self.assertEqual(await sign_on("secret"),
+                         (False, "This account is locked. Ask the Sysop."))
+        self.assertEqual(await sign_on("wrong"), (False, "Wrong screen name or password."),
+                         "no hint to someone who doesn't know the password")
+        c.click_text(WIN_USERS, "Unlock")
+        await c.wait_for(lambda: status_of(win) == "Unlocked bob: they can sign on again.",
+                         "unlocked")
+        self.assertFalse(dbase.user("bob")["locked"])
+        ok, _ = await sign_on("secret")
+        self.assertTrue(ok)
+        # not yourself
+        await self.pick_row(c, win, listbox, "alice")
+        await c.wait_for(lambda: has_text(c, WIN_USERS, "alice"), "alice")
+        c.click_text(WIN_USERS, "Lock")
+        await c.wait_for(lambda: status_of(win) == "You can't lock your own account.", "no")
+        self.assertFalse(dbase.user("alice")["locked"])
 
     async def test_old_account_without_names(self):
         """Accounts from before real names were required can still be saved blank."""
@@ -494,22 +547,37 @@ class NewUserIconTest(RolesBase):
 
 
 class RolesPagingTest(RolesBase):
+    def test_grouped_layout(self):
+        """Every key once, under its group's heading; groups in order, the ones that fit
+        a column kept whole; nothing past the column's rows."""
+        from meganet.admin import permission_pages, PERM_ROWS, PERM_GROUPS
+        pages = permission_pages(permissions.all_permissions())
+        boxes = [w.key for page in pages for _, _, k, w in page if k == "box"]
+        self.assertEqual(sorted(boxes), sorted(permissions.keys()))
+        heads = [w for page in pages for _, _, k, w in page if k == "head"]
+        self.assertEqual([h for h in heads if "(more)" not in h],
+                         [t for t, _ in PERM_GROUPS][:len([h for h in heads
+                                                           if "(more)" not in h])])
+        for page in pages:
+            self.assertTrue(all(0 <= r < PERM_ROWS and c in (0, 1) for c, r, _, _ in page))
+            heads_at = {(c, r) for c, r, k, _ in page if k == "head"}
+            for c, r in heads_at:                        # a heading always has a box under it
+                self.assertIn((c, r + 1), {(cc, rr) for cc, rr, k, _ in page if k == "box"})
+        first = [w.key for _, _, k, w in pages[0] if k == "box"]
+        self.assertEqual(first[:2], ["chat.use", "chat.rooms"], "using it before moderating")
+
     async def test_more_permissions_than_fit(self):
-        from meganet.admin import PER_PAGE          # the last page exactly full, with at
-        core = len(permissions.keys())              # least 2 extra keys on it
-        pages = (core + 2 + PER_PAGE - 1) // PER_PAGE
-        n = pages * PER_PAGE - core
+        from meganet.admin import permission_pages
+        n = 12                                      # (a new group of extras: "Other", at the end)
         extra = [permissions.register("test.extra%d" % i, "Extra thing %d" % i) for i in range(n)]
         last, before = "Extra thing %d" % (n - 1), "test.extra%d" % (n - 2)
         try:
             self.server.db.sync_permissions()
+            pages = len(permission_pages(permissions.all_permissions()))
             roles = await self.edit_role(self.alice, "Sysop")
             roles.find("Page 1/%d" % pages)
-            for page in range(2, pages + 1):
-                self.alice.click_text(WIN_ROLES, "Next >")
-                await self.alice.wait_for(lambda: has_text(self.alice, WIN_ROLES, "Page %d/%d"
-                                                           % (page, pages)), "page %d" % page)
-            roles = self.alice.windows[WIN_ROLES]
+            roles = await self.page_with(roles, last)
+            roles.find("Other (more)")
             box = roles.find(last)
             self.assertEqual(roles.gadgets[box]["value"], 1, "Sysop got the new key")
             self.alice.select(WIN_ROLES, box, 0)

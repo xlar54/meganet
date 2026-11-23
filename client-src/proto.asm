@@ -135,6 +135,9 @@ _body:  ldx pf_n+1                      ; keep it if there's room
         bne _out
         lda #0
         sta pf_state
+        .if DEBUG_NET
+        jsr nl_rx                       ; (the log)
+        .endif
         lda pf_len+1                    ; whole and kept: act on it
         cmp #>PF_MAX
         bcs _out
@@ -341,7 +344,8 @@ _e:     lda pl_n
         jsr gui_menu_add
         dec pl_n
         bra _e
-_done:  jmp gui_redraw_later
+_done:  jsr exit_menu_end               ; MegaNet's line and Exit: last, after the server's items
+        jmp gui_redraw_later
 
 ; u8 win, u8 gid, u16 total, u16 first, u8 n, n strings
 pm_list_rows:
@@ -867,6 +871,9 @@ tx_end:
         sta tx_buf
         lda #0
         sta tx_buf+1
+        .if DEBUG_NET
+        jsr nl_tx                       ; (the log)
+        .endif
         lda #0
         sta tx_i
 -       ldx tx_i
@@ -1077,7 +1084,11 @@ _sum:   lda pt_i
         inc pt_len+1
 _next:  inc pt_i
         bra _sum
-_send:  lda pt_len
+_send:
+        .if DEBUG_NET
+        jsr nl_txt                      ; (the log)
+        .endif
+        lda pt_len
         jsr net_send
         lda pt_len+1
         jsr net_send

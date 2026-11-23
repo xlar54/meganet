@@ -16,7 +16,7 @@ in [docs/MEGA65_NOTES.md](docs/MEGA65_NOTES.md). Remaining work is in [TODO.md](
 
 Status: early.
 - **Server:** signs users on (accounts and roles in SQLite), then sends a menu bar (Areas,
-  Members, Admin, Help), chat rooms (a Lobby, moderators' and members' rooms, private rooms), a two-player tic-tac-toe game, chess (a lobby to pick an opponent, a picture board, every rule enforced, chat beside the board), **One** (the card game for 2-4: match the colour or number, Skips, Reverses, Draw Twos, Wilds, call One! on your last card; wait for other players or play against 1-3 computer players; cards played and drawn fly across the table as hardware sprites), **Texas Hold'em** (no-limit poker for 2-6 at a green felt table, for real credits; wait for others or play 1-5 computer players; cards are dealt one at a time from the dealer; chat at the table, shown at the speaker's seat), **Blackjack** (1-3 players against the dealer at a green table with big cards, for credits; Join opens a table at once, others sit down as they come; chat at the table), and admin windows for
+  Members, Admin, Help), chat rooms (a Lobby, moderators' and members' rooms, private rooms), a two-player tic-tac-toe game, chess (a lobby to pick an opponent, a picture board, every rule enforced, chat beside the board), **One** (the card game for 2-4: match the colour or number, Skips, Reverses, Draw Twos, Wilds, call One! on your last card; wait for other players or play against 1-3 computer players; cards played and drawn fly across the table as hardware sprites), **Texas Hold'em** (no-limit poker for 2-6 at a green felt table, for real credits; wait for others or play 1-5 computer players; cards are dealt one at a time from the dealer; chat at the table, shown at the speaker's seat), **Blackjack** (1-3 players against the dealer at a green table with big cards, for credits; Join opens a table at once, others sit down as they come; chat at the table), **Tank Duel** (2-4 tanks on a random hilly field: set the angle and power with buttons, mind the wind, Fire; craters and damage; people or 1-3 computer tanks), and admin windows for
   roles and users. Tested with fake clients.
 - **Client:** has its Windows 95-style GUI library (`client-src/lib/gui/`), the sign-on
   screen, the menu bar (its own **MegaNet** menu first, with Exit back to BASIC), and the
@@ -106,6 +106,24 @@ Ethernet." on the Connect window. `target/meganet.d81` is always the real build.
 
 It goes with the scripted test in `TODO.md`: type `scott` / `secret` / any address, click New
 User, then People Connection, then type `hello` and Send.
+
+**Debug build (connection log):** `build.bat debug` writes `target/meganet-debug.d81`. This is
+the real Ethernet client plus a connection log (`client-src/netlog.asm`), for a member whose
+connection fails. The footer says "Version N debug". The log opens by itself when a connection
+fails, and F1 opens it at any time. It has:
+- the client's state and totals;
+- mega-ip's addresses, TCP state, send queue, windows and sequence numbers, both now and as
+  they were at the last failure;
+- the last 64 events: messages each way (type, length and the first two bytes), network and
+  screen changes, TCP state changes, resends, the peer's window closing, and failures with
+  mega-ip's event bits.
+
+Save writes it all as a SEQ file, `MEGANET-LOG` on drive 8, in ASCII with CR LF line ends.
+`c1541 -attach meganet-debug.d81 -read "meganet-log,s" log.txt` gets it off the disk. This build
+has 60 gadgets rather than 80, because the log uses the rest of their space. `build.bat bridge
+debug` makes the same build for Xemu (`meganet-bridge-debug.d81`). `bridge_test.py netlog` and
+`netlogsave` test it, with `BRIDGE_D81` set to that disk and `MON_PORT` set if another Xemu
+already has port 4510.
 
 Controls: the mouse (port 1) for everything; TAB moves between text boxes; RETURN presses a
 window's default button.

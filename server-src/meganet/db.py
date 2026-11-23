@@ -337,7 +337,9 @@ USER_COLUMNS = [("role_id", "INTEGER REFERENCES roles(id)"),
                 ("tos_agreed", "INTEGER"),      # when they agreed to the Terms of Service
                 ("credits", "INTEGER NOT NULL DEFAULT 0"),  # (seeded once: credits_seeded)
                 # My Account's "Ring when I'm Away" (session.ring): on unless they untick it
-                ("ring_away", "INTEGER NOT NULL DEFAULT 1")]
+                ("ring_away", "INTEGER NOT NULL DEFAULT 1"),
+                # an admin locked it (User Editor > Lock): it can't sign on until unlocked
+                ("locked", "INTEGER NOT NULL DEFAULT 0")]
 # The bank (bank.py): its settings are one JSON setting; a new account's opening balance is
 # its "start" (DEFAULT_START_CREDITS until an admin sets one).
 BANK_KEY = "bank"
@@ -910,7 +912,7 @@ class Database:
 
     _USER_SQL = ("SELECT u.id, u.name, u.created, u.role_id, r.name AS role, u.first_name, "
                  "u.last_name, u.email, u.location, u.birthdate, u.about, u.last_login, "
-                 "u.karma, u.tos_agreed, u.credits, u.ring_away FROM users u "
+                 "u.karma, u.tos_agreed, u.credits, u.ring_away, u.locked FROM users u "
                  "LEFT JOIN roles r ON r.id = u.role_id ")
 
     def user(self, name=None, user_id=None):
@@ -962,6 +964,12 @@ class Database:
     def set_password(self, user_id, pw_hash):
         with self.conn:
             self.conn.execute("UPDATE users SET pw_hash = ? WHERE id = ?", (pw_hash, user_id))
+
+    def set_locked(self, user_id, locked):
+        """Lock an account (it can't sign on) or unlock it."""
+        with self.conn:
+            self.conn.execute("UPDATE users SET locked = ? WHERE id = ?",
+                              (1 if locked else 0, user_id))
 
     def user_permissions(self, user_id):
         """The permission keys of the user's role."""

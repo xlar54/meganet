@@ -22,17 +22,31 @@ REM build.bat bridge: the live Xemu build. private\tools\xemu_bridge.py (bridge.
 REM its traffic to and from the real server through Xemu's monitor.
 REM Neither touches the Ethernet: they get their own disks (meganet-mock.d81,
 REM meganet-bridge.d81), so target\meganet.d81 is always the build for a real MEGA65.
+REM build.bat debug: the real Ethernet build plus the connection log (client-src\netlog.asm:
+REM F1, and it opens by itself when the connection fails; Save writes MEGANET-LOG to drive
+REM 8) -> meganet-debug.d81. "build.bat bridge debug" is the same in the bridge build, for Xemu.
 set MOCKDEF=
 set MOCKARG=
+set XEMU=
 set DISK=%PROJECT%
 if /i "%~1"=="mock" (
     set MOCKDEF=-D MOCK_NET=1
     set "MOCKARG=--mock %~2"
     set DISK=%PROJECT%-mock
+    set XEMU=1
 )
 if /i "%~1"=="bridge" (
     set MOCKDEF=-D BRIDGE_NET=1
     set DISK=%PROJECT%-bridge
+    set XEMU=1
+)
+set DEBUGLOG=
+if /i "%~1"=="debug" set DEBUGLOG=1
+if /i "%~1"=="bridge" if /i "%~2"=="debug" set DEBUGLOG=1
+if defined DEBUGLOG (
+    set "MOCKDEF=%MOCKDEF% -D DEBUG_NET=1"
+    set "OVERLAYS=%OVERLAYS% 2"
+    set "DISK=%DISK%-debug"
 )
 
 del target\%DISK%.d81 2>nul
@@ -100,7 +114,7 @@ for %%f in (target\*) do (
 )
 for /d %%d in (target\*) do rmdir /s /q "%%d"
 
-if "%DISK%"=="%PROJECT%" (
+if not defined XEMU (
     echo Built target\%DISK%.d81: the real MEGA65 build ^(Ethernet^)
 ) else (
     echo Built target\%DISK%.d81: Xemu only, NO Ethernet. target\%PROJECT%.d81 is the real one.

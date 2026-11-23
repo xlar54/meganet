@@ -466,6 +466,8 @@ s_cw_getting:   .null "Getting one..."
 s_cw_server:    .null "Server:"
         .if MOCK_NET || BRIDGE_NET              ; (so a test disk is never taken for the real one)
 s_cw_hint:      .null "Xemu test build: no Ethernet."
+        .elsif DEBUG_NET
+s_cw_hint:      .null "Debug build: F1 shows the log."
         .else
 s_cw_hint:      .null "Check the server, then Connect."
         .endif
@@ -637,5 +639,5 @@ login_lost:
         jmp login_status
 s_tag:          .text "The online service for the MEGA65"
 s_tag_end:      .byte 0
-s_foot:         .text format("Version %d - port %d", CLIENT_BUILD, SERVER_PORT)
+s_foot:         .text format("Version %d%s - port %d", CLIENT_BUILD, DEBUG_NET ? " debug" : "", SERVER_PORT)
 s_foot_end:     .byte 0

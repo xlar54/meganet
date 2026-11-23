@@ -20,9 +20,19 @@ XG_EXIT         = 2
 XG_CANCEL       = 3
 ROM_ATTIC       = $8100000              ; 128 KB
 
+; MegaNet: the title and My Account first (before the server's menus, so it's first on the
+; bar); then exit_menu_end after them: a line and Exit, so Exit stays last under the server's
+; own MegaNet items (System Stats: sent with parent XM_TITLE)
 exit_menu:
         ldx #0
--       lda xm_ids,x                    ; MegaNet: My Account, a line, Exit
+        ldy #2
+        bra xm_add
+exit_menu_end:
+        ldx #2
+        ldy #4
+xm_add:
+        sty xm_to
+-       lda xm_ids,x
         sta gp_gid
         lda xm_par,x
         sta gp_win
@@ -34,9 +44,10 @@ exit_menu:
         jsr gui_menu_add
         plx
         inx
-        cpx #4
+        cpx xm_to
         bne -
         rts
+xm_to: .byte 0
 xm_ids: .byte XM_TITLE, XM_ACCOUNT, XM_LINE, XM_EXIT
 xm_par: .byte 0, XM_TITLE, XM_TITLE, XM_TITLE
 xm_lo:  .byte <s_xm_title, <s_xm_account, <s_xm_line, <s_xm_exit

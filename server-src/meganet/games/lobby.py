@@ -271,7 +271,7 @@ class GameLobby:
         self.refresh()
         return game.sit_down(p)
 
-    async def start(self, cls, sessions, queued=True, computers=0):
+    async def start(self, cls, sessions, queued=True, computers=0, options=None):
         for s in sessions:
             if queued:
                 self.queues[cls].remove(s)
@@ -282,6 +282,7 @@ class GameLobby:
         game = cls()
         game._lobby = self
         game.computers = computers
+        game.options = dict(options or {})
         game.players = [Player(s) for s in sessions]
         for p in game.players:
             p.game = game

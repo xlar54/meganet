@@ -2,6 +2,10 @@
 
 Players meet in the Chess Lobby (challenge.py): one challenges, the other accepts. Colours
 are drawn at random; a rematch swaps them. Each player sees the board from their own side.
+Or Play Computer... in the lobby: a game against chess_engine.py at Easy, Normal or Hard. The
+computer's seat (Computer) has no window; it moves after a short pause (thinking in its own
+process), takes a draw only when it's behind, and always takes a rematch. Beating it pays
+the bank's "game won" (as for any computer).
 
 The board is a Grid gadget (Caps.GRID clients): 8 x 8 tiles of 32 x 16 pixels, made here
 from chess_art.py and sent once a connection into resource slot RESOURCE_SLOT. Click one of
@@ -16,14 +20,21 @@ fifty-move rule, threefold repetition), a draw agreed, resigning, or a player le
 clocks yet.
 """
 
+import asyncio
+import logging
+import os
 import random
+import time
 import zlib
 
 from ..protocol import Caps, GFlag, WFlag, GRID_MARK1, GRID_MARK2, clean_text
 from ..ui import Button, Grid, Label, TextBox, TextView, Window, confirm, add_buttons, MARGIN
+from . import chess_engine
 from .base import Game
 from .chess_art import PIECES
 from .chess_rules import Position, WHITE, BLACK, colour, name
+
+log = logging.getLogger("meganet")
 
 RESOURCE_SLOT = 1                # (slot 0 is left for the next thing that wants one)
 TILE_W, TILE_H = 32, 16
@@ -45,6 +56,17 @@ BOARD_X, BOARD_Y = 12, 4
 RIGHT_X, RIGHT_W = 280, 336
 WIN_RESIGN = 53
 WIN_PROMOTE = 54
+COMPUTER_PAUSE = float(os.environ.get("MEGANET_CHESS_PAUSE", 0.8))  # its move shows no sooner
+DRAW_WHEN_BEHIND = -100          # the computer takes a draw when it's this far behind (or more)
+
+
+class Computer:
+    """The computer's seat (Play Computer in the lobby): not a Player, no session, no window."""
+    session = None
+
+    def __init__(self, level):
+        self.level = level
+        self.name = "Computer" if level == "Normal" else "Computer (%s)" % level
 
 
 def make_tiles():
@@ -103,21 +125,35 @@ class View:
 
 class Chess(Game):
     name = "Chess"
-    description = "Classic chess for two. Pick your opponent in the lobby."
+    description = ("Classic chess for two. Pick your opponent in the lobby, or play the "
+                   "computer (Easy, Normal or Hard) when nobody else is on.")
     min_players = 2
     max_players = 2
     challenge = True             # a lobby to pick an opponent in (challenge.py)
+    computer_levels = tuple(chess_engine.LEVELS)    # the lobby's Play Computer... (challenge.py)
     needs_caps = Caps.GRID
 
     # ---- setting up ----
 
     def start(self, players):
+        level = self.options.get("level") if self.computers else None
+        self.bot = Computer(level) if level else None
+        self.bot_view = None
+        seats = list(players) + ([self.bot] if self.bot else [])
         white = random.randrange(2)
-        self.views = {p: View(p, WHITE if i == white else BLACK) for i, p in enumerate(players)}
+        self.views = {p: View(p, WHITE if i == white else BLACK) for i, p in enumerate(seats)}
+        if self.bot:
+            self.bot_view = self.views[self.bot]
         for p, v in self.views.items():
+            if p is self.bot:
+                continue
             p.session.send_resource(RESOURCE_SLOT, TILES_KEY, TILES, title=self.name)
             self._window(v)
         self.new_game()
+
+    def people(self):
+        """The views of the people still playing (not the computer's)."""
+        return [v for v in self.views.values() if v.player in self.players]
 
     def _window(self, v):
         p = v.player
@@ -165,7 +201,7 @@ class Chess(Game):
         self.result = None           # (score, text) once it's over
         self.draw_offer = None       # the View that offered one
         self.rematch_from = set()
-        for v in self.views.values():
+        for v in self.people():
             v.selected = None
             v.draw_b.set_text("Offer Draw")
             v.draw_b.enable(True)
@@ -179,6 +215,7 @@ class Chess(Game):
             self.players[0].session.log("chess: %s (White) v %s (Black)"
                                         % (white.player.name, black.player.name))
         self.redraw()
+        self._computer_turn()
 
     def side_view(self, side):
         return next(v for v in self.views.values() if v.side == side)
@@ -316,16 +353,48 @@ class Chess(Game):
                     "threefold repetition": "Draw by threefold repetition."}[why]
             return self.finish(score, text)
         self.redraw()
+        self._computer_turn()
         return None
+
+    # ---- the computer's moves ----
+
+    def _computer_turn(self):
+        """If it's the computer's move: think (chess_engine, in its own process), then play
+        it, no sooner than COMPUTER_PAUSE after the person's move."""
+        if self.bot is None or self.result or self.over or self.pos.turn != self.bot_view.side:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        pos, since = self.pos, time.monotonic()
+
+        async def go():
+            try:
+                m = await chess_engine.think(pos, self.bot.level)
+            except Exception:
+                log.exception("chess: the computer couldn't move")
+                return
+            await asyncio.sleep(max(0.0, COMPUTER_PAUSE - (time.monotonic() - since)))
+            if not self.over and not self.result and self.pos is pos and self.players:
+                self.move(self.bot_view, m)
+        self._thinking = loop.create_task(go())
+
+    def computer_takes_draw(self):
+        """Will the computer agree to a draw now? When it's behind (by its own reckoning)."""
+        score = chess_engine.evaluate(self.pos)
+        if self.pos.turn != self.bot_view.side:
+            score = -score
+        return score <= DRAW_WHEN_BEHIND
 
     def finish(self, score, text):
         self.result = (score, text)
         self.draw_offer = None
-        for v in self.views.values():
+        for v in self.people():
             v.selected = None
             v.draw_b.enable(False)
             v.resign_b.enable(False)
-            v.rematch_b.enable(len(self.players) == 2)
+            v.rematch_b.enable(len(self.players) == 2 or self.bot is not None)
         self.tell("* %s %s" % (score, text))
         if self.players:
             white, black = self.side_view(WHITE), self.side_view(BLACK)
@@ -350,7 +419,7 @@ class Chess(Game):
     # ---- the buttons ----
 
     def _draw_buttons(self):
-        for v in self.views.values():
+        for v in self.people():
             offered = self.draw_offer is not None and self.draw_offer is not v
             v.draw_b.set_text("Accept Draw" if offered else "Offer Draw")
             v.draw_b.enable(not self.result and self.draw_offer is not v)
@@ -361,6 +430,13 @@ class Chess(Game):
         if self.draw_offer is not None and self.draw_offer is not v:
             self.tell("* %s accepts the draw." % v.player.name)
             return self.finish("1/2-1/2", "Draw agreed.")
+        if self.bot is not None:                 # the computer answers at once
+            self.tell("* %s offers a draw." % v.player.name)
+            if self.computer_takes_draw():
+                self.tell("* %s accepts the draw." % self.bot.name)
+                return self.finish("1/2-1/2", "Draw agreed.")
+            self.tell("* %s declines: play on." % self.bot.name)
+            return None
         if self.draw_offer is None:
             self.draw_offer = v
             self.tell("* %s offers a draw." % v.player.name)
@@ -382,13 +458,16 @@ class Chess(Game):
         return None
 
     def rematch(self, v):
-        if not self.result or len(self.players) < 2:
+        if not self.result or (len(self.players) < 2 and self.bot is None):
             return None
         self.rematch_from.add(v)
+        if self.bot is not None:
+            self.rematch_from.add(self.bot_view)     # (the computer always wants another)
         if len(self.rematch_from) == 2:
             for w in self.views.values():
                 w.side = BLACK if w.side == WHITE else WHITE
-                self._labels(w)
+                if w.player is not self.bot:
+                    self._labels(w)
             self.new_game()
         else:
             self.tell("* %s wants a rematch." % v.player.name)

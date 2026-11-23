@@ -10,8 +10,9 @@ used one could crash the client, not just sound wrong.
 So before a tune goes in a SID library, check() runs it here in a 6502 (legal opcodes only)
 for each song, init and then a couple of minutes of play calls, and refuses it if it ever:
   - runs an undocumented opcode, BRK, RTI, CLI, or JMP ($xxFF) (the 65CE02 doesn't wrap);
-  - writes outside its own memory and the SIDs ($D400-$D43F, the client's "right" SIDs) and
-    the CIA timers (the client turns their interrupts off again after each call);
+  - writes outside its own memory and the SIDs ($D400-$D43F, the client's "right" SIDs), the
+    CIA timers (the client turns their interrupts off again after each call) and the CIAs'
+    time-of-day clocks (some tunes time themselves with it; the client doesn't use it);
   - writes $00 (on the MEGA65, the CPU speed), or touches $C000-$CFFF;
   - writes $D000-$DFFF while its $01 has the I/O switched out (that's RAM then, not a SID).
     ($01 itself it may set, as many tunes do: the client puts it back after each call.)
@@ -32,7 +33,7 @@ import time
 from collections import namedtuple
 
 SID_LO, SID_HI = 0xD400, 0xD43F          # the client's two right SIDs (a 2SID tune's second)
-CIA_OK = set(range(0xDC04, 0xDC08)) | set(range(0xDD04, 0xDD08)) | {
+CIA_OK = set(range(0xDC04, 0xDC0C)) | set(range(0xDD04, 0xDD0C)) | {   # timers, TOD clocks
     0xDC0D, 0xDC0E, 0xDC0F, 0xDD0D, 0xDD0E, 0xDD0F}
 SHARED_LO, SHARED_HI = 0xC000, 0xDFFF     # the client's ($C000-$CFFF) and the I/O
 MAX_SIZE = 0xC000 - 0x0200 + 0x2000       # what a tune may fill: $0200-$BFFF, $E000-$FFFF

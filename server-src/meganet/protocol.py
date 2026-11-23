@@ -56,6 +56,9 @@ MENU_SEPARATOR = "-"
 # server id for it. It is never in the server's MENU, but the server always accepts it from a
 # signed-on session.
 MENU_MY_ACCOUNT = 0x22
+# The client's own MegaNet title: the server may put items under it as a parent (MegaNet >
+# System Stats). Clients up to build 2 add them after their own items (below Exit).
+MEGANET_MENU = 0xF8
 
 # S.NOTIFY: u8 slot, u8 icon, str hint. The client draws a small icon button at the right end of
 # its menu bar: slot 0 is the rightmost (after the client's own connectivity icon, which is

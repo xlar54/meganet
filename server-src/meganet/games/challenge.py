@@ -41,6 +41,11 @@ class ChallengeLobby:
     def title(self):
         return "%s Lobby" % self.cls.name
 
+    @property
+    def levels(self):
+        """The computer's levels, for a game that can be played against it (Chess)."""
+        return tuple(getattr(self.cls, "computer_levels", ()))
+
     # ---- coming and going ----
 
     def open(self, session):
@@ -68,6 +73,8 @@ class ChallengeLobby:
         seat.challenge_b = a.command("Challenge...", lambda b: self.challenge(seat),
                                      default=True)
         seat.cancel_b = a.command("Cancel Challenge", lambda b: self.withdraw(seat))
+        if self.levels:
+            a.command("Play Computer...", lambda b: self.ask_level(seat))
         seat.status = a.status("")
         seat.win = a.win
         self._buttons(seat)
@@ -121,9 +128,10 @@ class ChallengeLobby:
                 rows.append("%-12s%s" % (other.session.user, state))
                 who.append(other)
             for g in playing:
+                bot = getattr(g, "bot", None)
                 rows.append("%-12splaying %s" % (
                     g.players[0].name if g.players else "?",
-                    " vs ".join(p.name for p in g.players[1:]) or ""))
+                    " vs ".join([p.name for p in g.players[1:]] + ([bot.name] if bot else []))))
                 who.append(None)
             seat.rows = who
             seat.list.set_rows(rows)
@@ -149,7 +157,36 @@ class ChallengeLobby:
             seat.status.set_text("Waiting for %s to answer..." % seat.out.session.user)
         elif not seat.status.text or seat.status.text.startswith("Waiting for"):
             seat.status.set_text("Pick an opponent and Challenge them." if len(self.seats) > 1
+                                 else "Nobody else is waiting: Play Computer?" if self.levels
                                  else "Nobody else is waiting yet.")
+
+    # ---- playing the computer (a dynamic window id) ----
+
+    def ask_level(self, seat):
+        if self.seats.get(seat.session) is not seat or not self.levels:
+            return None
+        win = Window.centred("Play the Computer", 336, 40,
+                             flags=WFlag.MODAL | WFlag.CLOSE | WFlag.MOVABLE)
+        win.add(Label(MARGIN, 4, 320, 10, "How well should it play?", flags=GFlag.CENTRE))
+        specs = [(lv, (lambda b, lv=lv: self.play_computer(b, seat, lv)),
+                  GFlag.DEFAULT if lv == "Normal" else 0) for lv in self.levels]
+        add_buttons(win, specs + [("Cancel", lambda b: b.window.close(), 0)], centre=True)
+        win.show(seat.session)
+        return None
+
+    async def play_computer(self, button, seat, level):
+        button.window.close()
+        session = seat.session
+        if self.seats.get(session) is not seat or session.game:
+            return None
+        if not self.games.may_play(session, self.cls):
+            return session.alert(self.title, "Your account can't play %s." % self.cls.name)
+        self.leave(session, "%s started a game." % session.user)
+        session.log("%s: game with the computer (%s)" % (self.cls.name, level))
+        await self.games.start(self.cls, [session], queued=False, computers=1,
+                               options={"level": level})
+        self.refresh()
+        return None
 
     # ---- challenges ----
 

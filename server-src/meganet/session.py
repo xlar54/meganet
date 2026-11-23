@@ -609,6 +609,9 @@ class Session:
             dbmod.verify_password, password, stored)
         if not good:
             return False, "Wrong screen name or password."
+        row = db.user(name)                      # (after the password: no hint to strangers)
+        if row is not None and row["locked"]:
+            return False, "This account is locked. Ask the Sysop."
         if self.server.find_user(name):
             return False, "%s is already signed on." % db.canonical_name(name)
         return True, "Welcome back, %s." % db.canonical_name(name)

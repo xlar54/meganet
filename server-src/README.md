@@ -248,16 +248,24 @@ ordinary rows: an admin can rename them, change their permissions, add roles and
 needs its own key):
 
 - *Roles...*: the list of roles with their user counts (`*` marks the default). Pick one to edit
-  its name (Rename), its level (sort order) and a check box per permission, in two columns of
-  eight, with Prev / Next pages when there are more. Save writes the level and permissions.
-  New Role, Delete and Make Default are there too.
+  its name (Rename), its level (sort order) and a check box per permission. The permissions are
+  grouped under bold headings (`admin.PERM_GROUPS`: Chat and messages; Boards, news and polls;
+  Files; Games; Art and music; Internet and bank; Administration; then Other), each in
+  `admin.KEY_ORDER` (using a thing, then posting or uploading, then moderating it), two
+  columns of nine rows a page with Prev / Next (`admin.permission_pages`: a group moves to the
+  next column rather than split, unless it's longer than a column). Save writes the level and
+  permissions. New Role, Delete and Make Default are there too.
 - *User Editor...* (window 6, 608x171): every user and their role on the left. Type part of a
   name and click Find to narrow the list (a single match is selected for you). Pick a user to
   edit, on the right, their First and Last Name, Email and Location, and their Role (a
   drop-down); Joined and Last Login are shown. Save checks the fields as My Account does
   (accounts from before real names were asked for may keep them blank) and keeps Birthdate and
-  About Me as the user left them. *Set Password...* (window 4, modal) sets a new password, typed
-  twice; the old one isn't needed.
+  About Me as the user left them. *Password...* (window 4, modal) sets a new password, typed
+  twice; the old one isn't needed. *Lock* (after a yes) locks the account (`users.locked`):
+  they're told and signed off if they're on, and sign-on refuses it ("This account is
+  locked. Ask the Sysop.", only once the password is right, so it says nothing to someone
+  guessing) until *Unlock*. The list marks locked accounts "lock"; an admin can't lock their
+  own.
 - **New users:** while any user is still in the default role (New User), every signed-on
   holder of `admin.users` gets a person icon (`Icon.PERSON`, a black pawn) in notify slot 4
   (`SLOT_NEW_USER`, left of the envelopes), hint "N new users". It is updated when someone
@@ -984,6 +992,15 @@ Drop a Python file into `meganet/games/` with a `Game` subclass and restart the 
   challenge out at a time (Cancel withdraws it); challenging someone who has challenged you
   starts the game. Leaving the lobby, or starting a game, calls off every challenge to and
   from you, and the others get a toast.
+- **Play Computer...** in the lobby (any game class with `computer_levels`) asks Easy,
+  Normal or Hard and starts a game against `games/chess_engine.py` (`GameLobby.start`'s
+  `options`: `{"level": ...}`). The engine is iterative-deepening alpha-beta with a capture
+  search, on material and piece-square tables: Easy looks 1 move ahead with a little
+  randomness, Normal up to 2, Hard up to 4 in at most 6 s; the first 4 moves vary at every
+  level. It thinks in a process of its own (`think`), and its move shows no sooner than
+  `COMPUTER_PAUSE` (0.8 s; `MEGANET_CHESS_PAUSE`). It takes a draw only when it's 100 or more
+  behind by its own count, always takes a rematch (colours swap), and beating it pays
+  "game won" (`beat` = the computer). The lobby lists the game as "alice playing Computer".
 - The game window (a dynamic id, 624x156): the board from your side, the status ("Your move
   (White)", "Check!", "bob offers a draw."), a chat with the moves in it ("12. Nf3"), and
   Offer Draw (it becomes Accept Draw for the other player; the offer lapses when they move),
@@ -1053,6 +1070,28 @@ dealer, played for credits, with cards bigger than poker's (32 x 28 pixels):
   from the shoe (`Caps.SPRITES`); a win plays ka-ching. Test switches:
   `MEGANET_BJ_BET_SECS`, `MEGANET_BJ_DEALER_DELAY`, `MEGANET_BJ_NEXT_ROUND`,
   `MEGANET_BJ_FLY_FRAMES`.
+
+**Tank Duel** (`games/tanks.py`) is an artillery game for 2-4 tanks, people or the computer
+(Join: Wait for Others, or vs Computer... with 1-3):
+- A random hilly field (`make_ground`: a few gentle waves, the ground levelled under each
+  tank), a `GRID` of 19 x 8 tiles of 32 x 16 pixels (slot 12), drawn in fat pixels (304 x
+  128). Its tiles are made for each picture of the field and sent to each viewer as needed
+  (`TileCache`: identical tiles once); a new field needs at most `TILES_MAX` (52) distinct
+  tiles, or another is made.
+- A turn: Angle (0-180 from the way the tank faces; 90 is up) and Power (5-100) with -5, -1,
+  +1 and +5 buttons (no typing), then Fire. A new wind each turn (shown with arrows). 45 s a
+  person's turn, then it passes.
+- The shell's flight (`flight`: gravity and the wind, 0.02 s steps) is drawn into the tiles
+  every `STEP` (0.06 s) with a short tail; it bursts (three growing circles), makes a crater
+  (only where the surface is inside the blast: no cliffs), and hurts every tank within
+  `REACH` (up to `DAMAGE` at the middle; a direct hit at least `DIRECT`). Tanks fall to the
+  ground left under them; one at 0 is out (grey). A toast says what each shot did.
+- The computer (`computer_aim`) tries angles 25-75 and every power against the wind, aims at
+  a near enemy, and misses by a spread that shrinks with each shot at the same tank
+  (`ERRORS`). The last tank standing wins: "game played" for every person, "game won" for a
+  winning person. Rematch (every person) deals a new field; Leave takes your tank out.
+  Test switches: `MEGANET_TANKS_STEP`, `MEGANET_TANKS_COMPUTER_DELAY`,
+  `MEGANET_TANKS_NEXT_TURN`.
 
 **One** (`games/one.py`, rules in `one_rules.py`, the cards in `one_art.py`) is the card game
 for 2-4, by the usual official rules: 108 cards; match the colour, number or symbol, or play

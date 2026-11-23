@@ -97,6 +97,10 @@ class CheckTest(unittest.TestCase):
         self.refused(play(0xA9, 0x34, 0x85, 0x01, 0x8D, 0x00, 0xD4), "switched out")
         # CIA timers are allowed (the client turns their interrupts off again)
         check(parse(psid(play(0x8D, 0x04, 0xDC, 0x8D, 0x0D, 0xDC))), plays=5)
+        # and the time-of-day clocks (a tune timing itself: the client doesn't use them)
+        check(parse(psid(play(0x8D, 0x0B, 0xDC, 0x8D, 0x08, 0xDC, 0x8D, 0x0B, 0xDD))),
+              plays=5)
+        self.refused(play(0x8D, 0x00, 0xDC), "I/O register $DC00")    # (the keyboard's)
 
     def test_stuck(self):
         self.refused(play(0x4C, 0x03, 0x10), "didn't return")    # jmp to itself

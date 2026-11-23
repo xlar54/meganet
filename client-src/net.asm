@@ -161,7 +161,10 @@ net_install:
 
 ; A = error: NS_FAILED (the state it failed in kept in net_was)
 net_fail:                               ; A = the error (the first one stays: a send that
-        pha                             ; fails after the connection is lost isn't E_SEND)
+        .if DEBUG_NET                   ; fails after the connection is lost isn't E_SEND)
+        jsr nl_fail                     ; (the log: keeps A, X, Y)
+        .endif
+        pha
         lda net_state
         cmp #NS_FAILED
         bne +
@@ -411,6 +414,9 @@ _again: lda net_sb
         #NET MIP_SEND_BYTE
         cmp #1
         beq _sent
+        .if DEBUG_NET
+        jsr nl_stall                    ; (the log: the send queue was full)
+        .endif
         #NET_A MIP_POLL
         jsr net_pace
         jsr net_timer_tick

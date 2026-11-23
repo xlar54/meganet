@@ -47,6 +47,7 @@ from .pages import Pages
 from .signup import Signup
 from .protocol import (WFlag, GFlag, MENU_SEPARATOR, VERSION, SLOT_STATUS, SLOT_PAGE, SLOT_ADMIN_MAIL,
                        SLOT_MAIL, SLOT_NEW_USER, SLOT_IM, SLOT_NEWS, SLOT_MUSIC, MENU_MY_ACCOUNT, MENU_LATE, Icon,
+                       MEGANET_MENU,
                        S, Writer, clean_text, BROADCAST_MAX, BROADCAST_SECS)
 from .ui import Window, Button, Label, TextBox, ListBox, TextView, Menu, add_buttons, closer
 
@@ -68,6 +69,7 @@ M_INTERNET = 0x19
 M_BANK = 0x1A
 M_WHO, M_MEMBERS_SEP, M_SEARCH = 0x20, 0x21, 0x23     # $21: no longer used (was a separator)
 M_ACCOUNT = MENU_MY_ACCOUNT      # $22: sent by the client's own MegaNet > My Account
+M_STATS = 0x25                   # MegaNet > System Stats (under the client's own title)
 M_ROLES, M_USERS, M_MOTD, M_ADMIN_MSGS = 0x30, 0x31, 0x32, 0x33
 M_ABOUT, M_GETTING_AROUND, M_PAGE_ADMIN = 0x40, 0x41, 0x42
 M_STATUS = 0x05                  # the last title before the client's Window menu
@@ -257,7 +259,13 @@ class Screens:
                     menu.item(item_id, title_id, label, self._pick(key, getattr(self, action)))
         # MegaNet > My Account is on the client's own menu: always accepted, never sent.
         menu.client_item(M_ACCOUNT, "My Account", self._pick(None, self.open_account))
+        # MegaNet > System Stats: sent, under the client's own title (stats.py)
+        menu.item(M_STATS, MEGANET_MENU, "System Stats", self._pick(None, self.open_stats))
         return menu
+
+    def open_stats(self, session, item=None):
+        from .stats import StatsWindow
+        return StatsWindow(self.server, session).show()
 
     def send_menu(self, session):
         self.menu_for(session).show(session)

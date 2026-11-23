@@ -27,7 +27,7 @@ from . import permissions as perms
 from .account import length_problem
 from .db import MOTD_MAX_LINES
 from .protocol import WFlag, GFlag, clean_text
-from .ui import add_buttons, closer
+from .ui import add_buttons, closer, confirm
 from .ui import (Window, Button, Label, TextBox, Password, ListBox, DropDown, CheckBox, TextView,
                  TextArea)
 
@@ -41,9 +41,87 @@ WIN_USERS = 6
 WIN_CONFIRM = 7
 WIN_MOTD = 11
 
-PER_COLUMN = 8                  # permission check boxes per column in the Roles window
-PER_PAGE = PER_COLUMN * 2
 NEW_ROLE = "New Role"
+
+# The Roles window's permissions: grouped under headings, two columns of PERM_ROWS rows a
+# page (a heading takes a row). Each group in the order of KEY_ORDER: using a thing first,
+# then posting or uploading, then moderating it; keys not listed come last in their group, a
+# key in no group goes under "Other".
+PERM_ROWS, PERM_ROW_H, PERM_TOP, PERM_X, PERM_COL_W = 9, 12, 18, 168, 216
+PERM_GROUPS = [
+    ("Chat and messages", ("chat.", "im.", "mail.")),
+    ("Boards, news and polls", ("boards.", "news.", "polls.")),
+    ("Files", ("files.",)),
+    ("Games", ("games.",)),
+    ("Art and music", ("gallery.", "music.")),
+    ("Internet and bank", ("internet.", "bank.")),
+    ("Administration", ("admin.",)),
+]
+KEY_ORDER = [
+    "chat.use", "chat.rooms", "im.send", "mail.use", "chat.moderate",
+    "boards.read", "boards.post", "boards.moderate", "news.read", "news.post",
+    "polls.vote", "polls.manage",
+    "files.download", "files.upload", "files.moderate",
+    "games.play",
+    "gallery.view", "gallery.upload", "gallery.moderate",
+    "music.listen", "music.upload", "music.moderate",
+    "internet.use", "internet.web", "internet.feeds", "internet.manage", "bank.use",
+    "admin.pages", "admin.users", "admin.roles", "admin.motd", "admin.tos",
+    "admin.broadcast", "admin.settings", "admin.log", "admin.bank",
+]
+
+
+def permission_label(p):
+    """A check box's text: the description, without "Admin: " (its heading says so)."""
+    text = p.description
+    if text.startswith("Admin: "):
+        text = text[7:8].upper() + text[8:]
+    return text[:perms.DESCRIPTION_MAX]
+
+
+def permission_groups(permissions):
+    """[(heading, [Permission, ...]), ...] in PERM_GROUPS order, then "Other"."""
+    order = {k: i for i, k in enumerate(KEY_ORDER)}
+    groups = [(title, []) for title, _ in PERM_GROUPS] + [("Other", [])]
+    for n, p in enumerate(permissions):
+        g = next((i for i, (_, prefixes) in enumerate(PERM_GROUPS)
+                  if p.key.startswith(prefixes)), len(PERM_GROUPS))
+        groups[g][1].append((order.get(p.key, len(order) + n), p))
+    return [(title, [p for _, p in sorted(items, key=lambda t: t[0])])
+            for title, items in groups if items]
+
+
+def permission_pages(permissions):
+    """The Roles window's pages: each a list of (column, row, "head", text) and
+    (column, row, "box", Permission). A group goes to the next column if it doesn't fit; one
+    longer than a whole column is split, its heading again with "(more)"."""
+    pages, col, row = [[]], 0, 0
+
+    def next_column():
+        nonlocal col, row
+        col, row = col + 1, 0
+        if col == 2:
+            pages.append([])
+            col = 0
+
+    for title, items in permission_groups(permissions):
+        need = 1 + len(items)
+        left = PERM_ROWS - row
+        if row and need > left and (need <= PERM_ROWS or left < 3):
+            next_column()
+        heading, i = title, 0
+        while i < len(items):
+            if row >= PERM_ROWS - 1:                    # (a heading needs a box under it)
+                next_column()
+            pages[-1].append((col, row, "head", heading))
+            row += 1
+            while i < len(items) and row < PERM_ROWS:
+                pages[-1].append((col, row, "box", items[i]))
+                row, i = row + 1, i + 1
+            heading = title + " (more)"
+            if i < len(items):
+                next_column()
+    return [p for p in pages if p] or [[]]
 
 
 def refuse(session, what, key):
@@ -248,8 +326,8 @@ class RolesEditor:
         if old is not None and old is not self and self.role_id is None:
             self.role_id, self.pending, self.page = old.role_id, old.pending, old.page
         self.admin.roles_eds[self.session] = self
-        keys = perms.all_permissions()
-        pages = max(1, (len(keys) + PER_PAGE - 1) // PER_PAGE)
+        layout = permission_pages(perms.all_permissions())
+        pages = len(layout)
         self.page = min(self.page, pages - 1)
 
         win = Window("Roles", 16, 11, 608, 170, win_id=WIN_ROLES, on_close=self._closed)
@@ -265,12 +343,14 @@ class RolesEditor:
         self.level = win.add(TextBox(512, 1, 40, 12))
 
         self.boxes = []
-        for i, p in enumerate(keys[self.page * PER_PAGE:(self.page + 1) * PER_PAGE]):
-            col, row = divmod(i, PER_COLUMN)
-            cb = win.add(CheckBox(168 + col * 216, 20 + row * 13, 208, 12,
-                                  p.description[:perms.DESCRIPTION_MAX],
+        for col, row, kind, what in layout[self.page]:
+            x, y = PERM_X + col * PERM_COL_W, PERM_TOP + row * PERM_ROW_H
+            if kind == "head":
+                win.add(Label(x, y + 1, PERM_COL_W - 8, 10, what, flags=GFlag.BOLD))
+                continue
+            cb = win.add(CheckBox(x + 4, y, PERM_COL_W - 8, 12, permission_label(what),
                                   on_select=self._tick))
-            cb.perm = p.key
+            cb.perm = what.key
             self.boxes.append(cb)
 
         self.need.append(win.add(Button(168, 136, 64, 16, "Save", GFlag.DEFAULT,
@@ -562,8 +642,10 @@ class UsersEditor:
         label("Last Login:")
         self.last_login = win.add(Label(self.FX, y + 2, self.FW, 10, ""))
         self.need = add_buttons(win, [("Save", self._save, 0),
-                                      ("Set Password...", self._set_password, 0),
-                                      ("History", self._history, 0)], y=self.BUTTONS_Y)
+                                      ("Password...", self._set_password, 0),
+                                      ("History", self._history, 0),
+                                      ("Lock", self._lock, 0)], y=self.BUTTONS_Y)
+        self.lock_b = self.need[3]           # (Lock or Unlock: _fill)
         for b in self.need:                  # (they need a user picked: _fill keeps them)
             b.enable(self.user_id is not None)
         self.karma = win.add(TextBox(self.FX, karma_y, 40, 12))      # (3 digits show whole)
@@ -595,7 +677,8 @@ class UsersEditor:
     def user_rows(self):
         users = self.db.low_karma_users(LOW_KARMA) if self.low else self.db.users(self.find)
         self.user_ids = [u["id"] for u in users]
-        return ["%-11s%-9s%3d" % (u["name"], (u["role"] or "-")[:8], u["karma"]) for u in users]
+        return ["%-11s%-9s%3d%s" % (u["name"], (u["role"] or "-")[:8], u["karma"],
+                                    " lock" if u["locked"] else "") for u in users]
 
     def role_rows(self):
         roles = self.db.roles()
@@ -635,7 +718,10 @@ class UsersEditor:
     def _fill(self, user, send=True):
         """Put `user`'s details (None: blank) into the fields."""
         get = (lambda k: user[k] or "") if user is not None else (lambda k: "")
-        values = [(self.who, user["name"] if user is not None else "Pick a user."),
+        locked = user is not None and bool(user["locked"])
+        who = ("%s (locked)" % user["name"] if locked else user["name"]) if user is not None \
+            else "Pick a user."
+        values = [(self.who, who), (self.lock_b, "Unlock" if locked else "Lock"),
                   (self.first, get("first_name")), (self.last, get("last_name")),
                   (self.email, get("email")), (self.location, get("location")),
                   (self.joined, when(user["created"]) if user is not None else ""),
@@ -779,6 +865,57 @@ class UsersEditor:
             self.say("%s is now %s." % (user["name"], role["name"]) if new_role
                      else "Saved %s." % user["name"])
         return None
+
+    @guarded(perms.ADMIN_USERS)
+    def _lock(self, button):
+        """Lock the picked account (after a yes: signed off now if they're on, and refused at
+        sign-on until unlocked), or unlock it."""
+        if self.user_id is None:
+            return self.say("Pick a user first.")
+        user = self.db.user(user_id=self.user_id)
+        if user is None:
+            return self.say("That user is gone.")
+        if user["locked"]:
+            self.db.set_locked(user["id"], False)
+            self.session.log("admin: unlocked %s" % user["name"])
+            self.admin.changed()
+            self._lock_shown(user["id"])
+            return self.say("Unlocked %s: they can sign on again." % user["name"])
+        if user["id"] == self.session.user_id:
+            return self.say("You can't lock your own account.")
+        user_id = user["id"]
+        confirm(self.session, "Lock Account",
+                ["Lock %s's account?" % user["name"][:20],
+                 "They're signed off and can't sign on."],
+                lambda: self._do_lock(user_id), None, command="Lock")
+        return None
+
+    def _do_lock(self, user_id):
+        if not self.session.can(perms.ADMIN_USERS):
+            return refuse(self.session, "lock", perms.ADMIN_USERS)
+        user = self.db.user(user_id=user_id)
+        if user is None or user["locked"]:
+            return None
+        self.db.set_locked(user_id, True)
+        self.session.log("admin: locked %s" % user["name"])
+        target = self.admin.server.find_user(user["name"])
+        if target is not None:
+            target.alert("MegaNet", "Your account has been locked by an admin.")
+            target.log("signed off: the account was locked", area="login")
+            target.disconnect()
+        self.admin.changed()
+        if self.win is not None and self.win.shown:
+            self._lock_shown(user_id)
+            self.say("Locked %s%s." % (user["name"], ": signed off" if target else ""))
+        return None
+
+    def _lock_shown(self, user_id):
+        """The name line and Lock / Unlock follow the account (the other fields as they are)."""
+        user = self.db.user(user_id=user_id)
+        if user is None or user_id != self.user_id or self.win is None or not self.win.shown:
+            return
+        self.who.set_text("%s (locked)" % user["name"] if user["locked"] else user["name"])
+        self.lock_b.set_text("Unlock" if user["locked"] else "Lock")
 
     @guarded(perms.ADMIN_USERS)
     def _set_password(self, button):

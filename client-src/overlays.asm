@@ -14,9 +14,10 @@
 ; calls, since every call writes the overlay back).
 ;=======================================================================================
 
-OVL_COUNT       = 2
+OVL_COUNT       = DEBUG_NET ? 3 : 2
 OVL_FILES       = 0
 OVL_ART         = 1
+OVL_DEBUG       = 2                     ; (the debug build: netlog.asm)
 OVL_END         = BRIDGE_NET ? $cd00 : $cf00    ; (the bridge build's rings start at $CD00;
                                                 ; sidplay.asm's call routine is at $CF10)
 OVL_BASE        = OVL_END - $16a0       ; the window: as big as the biggest overlay (OVL0:
