@@ -4,11 +4,12 @@ protocol.MENU_MY_ACCOUNT), and the Reset Password dialog.
     9  = My Account: Username (and the Role beside it), First Name and Last Name (required),
          Email Address, Location (63-character text boxes that scroll), Birthdate (Month / Day /
          Year drop-downs, "--" = not set), About Me (an EDIT text area, up to db.ABOUT_LINES
-         lines), Last Login (the sign-on before this one) and "Ring when Away" beside it (the
-         doorbell for new messages while Away: session.ring), Karma Points (karma.describe:
+         lines), Last Login (the sign-on before this one), Karma Points (karma.describe:
          "42 (OK)", shown, not edited) and the Credits beside it (bank.py: it follows the
-         balance while the window is open); a status line; Reset Password at the bottom left, OK (default) and Cancel at the
-         bottom right
+         balance while the window is open); on the right, Preferences: "Ring when Away" (the
+         doorbell for new messages while Away: session.ring) and "Activity ticker" (the
+         desktop's ticker: livedesk.py); a status line; Reset Password at the bottom left,
+         OK (default) and Cancel at the bottom right
     19 = Reset Password (modal): Current password, New password, Confirm; OK, Cancel
 
 Labels are one column (LABEL_W wide), fields a second column at FIELD_X, rows ROW px apart.
@@ -24,7 +25,7 @@ from . import db as dbmod
 from . import karma
 from .protocol import WFlag, GFlag, clean_text
 from .ui import (add_buttons, closer, Window, Button, CheckBox, Label, TextBox, Password, DropDown,
-                 TextArea)
+                 TextArea, Group)
 
 WIN_ACCOUNT = 9
 WIN_PASSWORD = 19
@@ -33,7 +34,9 @@ LABEL_X, LABEL_W = 4, 112        # "Email Address:" is 14 characters
 FIELD_X = 124                    # (an 8 px gap after the longest label)
 FIELD_W = 260                    # text boxes show 32 of their 63 characters and scroll;
                                  # About Me lines are (260 - 6 - 11) // 8 = 30 characters
-W = FIELD_X + FIELD_W + 4        # 388: client area (the window is centred)
+PREF_X = FIELD_X + FIELD_W + 12  # 396: the Preferences column, framed
+PREF_W = 160                     # (the box, then up to 17 characters)
+W = PREF_X + PREF_W + 4          # 560: client area (the window is centred)
 H = 171                          # = protocol.CLIENT_MAX_H
 ROW = 14                         # rows are this far apart; a TextBox / DropDown is 12 high
 TOP = 2                          # the first row (all of it fits in CLIENT_MAX_H)
@@ -70,8 +73,8 @@ def year_rows(today=None, stored=None):
 
 
 KARMA_W = 120                    # "Karma Points:" "42 (Excellent)", then the credits beside it
-RING_X = 132                     # after Last Login's "2026-11-21 21:33" (16 characters)
-RING_TEXT = "Ring when Away"     # (the box, then 14 characters: FIELD_W - RING_X = 128)
+RING_TEXT = "Ring when Away"
+TICKER_TEXT = "Activity ticker"
 
 
 def credits_text(n):
@@ -138,6 +141,16 @@ class Account:
         def label(text, y):
             win.add(Label(LABEL_X, y + 2, LABEL_W, 10, text))
 
+        # Preferences, framed, down the right (first: the frame is drawn under them)
+        win.add(Group(PREF_X, TOP, PREF_W, 8 * ROW + ABOUT_H - 1))   # (to the Karma row)
+        win.add(Label(PREF_X + 8, TOP + 4, PREF_W - 16, 10, "Preferences", flags=GFlag.BOLD))
+        # whether new instant and private messages ring the doorbell while they're Away
+        # (session.ring); when they're Available it always rings
+        win.ring = win.add(CheckBox(PREF_X + 8, TOP + 4 + ROW + 4, PREF_W - 16, BOX_H, RING_TEXT,
+                                    bool(user["ring_away"])))
+        win.ticker = win.add(CheckBox(PREF_X + 8, TOP + 4 + 2 * ROW + 4, PREF_W - 16, BOX_H,
+                                      TICKER_TEXT, bool(user["show_ticker"])))
+
         label("Username:", y)
         win.add(Label(FIELD_X, y + 2, ROLE_X, 10, user["name"]))
         win.role = win.add(Label(FIELD_X + ROLE_X, y + 2, FIELD_W - ROLE_X, 10,
@@ -176,21 +189,17 @@ class Account:
         y += ABOUT_H + 1
         label("Last Login:", y)
         last = session.previous_login
-        win.add(Label(FIELD_X, y + 2, RING_X, 10, when(last) if last else "First sign-on"))
-        # beside it: whether new instant and private messages ring the doorbell while
-        # they're Away (session.ring); when they're Available it always rings
-        win.ring = win.add(CheckBox(FIELD_X + RING_X, y, FIELD_W - RING_X, BOX_H, RING_TEXT,
-                                    bool(user["ring_away"])))
+        win.add(Label(FIELD_X, y + 2, FIELD_W, 10, when(last) if last else "First sign-on"))
         y += ROW
         label("Karma Points:", y)                # (as the User Editor says it)
         win.karma = win.add(Label(FIELD_X, y + 2, KARMA_W, 10, karma.describe(user["karma"])))
         win.credits = win.add(Label(FIELD_X + KARMA_W, y + 2, FIELD_W - KARMA_W, 10,
                                     credits_text(user["credits"])))
         y += ROW - 2                            # (right under it: the buttons come next)
-        win.status = win.add(Label(LABEL_X, y, W - 2 * LABEL_X, 10, status or ""))
+        win.status = win.add(Label(LABEL_X, y, PREF_X - LABEL_X - 4, 10, status or ""))
         y = H - 2 - BUTTON_H
         win.add(Button(LABEL_X, y, 144, BUTTON_H, "Reset Password...", on_click=self._reset))
-        right = FIELD_X + FIELD_W
+        right = PREF_X + PREF_W
         win.add(Button(right - 2 * BUTTON_W - 8, y, BUTTON_W, BUTTON_H, "OK", GFlag.DEFAULT,
                        on_click=self._ok))
         win.add(Button(right - BUTTON_W, y, BUTTON_W, BUTTON_H, "Cancel",
@@ -245,6 +254,10 @@ class Account:
         self.db.set_profile(session.user_id, first, last, email, location, birthdate, about)
         session.ring_away = win.ring.checked
         self.db.set_ring_away(session.user_id, session.ring_away)
+        if win.ticker.checked != session.show_ticker:
+            session.show_ticker = win.ticker.checked
+            self.db.set_show_ticker(session.user_id, session.show_ticker)
+            self.server.screens.live.update(session)       # (on or off at once)
         session.log("saved My Account")
         return win.close()
 

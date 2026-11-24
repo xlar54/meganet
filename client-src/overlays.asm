@@ -4,6 +4,9 @@
 ;
 ;   OVL_FILES (OVL0)  storage.asm, sdwrite.asm: the File Library's disk and SD-card work
 ;   OVL_ART   (OVL1)  picture.asm, canvas.asm: the Art Gallery's pictures and Paint
+;   OVL_UI    (OVL2)  desk.asm, signon.asm: the live desktop (ticker, who's online, icon
+;                     badges); the Connect, Sign On and Static Address windows
+;   OVL_DEBUG (OVL3)  netlog.asm: the debug build's connection log (build.bat debug)
 ;
 ; Everything outside an overlay reaches into it through the stubs here (#FAR: the window is
 ; written back to attic after each call, so an overlay keeps its variables). Variables the
@@ -14,10 +17,11 @@
 ; calls, since every call writes the overlay back).
 ;=======================================================================================
 
-OVL_COUNT       = DEBUG_NET ? 3 : 2
+OVL_COUNT       = DEBUG_NET ? 4 : 3
 OVL_FILES       = 0
 OVL_ART         = 1
-OVL_DEBUG       = 2                     ; (the debug build: netlog.asm)
+OVL_UI        = 2
+OVL_DEBUG       = 3                     ; (the debug build: netlog.asm)
 OVL_END         = BRIDGE_NET ? $cd00 : $cf00    ; (the bridge build's rings start at $CD00;
                                                 ; sidplay.asm's call routine is at $CF10)
 OVL_BASE        = OVL_END - $16a0       ; the window: as big as the biggest overlay (OVL0:
@@ -57,6 +61,25 @@ far_canvas_rect: #FAR OVL_ART, pm_canvas_rect
         rts
 far_canvas_pen: #FAR OVL_ART, pm_canvas_pen
         rts
+far_ticker:     #FAR OVL_UI, pm_ticker
+        rts
+far_desk_line:  #FAR OVL_UI, pm_desk_line
+        rts
+far_desk_badge: #FAR OVL_UI, pm_desk_badge
+        rts
+far_desk_draw:  #FAR OVL_UI, desk_draw        ; (login.asm's desktop hook, signed on)
+        rts
+
+; every 8th frame, signed on: the ticker one character on (desk.asm)
+desk_frame:
+        lda frames
+        and #7
+        bne +
+        lda login_state
+        cmp #LS_ON
+        bne +
+        #FAR OVL_UI, desk_tick
++       rts
 
 ; once a frame: an upload going out (only then into the overlay)
 storage_frame:

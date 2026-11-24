@@ -72,6 +72,7 @@ class Server:
         self._server = await asyncio.start_server(self._connected, host, port)
         self._away = asyncio.create_task(self.screens.presence.run())     # Auto-Away
         self._bank = asyncio.create_task(self.screens.bank.run())         # an hour online
+        self._live = asyncio.create_task(self.screens.live.run())         # badges, who's on
         return self._server.sockets[0].getsockname()[1]
 
     async def serve_forever(self):
@@ -79,7 +80,8 @@ class Server:
             await self._server.serve_forever()
 
     async def stop(self):
-        for task in (getattr(self, "_away", None), getattr(self, "_bank", None)):
+        for task in (getattr(self, "_away", None), getattr(self, "_bank", None),
+                     getattr(self, "_live", None)):
             if task:
                 task.cancel()
         for s in list(self.sessions):

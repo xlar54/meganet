@@ -1088,6 +1088,8 @@ class FileDialog:
                                               b.session.user_id)
             b.session.log("added file %s (%s) to %s" % (name, path, lib["title"]))
             done = "Added %s." % name
+            b.files.server.screens.live.say("New in %s: %s" % (lib["title"], name),
+                                            can=lambda v, l=lib: b.files.can_see(v, l))
         else:
             if b.db.library_file(self.f["id"]) is None:
                 self.win.close()
@@ -1637,6 +1639,8 @@ class Upload(Transfer):
                                                              "" if approved else " (held)"))
         if approved:
             self.end("Done: %s is in %s." % (self.name, lib["title"]), True)
+            files.server.screens.live.say("New in %s: %s" % (lib["title"], self.name),
+                                          can=lambda v, l=lib: files.can_see(v, l))
         else:
             self.end("Done: a moderator will look at it.", True)
             files.tell_moderators("%s uploaded %s to %s: it needs approving." % (

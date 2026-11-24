@@ -16,6 +16,7 @@ The logo is stored cell by cell, row-major (lib/fcm640.asm's layout), so each ro
 is one DMA copy into the framebuffer.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -107,16 +108,20 @@ VERSION_FILE = os.path.join(m.ROOT, 'client-src', 'VERSION')
 
 
 def read_version(path=VERSION_FILE):
-    """client-src/VERSION's numbers: {"build": n, "oldest": n}."""
+    """client-src/VERSION: {"build": n, "oldest": n, "name": "2.1"} (the name: the build's
+    number when it doesn't say)."""
     out = {}
     for line in open(path, encoding='utf-8'):
         line = line.split('#', 1)[0].strip()
         if '=' in line:
             key, value = (s.strip() for s in line.split('=', 1))
-            out[key] = int(value)
+            out[key] = value if key == 'name' else int(value)
     if not 1 <= out.get('build', 0) <= 65535 or not 1 <= out.get('oldest', 1) <= out['build']:
         sys.exit('client-src/VERSION: build=1..65535 and oldest=1..build')
     out.setdefault('oldest', 1)
+    out.setdefault('name', str(out['build']))
+    if not re.fullmatch(r'[0-9A-Za-z.]{1,8}', out['name']):
+        sys.exit('client-src/VERSION: name is 1-8 letters, digits and dots, like 2.1')
     return out
 
 
@@ -125,11 +130,12 @@ def client_version():
     file VERSION on the disk, which the server reads: updates.py)."""
     v = read_version()
     m.write_gen('version.asm', ['CLIENT_BUILD = %d' % v['build'],
-                                'CLIENT_OLDEST = %d' % v['oldest']],
+                                'CLIENT_OLDEST = %d' % v['oldest'],
+                                'CLIENT_NAME = "%s"' % v['name']],
                 "the client's version (client-src/VERSION)")
     with open(os.path.join(m.ASSETS, 'version'), 'w', newline='\n') as f:
-        f.write('build=%d\noldest=%d\n' % (v['build'], v['oldest']))
-    print('Client version: build %d (oldest %d)' % (v['build'], v['oldest']))
+        f.write('build=%d\nname=%s\noldest=%d\n' % (v['build'], v['name'], v['oldest']))
+    print('Client version: %s, build %d (oldest %d)' % (v['name'], v['build'], v['oldest']))
     return 'version'
 
 

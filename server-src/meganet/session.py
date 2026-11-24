@@ -127,6 +127,7 @@ class Session:
         self.active_minutes = 0      # towards the bank's "hour online" (bank.check_online)
         self.status = "available"    # Status menu: available / away / offline (presence.py)
         self.ring_away = True        # My Account's "Ring when I'm Away" (ring())
+        self.show_ticker = True      # and its "Activity ticker" (livedesk.py)
         self.sid_playing = None      # (key, song) of the SID tune it's playing (play_sid)
         self.sid_now = None          # and what SID Music says about it (sidlib.py)
         self.last_ring = -RING_GAP
@@ -572,6 +573,7 @@ class Session:
         row = self.server.db.user(name)
         self.user_id = row["id"]
         self.ring_away = bool(row["ring_away"])
+        self.show_ticker = bool(row["show_ticker"])
         self.previous_login = self.server.db.record_login(self.user_id)
         self.load_permissions()
         self.log("signed on as %s (%s, build %s)%s" % (self.user, self.role, self.build,

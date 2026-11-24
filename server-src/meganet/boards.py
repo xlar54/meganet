@@ -167,11 +167,15 @@ class Boards:
             topic_id = self.db.create_topic(forum_id, session.user_id, clean_text(subject),
                                             lines)
             session.log("new topic %d in %s" % (topic_id, forum["name"]))
+            news = "New topic in %s: %s" % (forum["name"], clean_text(subject))
         else:
-            if self.db.topic(topic_id) is None:
+            topic = self.db.topic(topic_id)
+            if topic is None:
                 return "That topic is gone."
             self.db.add_post(topic_id, session.user_id, lines)
             session.log("reply in topic %d" % topic_id)
+            news = "%s replied in %s: %s" % (session.user, forum["name"], topic["subject"])
+        self.server.screens.live.say(news, can=lambda v, f=forum: self.can_read(v, f))
         composer.close()
         karma.earn(self.server, session.user_id, "board post")
         self.server.screens.bank.earn(session.user_id, "board post")

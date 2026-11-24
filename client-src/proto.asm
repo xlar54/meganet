@@ -231,6 +231,7 @@ _types: .byte S_HELLO, S_LOGIN_RESULT, S_WIN_OPEN, S_WIN_CLOSE, S_GADGET, S_SET_
         .byte S_CANVAS, S_CANVAS_END, S_CANVAS_RECT, S_CANVAS_PEN
         .byte S_SPRITE, S_SPRITE_MOVE, S_SPRITE_OFF
         .byte S_SID_PLAY, S_SID_STOP, S_SID_PAUSE
+        .byte S_TICKER, S_DESK_LINE, S_DESK_BADGE
 _n = * - _types
 _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_text
         .word pm_set_value, pm_focus, pm_alert, pm_win_done, pm_list_rows, pm_append
@@ -243,6 +244,7 @@ _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_t
         .word far_canvas, far_canvas_end, far_canvas_rect, far_canvas_pen ; (canvas.asm: too)
         .word pm_sprite, pm_sprite_move, pm_sprite_off                    ; (sprites.asm)
         .word pm_sid_play, pm_sid_stop, pm_sid_pause                      ; (sidplay.asm)
+        .word far_ticker, far_desk_line, far_desk_badge                   ; (desk.asm: overlay)
         .cerror (_jumps - _types) != _n, "a message without its handler"
 
 ; S.RESOURCE_PACKED: u8 slot, u16 offset, the rest PackBits bytes (lib/gui/grid.asm)

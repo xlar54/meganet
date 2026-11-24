@@ -36,9 +36,11 @@ def disk(files):
     return bytes(img)
 
 
-def client_disk(build, oldest=1):
-    return disk({"MEGANET": b"\x01\x20" + bytes(600),
-                 "VERSION": b"build=%d\noldest=%d\n" % (build, oldest)})
+def client_disk(build, oldest=1, vname=None):
+    text = b"build=%d\noldest=%d\n" % (build, oldest)
+    if vname:
+        text += b"name=%s\n" % vname.encode()
+    return disk({"MEGANET": b"\x01\x20" + bytes(600), "VERSION": text})
 
 
 class VersionTest(unittest.TestCase):
@@ -47,10 +49,13 @@ class VersionTest(unittest.TestCase):
         self.assertEqual([f[0] for f in d81.files(img)], ["MEGANET", "VERSION"])
         self.assertEqual(len(d81.read(img, "meganet")), 602)
         self.assertEqual(parse_version(d81.read(img, "version").decode()),
-                         {"build": 7, "oldest": 3})
+                         {"build": 7, "oldest": 3, "name": "7"})
         self.assertIsNone(d81.read(img, "nothing"))
         self.assertIsNone(parse_version("hello"))
-        self.assertEqual(parse_version("# a comment\nbuild = 4\n"), {"build": 4, "oldest": 1})
+        self.assertEqual(parse_version("# a comment\nbuild = 4\n"),
+                         {"build": 4, "oldest": 1, "name": "4"})
+        self.assertEqual(parse_version("build=3\nname=2.1\noldest=1\n"),
+                         {"build": 3, "oldest": 1, "name": "2.1"})
         with self.assertRaises(ValueError):
             d81.files(b"short")
 
@@ -60,9 +65,9 @@ class VersionTest(unittest.TestCase):
 
 
 class UpdateTest(ServerTest):
-    def put_disk(self, build, oldest=1, name="meganet.d81"):
+    def put_disk(self, build, oldest=1, name="meganet.d81", vname=None):
         folder = os.path.join(self.server.filelibs_dir, updates.CLIENT_FOLDER)
-        data = client_disk(build, oldest)
+        data = client_disk(build, oldest, vname)
         with open(os.path.join(folder, name), "wb") as f:
             f.write(data)
         return data
@@ -91,9 +96,9 @@ class UpdateTest(ServerTest):
 
     async def test_optional_later(self):
         self.put_disk(5)
-        c = await self.connect("old", 3)
+        c = await self.connect("old", 2)
         w = await c.wait_window("MegaNet Update")
-        self.assertIn("MegaNet version 5 is ready: you have version 3.", self.texts(w))
+        self.assertIn("MegaNet 5 is ready: you have version 2.", self.texts(w))
         self.assertIn("You can sign on as you are, or get it first.", self.texts(w))
         self.assertTrue(c.enabled(WIN_UPDATE, "Later"))
         c.click_text(WIN_UPDATE, "Later")
@@ -106,6 +111,18 @@ class UpdateTest(ServerTest):
                          [("MegaNet Client", "meganet_client")])
         f = self.server.db.library_files(libs[0]["id"])[0]
         self.assertEqual((f["name"], f["type"], f["path"]), ("MEGANET 5", "D81", "meganet.d81"))
+
+    async def test_named_and_only_the_newest_listed(self):
+        self.put_disk(2, name="meganet2.d81")
+        c = await self.signed_on("alice", build=2)              # (the server looks)
+        self.put_disk(3, name="meganet3.d81", vname="2.1")
+        c = await self.connect("old", 2)
+        w = await c.wait_window("MegaNet Update")
+        self.assertIn("MegaNet 2.1 is ready: you have version 2.", self.texts(w))
+        lib = self.server.db.libraries()[0]
+        files = self.server.db.library_files(lib["id"], held=True)
+        self.assertEqual([(f["name"], f["path"]) for f in files],
+                         [("MEGANET 2.1", "meganet3.d81")], "the older disk isn't listed")
 
     async def test_signing_on_closes_the_offer(self):
         self.put_disk(5)

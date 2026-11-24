@@ -338,6 +338,8 @@ USER_COLUMNS = [("role_id", "INTEGER REFERENCES roles(id)"),
                 ("credits", "INTEGER NOT NULL DEFAULT 0"),  # (seeded once: credits_seeded)
                 # My Account's "Ring when I'm Away" (session.ring): on unless they untick it
                 ("ring_away", "INTEGER NOT NULL DEFAULT 1"),
+                # My Account's "Activity ticker" (livedesk.py): on unless they untick it
+                ("show_ticker", "INTEGER NOT NULL DEFAULT 1"),
                 # an admin locked it (User Editor > Lock): it can't sign on until unlocked
                 ("locked", "INTEGER NOT NULL DEFAULT 0")]
 # The bank (bank.py): its settings are one JSON setting; a new account's opening balance is
@@ -912,7 +914,7 @@ class Database:
 
     _USER_SQL = ("SELECT u.id, u.name, u.created, u.role_id, r.name AS role, u.first_name, "
                  "u.last_name, u.email, u.location, u.birthdate, u.about, u.last_login, "
-                 "u.karma, u.tos_agreed, u.credits, u.ring_away, u.locked FROM users u "
+                 "u.karma, u.tos_agreed, u.credits, u.ring_away, u.show_ticker, u.locked FROM users u "
                  "LEFT JOIN roles r ON r.id = u.role_id ")
 
     def user(self, name=None, user_id=None):
@@ -959,6 +961,11 @@ class Database:
     def set_ring_away(self, user_id, on):
         with self.conn:
             self.conn.execute("UPDATE users SET ring_away = ? WHERE id = ?",
+                              (1 if on else 0, user_id))
+
+    def set_show_ticker(self, user_id, on):
+        with self.conn:
+            self.conn.execute("UPDATE users SET show_ticker = ? WHERE id = ?",
                               (1 if on else 0, user_id))
 
     def set_password(self, user_id, pw_hash):
@@ -1510,6 +1517,14 @@ class Database:
             self.conn.execute("UPDATE topics SET last_post = MAX(last_post, ?) WHERE id = ?",
                               (now, topic_id))
         return cur.lastrowid
+
+    def posts_since(self, since, not_by):
+        """(forum id, posts) for posts after `since` by anyone but user `not_by` (the live
+        desktop's Message Boards badge)."""
+        return [(r[0], r[1]) for r in self.conn.execute(
+            "SELECT t.forum_id, COUNT(*) FROM posts p JOIN topics t ON t.id = p.topic_id "
+            "WHERE p.posted > ? AND (p.author IS NULL OR p.author != ?) GROUP BY t.forum_id",
+            (int(since), not_by))]
 
     _POST_SQL = ("SELECT p.id, p.topic_id, p.author, COALESCE(u.name, '?') AS author_name, "
                  "p.posted, p.body FROM posts p LEFT JOIN users u ON u.id = p.author ")

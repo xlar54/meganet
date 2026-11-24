@@ -873,6 +873,9 @@ class PictureUpload(Transfer):
                                                                          img.h, rel))
         self.b.picture_id = pid
         self.end("Done: %s is in the gallery." % self.pic_title, True)
+        self.session.server.screens.live.say(
+            "New in the Art Gallery: %s by %s" % (self.pic_title, self.session.user),
+            can=lambda v: v.can(perms.GALLERY_VIEW))
         area.changed()
         return None
 

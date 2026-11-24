@@ -57,15 +57,43 @@ Status: early.
   in memory of its own (`client-src/sidplay.asm`), so the server checks every tune in a 6502
   first and refuses any that would touch more than its memory and the SID
   (`server-src/meganet/sidcheck.py`).
+- **Live desktop:** the signed-on desktop shows what's happening
+  (`server-src/meganet/livedesk.py`, `client-src/desk.asm`):
+  - a **ticker** along the bottom, scrolling right to left behind a red NOW tag. It carries
+    sign-ons, new members, new topics and replies, new files, news, new pictures and
+    paintings, and game wins. Each member only sees events about things they may use, such
+    as a forum they can read.
+  - an **Online now** line above it, with a green dot before each name (Offline members are
+    left out, as in Who's Online).
+  - **badges** on the desktop icons:
+    - Message Boards: new posts by others since you last looked or last signed on;
+    - Chat: a green dot while anyone is chatting;
+    - Games: people waiting for a player;
+    - Who's Online: how many are on.
+
+    Numbers go 1-9, then "10+".
+
+  The server sends only what changed, and checks every 10 seconds as well. The ticker moves
+  one character every 8 frames. It stays still under windows, toasts, broadcasts, pictures
+  and Paint, and catches up at the next redraw. Older clients ignore all of this.
 - **Client memory:** code used now and then lives in attic RAM as overlays and takes turns
-  in one window (`client-src/overlays.asm`): the File Library's disk and SD-card work (`OVL0`)
-  and the Art Gallery's pictures and Paint (`OVL1`). The disk has `MEGANET`, `OVL0` and
-  `OVL1`, built together.
-- **Updates:** the client's version is `client-src/VERSION` (shown on the Connect screen, and
-  on the disk as `VERSION`). Put a newer `meganet.d81` in the server's
-  `filelibs/meganet_client/` and older clients are offered it when they connect: Download
-  saves it on their SD card as `MEGANETn.D81` (or, if they're too old for the server, they
-  must, before signing on). See `server-src/README.md`, "Publishing a client update".
+  in one window (`client-src/overlays.asm`):
+  - the File Library's disk and SD-card work (`OVL0`);
+  - the Art Gallery's pictures and Paint (`OVL1`);
+  - the live desktop (`OVL2`);
+  - in the debug build, the connection log (`OVL3`).
+
+  The disk has `MEGANET` and the overlay files, built together.
+- **Updates:** the client's version is `client-src/VERSION`, also on the disk as `VERSION`.
+  - `build` is a whole number that the client and server compare.
+  - `name` (for example 2.1) is what the Connect screen, the update window and the library
+    show.
+
+  Put a newer `meganet.d81` in the server's `filelibs/meganet_client/` and older clients are
+  offered it when they connect. The "MegaNet Client" library lists only the newest disk, and
+  publishing removes the older ones. Download saves it on their SD card as `MEGANETn.D81`
+  (n is the build). Members too old for the server must download it before signing on. See
+  `server-src/README.md`, "Publishing a client update".
 - **Server Log:** everything the server logs (connections, sign-ons and failed ones, what
   people do in each area, refusals, crashes with their tracebacks) is kept in the database
   as well, for admins to read in Admin > Server Log... with filters by area, level, user and
@@ -78,7 +106,9 @@ Build and run
 Client: `build.bat` assembles `client-src/main.asm` and writes `target/meganet.d81`, the disk
 for a real MEGA65. `run.bat` builds it and starts Xemu. On a MEGA65, plug in Ethernet on a
 network with DHCP, run the server on a PC (or use a hosted one), check its IP address on the
-sign-on screen, and click Connect, then Sign On. The address starts filled in with the first
+sign-on screen, and click Connect, then Sign On. Without DHCP, pick **Static IP** on the
+Connect window: Connect then asks for the IP address, subnet mask, gateway and (if you like)
+a DNS server, and starts the network with them. The address starts filled in with the first
 line of `private/server_address.txt` (or `MEGANET_SERVER`), when there is one: the build writes
 it to `client-src/gen/server.asm`, so it stays out of git. The first time,
 click New User instead: a step-by-step sign-up (screen name, password, about you, about me, then

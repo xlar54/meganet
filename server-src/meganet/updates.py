@@ -31,10 +31,15 @@ W, H = 400, 90                           # (a line holds 48 characters)
 
 
 def parse_version(text):
-    """A VERSION file's text -> {"build": n, "oldest": n}, or None."""
+    """A VERSION file's text -> {"build": n, "oldest": n, "name": "2.1"}, or None. The build
+    is what's compared; the name is what people see (the build's number if it has none)."""
     out = {}
     for line in text.splitlines():
         line = line.split("#", 1)[0].strip()
+        m = re.fullmatch(r"name\s*=\s*([0-9A-Za-z.]{1,8})", line)
+        if m:
+            out["name"] = m.group(1)
+            continue
         m = re.fullmatch(r"([a-z]+)\s*=\s*(\d+)", line)
         if m:
             out[m.group(1)] = int(m.group(2))
@@ -42,7 +47,16 @@ def parse_version(text):
         return None
     out.setdefault("oldest", 1)
     out["oldest"] = min(out["oldest"], out["build"])
+    out.setdefault("name", str(out["build"]))
     return out
+
+
+# What the older builds were called (their disks said only a number)
+BUILD_NAMES = {1: "1", 2: "2", 3: "2.1"}
+
+
+def build_name(build):
+    return BUILD_NAMES.get(build, str(build))
 
 
 def sd_name(build):
@@ -103,6 +117,8 @@ class Updates:
             if got[1] is not None:
                 out.append((got[1], path, st.st_size))
         out.sort(key=lambda r: -r[0]["build"])
+        if out:
+            self.only(os.path.basename(out[0][1]))
         return out
 
     def listed(self, name, version, size):
@@ -112,8 +128,20 @@ class Updates:
             return
         db = self.files.db
         if db.library_file_by_path(lib["id"], name) is None:
-            db.add_library_file(lib["id"], "MEGANET %d" % version["build"], "D81",
-                                "MegaNet version %d." % version["build"], name, size)
+            db.add_library_file(lib["id"], "MEGANET %s" % version["name"], "D81",
+                                "MegaNet version %s." % version["name"], name, size)
+            self.files.changed()
+
+    def only(self, newest):
+        """The library lists only the newest disk: older ones can't be downloaded."""
+        lib = next((x for x in self.files.db.libraries() if x["folder"] == CLIENT_FOLDER), None)
+        if lib is None:
+            return
+        db = self.files.db
+        old = [f for f in db.library_files(lib["id"], held=True) if f["path"] != newest]
+        for f in old:
+            db.delete_library_file(f["id"])
+        if old:
             self.files.changed()
 
     def latest(self):
@@ -140,10 +168,11 @@ class Updates:
         session.log("client build %d, release %d: update %s" % (session.build, new, state))
         win = Window.centred("MegaNet Update", W, H, win_id=WIN_UPDATE,
                              flags=WFlag.MODAL | WFlag.MOVABLE)
-        win.add(Label(8, 4, W - 16, 10, "MegaNet version %d is ready: you have version %d."
-                      % (new, session.build), flags=GFlag.BOLD))
+        win.add(Label(8, 4, W - 16, 10, "MegaNet %s is ready: you have version %s."
+                      % (rel[0]["name"], build_name(session.build)), flags=GFlag.BOLD))
         if state == "required":
-            lines = ["This server needs version %d or newer to sign on." % rel[0]["oldest"]]
+            lines = ["This server needs version %s or newer to sign on."
+                     % build_name(rel[0]["oldest"])]
         else:
             lines = ["You can sign on as you are, or get it first."]
         if session.caps & Caps.SD_WRITE:
@@ -203,7 +232,7 @@ class Updates:
         win = Window.centred("MegaNet Update", W, H, win_id=WIN_UPDATE,
                              flags=WFlag.MODAL | WFlag.MOVABLE)
         if ok:
-            lines = ["Saved %s: MegaNet version %d." % (path, version["build"]),
+            lines = ["Saved %s: MegaNet version %s." % (path, version["name"]),
                      "To start it, hold RESTORE for the Freeze Menu,",
                      "press 0 for drive 8 and pick %s," % path,
                      "then reset the MEGA65."]

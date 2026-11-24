@@ -63,9 +63,11 @@ UNPACK_BUF      = $40000                ; boot only
         .dsection ovl0
         * = $110000
         .dsection ovl1
-        .if DEBUG_NET
         * = $120000
         .dsection ovl2
+        .if DEBUG_NET
+        * = $130000
+        .dsection ovl3
         .endif
 
         .section res
@@ -164,6 +166,7 @@ main_loop:
         jsr link_frame                  ; (the connectivity icon; PING when it's quiet)
         jsr sound_frame                 ; (the chime's notes)
         jsr storage_frame               ; (an upload going out)
+        jsr desk_frame                  ; (the ticker: overlays.asm, desk.asm)
         jsr sprites_frame               ; (the server's sprites moving: sprites.asm)
         lda pic_on                      ; a picture over everything: its keys only
         beq +
@@ -341,14 +344,25 @@ ovl1_end:
         .endlogical
         .send ovl1
 
-; ---- overlay 2 (OVL_DEBUG, the debug build only): the connection log's window ----
-        .if DEBUG_NET
+; ---- overlay 2 (OVL_UI): the live desktop, and the sign-on windows ----
         .section ovl2
         .word 0
         .logical OVL_BASE
-        .include "netlog.asm"
+        .include "desk.asm"
+        .include "signon.asm"
 ovl2_end:
         .cerror * > OVL_END, format("overlay 2 is too big: to $%04x", *)
         .endlogical
         .send ovl2
+
+; ---- overlay 3 (OVL_DEBUG, the debug build only): the connection log's window ----
+        .if DEBUG_NET
+        .section ovl3
+        .word 0
+        .logical OVL_BASE
+        .include "netlog.asm"
+ovl3_end:
+        .cerror * > OVL_END, format("overlay 3 is too big: to $%04x", *)
+        .endlogical
+        .send ovl3
         .endif

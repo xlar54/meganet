@@ -7,7 +7,7 @@ import types
 
 from meganet import db, ui
 from meganet.account import (Account, WIN_ACCOUNT, WIN_PASSWORD, W, H, FIELD_X, FIELD_W,
-                             LABEL_X, FIRST_YEAR, MONTHS, when)
+                             LABEL_X, FIRST_YEAR, MONTHS, PREF_X, PREF_W, when)
 from meganet.protocol import Kind, MENU_MY_ACCOUNT, CLIENT_MAX_H, window_fits
 from tests.test_pages import PagesBase
 from tests.test_roles import gadget_of, has_text
@@ -139,7 +139,18 @@ class AccountTest(PagesBase):
             self.assertRaises(KeyError, win.find, b)
         reset, ok, cancel = (g[win.find(b)]["box"] for b in ("Reset Password...", "OK", "Cancel"))
         self.assertEqual(reset[0], LABEL_X)
-        self.assertEqual(cancel[0] + cancel[2], FIELD_X + FIELD_W, "right-aligned")
+        self.assertEqual(cancel[0] + cancel[2], PREF_X + PREF_W, "right-aligned")
+        # Preferences: a framed column right of the fields, both boxes ticked to start
+        self.assertGreater(PREF_X, FIELD_X + FIELD_W)
+        group = next(g[i] for i in g if g[i]["kind"] == Kind.GROUP)["box"]
+        self.assertEqual((group[0], group[2]), (PREF_X, PREF_W))
+        for text in ("Ring when Away", "Activity ticker"):
+            box = g[win.find(text)]
+            self.assertEqual(box["kind"], Kind.CHECKBOX)
+            self.assertTrue(group[0] < box["box"][0] and
+                            box["box"][0] + box["box"][2] < group[0] + group[2], text)
+            self.assertGreaterEqual((box["box"][2] - 16) // 8, len(text), text)
+            self.assertEqual(box["value"], 1, "%s: ticked" % text)
         self.assertLess(reset[0] + reset[2], ok[0])
         self.assertLess(ok[0] + ok[2], cancel[0])
         self.assertEqual({reset[1], ok[1]}, {cancel[1]}, "one row")

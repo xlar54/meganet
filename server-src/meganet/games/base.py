@@ -114,6 +114,12 @@ class Game:
         the computer or several). Returns the credits paid."""
         if session is None or session.user_id is None:
             return 0
+        if reason == "game won":                 # (the desktop's ticker)
+            if beat is not None and beat.user is not None:
+                text = "%s beat %s at %s" % (session.user, beat.user, self.name)
+            else:
+                text = "%s won at %s" % (session.user, self.name)
+            session.server.screens.live.say(text)
         return session.server.screens.bank.earn(
             session.user_id, reason, beat.user_id if beat is not None else None, self.name)
 

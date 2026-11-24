@@ -9,7 +9,7 @@ set PROJECT=meganet
 REM Overlays (lib/overlay.asm): their numbers in hex, e.g. set OVERLAYS=0 1 2. Empty: one
 REM plain program. With overlays, main.asm is laid out in sections (res, ovl0, ovl1, ...;
 REM src/lib/README.md, "Overlays") and each one becomes its own file on the disk.
-set OVERLAYS=0 1
+set OVERLAYS=0 1 2
 if not exist target mkdir target
 REM c1541 writes its settings under the user profile: keep them inside target\
 if not exist target\userprofile\AppData\Roaming mkdir target\userprofile\AppData\Roaming
@@ -45,7 +45,7 @@ if /i "%~1"=="debug" set DEBUGLOG=1
 if /i "%~1"=="bridge" if /i "%~2"=="debug" set DEBUGLOG=1
 if defined DEBUGLOG (
     set "MOCKDEF=%MOCKDEF% -D DEBUG_NET=1"
-    set "OVERLAYS=%OVERLAYS% 2"
+    set "OVERLAYS=%OVERLAYS% 3"
     set "DISK=%DISK%-debug"
 )
 

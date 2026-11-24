@@ -32,6 +32,7 @@ from .admin import Admin
 from .boards import Boards
 from .chat import Chat
 from .desktop import Desktop
+from .livedesk import LiveDesk
 from .polls import Polls
 from .news import News
 from .filelib import FileLibrary
@@ -177,6 +178,7 @@ class Screens:
         self.internet = InternetArea(server)
         self.gallery = Gallery(server)
         self.bank = Bank(server)
+        self.live = LiveDesk(self)       # the ticker, the online line, the icons' badges
 
     def signed_on(self, session, welcome=True, after=None):
         """Everything a session gets on signing on. The desktop icons come first, under a
@@ -192,6 +194,7 @@ class Screens:
         self.new_users_changed()          # (a new account is a new user for the admins)
         karma.earn(self.server, session.user_id, "signed on")
         self.refresh_who()
+        self.live.signed_on(session, new_member=not welcome)    # (welcome False: sign-up)
         autoplay = os.environ.get("MEGANET_SID_AUTOPLAY")     # (tests: a tune at once)
         if autoplay:
             from . import sidcheck
@@ -326,6 +329,7 @@ class Screens:
         self.send_menu(session)
         self.presence.show_icon(session)
         self.refresh_who()
+        self.live.update_all()                    # (an Offline member leaves the line)
         self.pages.refresh_icons()                # (an offline admin isn't paged:
         self.pages.check_waiting()                # the last one going Offline drops pages)
 
@@ -354,6 +358,7 @@ class Screens:
         return self.pages.open_messages(session)
 
     def open_boards(self, session, item=None):
+        self.live.boards_seen(session)            # (its badge: nothing new now)
         return self.boards.open(session)
 
     def open_voting(self, session, item=None):
@@ -590,3 +595,4 @@ class Screens:
         self.who.pop(session, None)
         if session.user is not None:
             self.refresh_who()
+            self.live.update_all()

@@ -21,6 +21,8 @@ CG_MYIP         = 2
 CG_SERVER       = 4
 CG_STATUS       = 5
 CG_CONNECT      = 6
+CG_DHCP         = 8                     ; (o) DHCP  ( ) Static IP (signon.asm)
+CG_STATIC       = 9
 LW              = $f1                   ; the Sign On window
 LG_NAME         = 2
 LG_PASS         = 4
@@ -46,6 +48,8 @@ LOGIN_H         = 94
 login_state:    .byte 0
 login_new:      .byte 0                 ; 1 = New User
 login_ip:       .fill 4                 ; the server's address
+login_static:   .byte 0                 ; Connect window: 0 DHCP, 1 Static IP
+login_staticup: .byte 0                 ; 1 while mega-ip has the static addresses
 logo_ok:        .byte 0                 ; set at boot when the logo loaded
 l_win:          .byte CW                ; the window the status line is in
 l_stgid:        .byte CG_STATUS
@@ -80,13 +84,7 @@ open_connect:
         sta l_ipshown
         lda #3
         sta l_wait
-        #GUI_WIN CW, LOGIN_X, LOGIN_Y, LOGIN_W, LOGIN_H, 0, s_cw_title
-        #GUI_GAD CW, 1, GK_LABEL, 8, 4, 108, 12, 0, 0, s_cw_myip
-        #GUI_GAD CW, CG_MYIP, GK_LABEL, 118, 4, 162, 12, 0, 0, s_cw_getting
-        #GUI_GAD CW, 3, GK_LABEL, 8, 20, 108, 12, 0, 0, s_cw_server
-        #GUI_GAD CW, CG_SERVER, GK_TEXT, 118, 20, 162, 12, 0, 15, l_server
-        #GUI_GAD CW, CG_STATUS, GK_LABEL, 10, 38, 268, 10, GGF_CENTRE, 0, s_cw_hint
-        #GUI_GAD CW, CG_CONNECT, GK_BUTTON, 92, 56, 104, 16, GGF_DEFAULT, 0, s_cw_connect
+        #FAR OVL_UI, ui_connect         ; (its gadgets: signon.asm)
         jsr show_myip                   ; (if the network is already up)
         lda #CW
         jmp gui_win_show
@@ -99,17 +97,8 @@ open_signon:
         sta l_win
         lda #LG_STATUS
         sta l_stgid
-        #GUI_WIN LW, LOGIN_X, LOGIN_Y, LOGIN_W, LOGIN_H, 0, s_lw_title
-        #GUI_GAD LW, 1, GK_LABEL, 8, 4, 100, 12, 0, 0, s_lw_name
-        #GUI_GAD LW, LG_NAME, GK_TEXT, 110, 4, 170, 12, 0, 10, 0
-        #GUI_GAD LW, 3, GK_LABEL, 8, 20, 100, 12, 0, 0, s_lw_pass
-        #GUI_GAD LW, LG_PASS, GK_PASSWORD, 110, 20, 170, 12, 0, 16, 0
-        #GUI_GAD LW, LG_STATUS, GK_LABEL, 10, 38, 268, 10, GGF_CENTRE, 0, s_lw_hint
-        #GUI_GAD LW, LG_SIGNON, GK_BUTTON, 12, 56, 84, 16, GGF_DEFAULT, 0, s_lw_signon
-        #GUI_GAD LW, LG_NEW, GK_BUTTON, 102, 56, 84, 16, 0, 0, s_lw_new
-        #GUI_GAD LW, LG_BACK, GK_BUTTON, 192, 56, 84, 16, 0, 0, s_lw_back
-        lda #LW
-        jmp gui_win_show
+        #FAR OVL_UI, ui_signon          ; (built and shown: signon.asm)
+        rts
 
 ; our own address on the Connect window, once DHCP has given us one
 show_myip:
@@ -217,7 +206,7 @@ login_backdrop:
         #LTEXT 320 - (s_foot_end - s_foot) * 4, 189, GC_SHADOW, s_foot
         rts
 _in:    #LTEXT 320 - (s_tag_end - s_tag) * 4, 66, GC_LIGHT, s_tag
-        rts
+        jmp far_desk_draw               ; (the ticker, who's online, badges: desk.asm)
 
 LTEXT .macro x, y, fg, str
         lda #<(\x)
@@ -296,10 +285,21 @@ ll_dst: .dword 0
 ll_n:   .byte 0
 
 login_event:
-        lda ge_type
+        lda ge_win                      ; the Static Address window (signon.asm)
+        cmp #SW
+        bne +
+        #FAR OVL_UI, ui_static_event
+        rts
++       lda ge_type
+        cmp #GE_SELECT                  ; (a radio button: the Connect window's DHCP or
+        beq _sel                        ; Static IP)
         cmp #GE_CLICK
         beq +
 _out:   rts
+_sel:   lda ge_win
+        cmp #CW
+        beq _cw
+        rts
 +       lda ge_win
         cmp #CW
         beq _cw
@@ -351,35 +351,11 @@ _back:  jsr net_close                   ; another server: back to the Connect wi
         lda #LW
         jsr gui_win_close
         jmp open_connect
-_cw:    lda login_state                 ; the Connect window: Connect
+_cw:    lda login_state                 ; the Connect window: DHCP / Static IP, Connect
         cmp #LS_CONNECT
         bne _out
-        lda ge_gid
-        cmp #CG_CONNECT
-        bne _out
-        lda #CW                         ; the server's address
-        ldx #CG_SERVER
-        jsr gui_get_text
-        sta txt_ptr
-        stx txt_ptr+1
-        ldy #0                          ; (kept, for Back)
--       lda (txt_ptr),y
-        sta l_server,y
-        beq +
-        iny
-        cpy #15
-        bne -
-        lda #0
-        sta l_server,y
-+       jsr parse_ip
-        bcc +
-        lda #<s_cw_badip
-        ldx #>s_cw_badip
-        jmp login_status
-+       lda #LS_CONNECTING
-        sta login_state
-        lda #<s_cw_conn
-        ldx #>s_cw_conn
+        #FAR OVL_UI, ui_connect_click   ; (signon.asm)
+        rts
 login_status:                           ; A/X = a message on the open window's status line
         sta gp_text
         stx gp_text+1
@@ -389,99 +365,8 @@ login_status:                           ; A/X = a message on the open window's s
         sta gp_gid
         jmp gui_set_text
 
-; "a.b.c.d" at txt_ptr -> login_ip; carry set if it isn't one
-parse_ip:
-        ldy #0
-        ldx #0                          ; which number
-_num:   lda #0
-        sta pi_v
-        sta pi_v+1
-        sta pi_d
-_dig:   lda (txt_ptr),y
-        cmp #'0'
-        bcc _end
-        cmp #'9' + 1
-        bcs _end
-        and #$0f
-        pha                             ; v = v * 10 + digit
-        lda pi_v
-        asl
-        sta pi_t
-        lda pi_v+1
-        rol
-        sta pi_t+1                      ; t = 2v
-        asl pi_v
-        rol pi_v+1
-        asl pi_v
-        rol pi_v+1
-        asl pi_v
-        rol pi_v+1                      ; v = 8v
-        clc
-        lda pi_v
-        adc pi_t
-        sta pi_v
-        lda pi_v+1
-        adc pi_t+1
-        sta pi_v+1
-        pla
-        clc
-        adc pi_v
-        sta pi_v
-        bcc +
-        inc pi_v+1
-+       lda pi_v+1                      ; over 255?
-        bne _bad
-        inc pi_d
-        lda pi_d
-        cmp #4
-        bcs _bad
-        iny
-        bra _dig
-_end:   ldz pi_d                        ; no digits
-        beq _bad
-        pha
-        lda pi_v
-        sta login_ip,x
-        pla
-        inx
-        cpx #4
-        beq _last
-        cmp #'.'
-        bne _bad
-        iny
-        bra _num
-_last:  cmp #0                          ; nothing after the fourth number
-        bne _bad
-        clc
-        rts
-_bad:   sec
-        rts
-pi_v:   .word 0
-pi_t:   .word 0
-pi_d:   .byte 0
-
-s_cw_title:     .null "Connect"
-s_cw_myip:      .null "Your address:"
 s_cw_getting:   .null "Getting one..."
-s_cw_server:    .null "Server:"
-        .if MOCK_NET || BRIDGE_NET              ; (so a test disk is never taken for the real one)
-s_cw_hint:      .null "Xemu test build: no Ethernet."
-        .elsif DEBUG_NET
-s_cw_hint:      .null "Debug build: F1 shows the log."
-        .else
-s_cw_hint:      .null "Check the server, then Connect."
-        .endif
-s_cw_connect:   .null "Connect"
-s_cw_badip:     .null "Server: four numbers, like 192.168.1.10"
-s_cw_conn:      .null "Connecting to the server..."
 s_cw_noaddr:    .null "None: check the cable"
-s_lw_title:     .null "Sign On"
-s_lw_name:      .null "Screen name:"
-s_lw_pass:      .null "Password:"
-s_lw_hint:      .null "Sign On, or New User to join."
-s_lw_signon:    .null "Sign On"
-s_lw_new:       .null "New User"
-s_lw_back:      .null "Back"
 s_lw_noname:    .null "Please type a screen name."
 s_lw_nopass:    .null "Please type a password."
 s_lw_signing:   .null "Signing on..."
@@ -520,6 +405,8 @@ login_step:
 _out:   rts
 _typing:                                ; the Connect window is up: start the network
         jsr show_myip
+        lda login_static                ; (Static IP: it waits for the addresses)
+        bne _out
         lda net_state
         cmp #NS_FAILED
         bne +
@@ -554,11 +441,19 @@ _signon:
 _conn:  jsr show_myip
         lda net_state
         cmp #NS_OFF
-        bne +
-        jsr net_start
+        bne _nr
+        lda login_static
+        beq _dhcp
+        lda l_wait                      ; Static IP: once its window is off the screen,
+        beq +                           ; mega-ip again with the addresses (signon.asm)
+        dec l_wait
+        rts
++       #FAR OVL_UI, ui_static_start
+        rts
+_dhcp:  jsr net_start
         bcs _out
         rts
-+       cmp #NS_READY
+_nr:    cmp #NS_READY
         bne +
         jmp net_connect
 +       cmp #NS_ONLINE
@@ -639,5 +534,5 @@ login_lost:
         jmp login_status
 s_tag:          .text "The online service for the MEGA65"
 s_tag_end:      .byte 0
-s_foot:         .text format("Version %d%s - port %d", CLIENT_BUILD, DEBUG_NET ? " debug" : "", SERVER_PORT)
+s_foot:         .text format("Version %s%s - port %d", CLIENT_NAME, DEBUG_NET ? " debug" : "", SERVER_PORT)
 s_foot_end:     .byte 0

@@ -217,6 +217,8 @@ class News:
         if news_id is None:
             news_id = self.db.post_news(headline, lines, session.user_id)
             session.log("posted news %d: %s" % (news_id, headline))
+            self.server.screens.live.say("News: %s" % headline,
+                                         can=lambda v: v.can(perms.NEWS_READ))
             done = "Posted."
         else:
             if self.db.bulletin(news_id) is None:

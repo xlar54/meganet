@@ -21,6 +21,15 @@
 - [x] MegaNet menu (client's own, first on the bar): Exit with a confirm, back to BASIC's
       READY (tested in Xemu); no menu bar on the sign-on screen
 - [ ] Test Exit to BASIC on real hardware (CHARPTR / ROM restore differ there)
+- [x] Live desktop (`desk.asm`, `livedesk.py`): ticker, Online now line, icon badges (tested
+      in Xemu through the bridge: drawn, scrolling, hidden under a window)
+- [ ] Live desktop next: shimmer the logo's stripes (palette cycling), smooth 1-2 pixel
+      ticker scrolling (check the speed on real hardware), a "today" panel under the logo
+- [x] Released as client 2.1 (build 3): older clients ignore the messages
+- [x] Connect window: DHCP or Static IP (the Static Address window: IP, mask, gateway, DNS;
+      tested in Xemu through the bridge, which has no stack of its own)
+- [ ] Static IP on a real MEGA65 (mega-ip restarted with the addresses); keep the addresses
+      on disk between sessions
 - [ ] GUI: toolbar of icon buttons under the menu bar (quieter than AOL's: small 16-colour
       icons with labels, flat buttons that bevel when pressed); icons sent once as RESOURCE
       and cached in attic

@@ -204,6 +204,13 @@ class S(IntEnum):
                          # the background, pausing while its own sounds play: sidplay.asm)
     SID_STOP = 0x36      # (nothing)  the tune stops
     SID_PAUSE = 0x37     # u8 paused (1: hold it where it is, its SIDs muted; 0: carry on)
+    # The live desktop (livedesk.py; clients from build 3 draw them, older ones ignore them):
+    TICKER = 0x38        # str text  (what's happening: scrolls along the bottom of the desktop
+                         # over and over, the end joined to the start; "" = no ticker)
+    DESK_LINE = 0x39     # str text  (a line above the ticker: who's online. ONLINE_DOT draws
+                         # a green dot and starts the names' colour)
+    DESK_BADGE = 0x3A    # u8 slot, str text  (on that desktop icon: "" none, BADGE_DOT a green
+                         # dot, otherwise the text, up to BADGE_MAX characters, on red)
     CANVAS_PEN = 0x31    # u8 mode (CanvasPen), u8 colour (a palette entry), u8 size (1-16):
                          # what the client draws at once while the mouse is held, before the
                          # server's CANVAS_RECT comes
@@ -376,6 +383,11 @@ DESK_LEFT = 8            # bottom; 8-11 down the right edge (older clients ignor
 DESK_ICON_W, DESK_ICON_H = 32, 16   # (640x200 pixels are twice as tall: it looks square)
 DESK_LABEL_MAX = 10      # characters a label line
 DESK_CLEAR = 0xFF        # a transparent pixel
+TICKER_MAX = 240         # S.TICKER: characters
+DESK_LINE_MAX = 78       # S.DESK_LINE: characters (each ONLINE_DOT is one)
+ONLINE_DOT = "\x01"
+BADGE_MAX = 3            # S.DESK_BADGE: characters
+BADGE_DOT = "*"
 
 class Caps(IntFlag):
     """C.HELLO's caps byte: what the client can do."""

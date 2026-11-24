@@ -27,7 +27,14 @@
 
 ; mega-ip entry points, as seen with bank 4 mapped
 MIP_INIT        = $2000
+MIP_SET_GATEWAY_IP = $2003
+MIP_SET_LOCAL_IP = $2006
 MIP_SET_LOCAL_PORT = $2009
+MIP_SET_SUBNET_MASK = $2012
+MIP_SET_PRIMARY_DNS = $204b
+MIP_GET_GATEWAY_IP = $2051
+MIP_GET_SUBNET_MASK = $2054
+MIP_GET_PRIMARY_DNS = $2057
 MIP_SET_REMOTE_IP = $200c
 MIP_SET_REMOTE_PORT = $200f
 MIP_SET_XLATE   = $2015
@@ -272,6 +279,28 @@ _bad:   sec
         rts
 
 net_start:
+        jsr net_init
+        bcs +
+        #NET_A MIP_DHCP_START
+        lda #<1500                      ; 30 s
+        ldx #>1500
+        jsr net_timer_set
+        lda #NS_DHCP
+        sta net_state
+        clc
++       rts
+
+; Static IP (signon.asm): the stack afresh (no DHCP, even one running), NS_READY; the caller
+; then gives it the addresses. Carry set = failed
+net_start_static:
+        jsr net_init
+        bcs +
+        lda #NS_READY
+        sta net_state
++       rts
+
+; the self test, the stack reset, a local port: carry set = failed (net_err, NS_FAILED)
+net_init:
         lda #E_NONE
         sta net_err
         jsr net_selftest
@@ -293,12 +322,6 @@ net_start:
         txa
         ldx tmp0
         #NET MIP_SET_LOCAL_PORT
-        #NET_A MIP_DHCP_START
-        lda #<1500                      ; 30 s
-        ldx #>1500
-        jsr net_timer_set
-        lda #NS_DHCP
-        sta net_state
         clc
         rts
 
@@ -444,6 +467,14 @@ BR_TX           = $ce00                 ; private/tools/xemu_bridge.py has the s
 BR_CTL          = $cf00
 br_session:     .byte 0
 
+net_start_static:                       ; (Static IP: nothing to set up here)
+        lda #E_NONE
+        sta net_err
+        lda #NS_READY
+        sta net_state
+        clc
+        rts
+
 net_start:
         lda #E_NONE
         sta net_err
@@ -573,6 +604,14 @@ mock_pos:       .word 0
 mock_left:      .word 0
 mock_txn:       .word 0
 mock_tmp:       .dword 0
+
+net_start_static:                       ; (Static IP: nothing to set up here)
+        lda #E_NONE
+        sta net_err
+        lda #NS_READY
+        sta net_state
+        clc
+        rts
 
 net_start:
         lda #E_NONE

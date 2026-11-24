@@ -1,9 +1,11 @@
 # The MegaNet client's version. build.bat compiles it in (CLIENT_BUILD, sent in HELLO) and
 # puts this file on the disk as VERSION, where the server reads it: a newer disk in the
 # server's "MegaNet Client" file library is offered to older clients (server-src updates.py).
-#   build   raise it for each release
+#   build   raise it for each release: a whole number, what the client and server compare
+#   name    the version people see (Connect window, update window, File Library): "2.1"
 #   oldest  the oldest client that may still sign on to a server that has this disk; older
 #           ones must update first (raise it when the protocol changes in a way they can't
 #           follow)
-build=2
+build=3
+name=2.1
 oldest=1

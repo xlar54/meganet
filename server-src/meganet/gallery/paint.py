@@ -526,6 +526,10 @@ class Paint:
             pid = db.add_gallery_picture(self.gallery_id, title, description, CANVAS_W,
                                          CANVAS_H, colours, self.session.user_id)
             rel = "%d/%d.iff" % (self.gallery_id, pid)
+            from .. import permissions as perms
+            self.session.server.screens.live.say(
+                "%s painted %s for the Art Gallery" % (self.session.user, title),
+                can=lambda v: v.can(perms.GALLERY_VIEW))
         try:
             path = area.full_path(rel)
             os.makedirs(os.path.dirname(path), exist_ok=True)

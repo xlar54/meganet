@@ -271,6 +271,8 @@ class Desktop:
                 w.str(one).str(two).bytes(pixels(new[0]))
             session.send(S.DESK_ICON, w)
         session.desk = want
+        if getattr(session, "live_badges", None) is not None:   # (signed on: the badges
+            self.screens.live.send_badges(session)              # follow the icons)
 
     def open(self, session, slot):
         """C.DESK_OPEN: the icon's action, if this session was sent it and still may use it."""

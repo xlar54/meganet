@@ -5742,9 +5742,11 @@ l_bc_tick:
         jmp gui_redraw_later
 _out:   rts
 
+gui_banner_t:                           ; (public, read-only: a broadcast is showing)
 l_bc_t:         .word 0                 ; frames left, 0 = none
 l_bc_buf:       .fill GUI_BANNER_MAX + 1
 
+gui_toast_t:                            ; (public, read-only: a toast is showing)
 l_ts_t:         .word 0                 ; frames left, 0 = no toast
 l_ts_x0:        .word 0
 l_ts_len:       .byte 0

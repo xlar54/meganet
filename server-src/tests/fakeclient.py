@@ -6,6 +6,7 @@ import zlib
 
 from meganet.protocol import (SPRITES, SPRITE_W, SPRITE_H, SPRITE_COLOURS, Local, LocalStatus, LOCAL_SD, LOCAL_MAX, FILE_CHUNK, UP_CHUNK,
                               BROADCAST_MAX, DESK_SLOTS, DESK_ICON_W, DESK_ICON_H, DESK_LABEL_MAX,
+                              TICKER_MAX, DESK_LINE_MAX, BADGE_MAX,
                               DESK_CLEAR, GFlag, S, C, Kind, Writer, Deframer, LOGIN_NEW_USER, MENU_FIRST,
                               MENU_LAST, MENU_SEPARATOR, MEGANET_MENU, NOTIFY_SLOTS, NOTIFY_HINT_MAX, Icon,
                               window_fits, DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES,
@@ -207,6 +208,9 @@ class FakeClient:
         self.menus_received = 0  # how many S.MENU messages have come
         self.notify = {}         # menu-bar icons: slot -> (icon, hint)  (icon 0 removes one)
         self.desk = {}           # desktop icons: slot -> (line 1, line 2, pixels)
+        self.ticker = None       # the live desktop (livedesk.py): S.TICKER's text,
+        self.desk_line = None    # S.DESK_LINE's,
+        self.badges = {}         # S.DESK_BADGE: slot -> text (only the ones showing)
         self.events = []         # ("open" / "close" / "icon", window title or slot), in order
         self.storage = FakeStorage()   # drives 8-11 and an SD card (the File Library)
         self.caps = 0            # what send_hello said this client can do
@@ -252,6 +256,11 @@ class FakeClient:
 
     def desk_labels(self):
         return [(" ".join(x for x in self.desk[s][:2] if x)) for s in sorted(self.desk)]
+
+    def badge(self, label):
+        """The badge on the desktop icon with that label ("" none)."""
+        slot = next(s for s in self.desk if " ".join(x for x in self.desk[s][:2] if x) == label)
+        return self.badges.get(slot, "")
 
     def desk_open(self, label):
         slot = next(s for s in self.desk if " ".join(x for x in self.desk[s][:2] if x) == label)
@@ -531,6 +540,19 @@ class FakeClient:
         elif t == S.SID_PAUSE:
             assert self.sid is not None, "S.SID_PAUSE with no tune playing"
             self.sid["paused"] = bool(r.u8())
+        elif t == S.TICKER:
+            self.ticker = r.str()
+            assert len(self.ticker) <= TICKER_MAX, "ticker too long"
+        elif t == S.DESK_LINE:
+            self.desk_line = r.str()
+            assert len(self.desk_line) <= DESK_LINE_MAX, "desktop line too long"
+        elif t == S.DESK_BADGE:
+            slot, text = r.u8(), r.str()
+            assert slot < DESK_SLOTS and len(text) <= BADGE_MAX, "bad badge"
+            if text:
+                self.badges[slot] = text
+            else:
+                self.badges.pop(slot, None)
         elif t == S.BROADCAST:
             secs, text = r.u8(), r.str()
             assert len(text) <= BROADCAST_MAX, "broadcast too long for the row"
