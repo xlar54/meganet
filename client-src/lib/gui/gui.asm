@@ -3876,6 +3876,9 @@ _n:     inx
 +       lda gg_win,x
         cmp l_gu_ws
         bne _skip
+        lda gg_flags,x                  ; (not a greyed-out one)
+        and #GGF_DISABLED
+        bne _skip
         lda gg_kind,x
         cmp #GK_TEXT
         beq _got

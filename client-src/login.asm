@@ -17,7 +17,6 @@
 
 SERVER_PORT     = 6400
 CW              = $f0                   ; the Connect window (ids $F0-$FF are the client's)
-CG_MYIP         = 2
 CG_SERVER       = 4
 CG_STATUS       = 5
 CG_CONNECT      = 6
@@ -48,7 +47,7 @@ LOGIN_H         = 94
 login_state:    .byte 0
 login_new:      .byte 0                 ; 1 = New User
 login_ip:       .fill 4                 ; the server's address
-login_static:   .byte 0                 ; Connect window: 0 DHCP, 1 Static IP
+login_mode:     .byte 0                 ; Connect window: 0 not picked yet, 1 DHCP, 2 Static IP
 login_staticup: .byte 0                 ; 1 while mega-ip has the static addresses
 logo_ok:        .byte 0                 ; set at boot when the logo loaded
 l_win:          .byte CW                ; the window the status line is in
@@ -59,7 +58,6 @@ l_wait:         .byte 0                 ; frames before starting the network (so
 l_server:       .text DEFAULT_SERVER    ; the server's address as typed (kept for Back);
         .fill 16 - len(DEFAULT_SERVER)  ; at first the build's default (gen/server.asm)
         .cerror len(DEFAULT_SERVER) > 15, "DEFAULT_SERVER is too long"
-l_myip:         .fill 16                ; our address as text
 
 login_open:
         lda #<login_backdrop
@@ -100,79 +98,20 @@ open_signon:
         #FAR OVL_UI, ui_signon          ; (built and shown: signon.asm)
         rts
 
-; our own address on the Connect window, once DHCP has given us one
+; DHCP: its address (and mask, gateway, DNS) in the Connect window, once it has one
 show_myip:
         lda l_ipshown
+        bne _out
+        lda login_mode
+        cmp #1
         bne _out
         lda net_state
         cmp #NS_READY
         bcc _out                        ; (off, DHCP: not yet)
         cmp #NS_FAILED
         beq _out
-        jsr net_local_ip                ; -> net_myip
-        ldx #0                          ; as text: a.b.c.d
-        ldy #0
-_oct:   phy
-        lda net_myip,y
-        jsr l_dec
-        ply
-        iny
-        cpy #4
-        beq _end
-        lda #'.'
-        sta l_myip,x
-        inx
-        bra _oct
-_end:   lda #0
-        sta l_myip,x
-        lda #1
-        sta l_ipshown
-        lda #CW
-        sta gp_win
-        lda #CG_MYIP
-        sta gp_gid
-        lda #<l_myip
-        sta gp_text
-        lda #>l_myip
-        sta gp_text+1
-        jmp gui_set_text
+        #FAR OVL_UI, ui_show_dhcp       ; (signon.asm)
 _out:   rts
-; A as decimal at l_myip,x, no leading zeros (x moves on)
-l_dec:  ldy #0
--       cmp #100
-        bcc +
-        sbc #100
-        iny
-        bra -
-+       sty l_dh
-        ldy #0
--       cmp #10
-        bcc +
-        sbc #10
-        iny
-        bra -
-+       sty l_dt
-        sta l_do
-        lda l_dh
-        beq _t
-        ora #'0'
-        sta l_myip,x
-        inx
-        lda l_dt                        ; (hundreds: the tens always show)
-        bra _tt
-_t:     lda l_dt
-        beq _o
-_tt:    ora #'0'
-        sta l_myip,x
-        inx
-_o:     lda l_do
-        ora #'0'
-        sta l_myip,x
-        inx
-        rts
-l_dh:   .byte 0
-l_dt:   .byte 0
-l_do:   .byte 0
 
 ; the desktop behind the sign-on windows
 login_backdrop:
@@ -285,12 +224,7 @@ ll_dst: .dword 0
 ll_n:   .byte 0
 
 login_event:
-        lda ge_win                      ; the Static Address window (signon.asm)
-        cmp #SW
-        bne +
-        #FAR OVL_UI, ui_static_event
-        rts
-+       lda ge_type
+        lda ge_type
         cmp #GE_SELECT                  ; (a radio button: the Connect window's DHCP or
         beq _sel                        ; Static IP)
         cmp #GE_CLICK
@@ -365,8 +299,7 @@ login_status:                           ; A/X = a message on the open window's s
         sta gp_gid
         jmp gui_set_text
 
-s_cw_getting:   .null "Getting one..."
-s_cw_noaddr:    .null "None: check the cable"
+s_cw_noaddr:    .null "No address from DHCP: check the cable. (It tries again.)"
 s_lw_noname:    .null "Please type a screen name."
 s_lw_nopass:    .null "Please type a password."
 s_lw_signing:   .null "Signing on..."
@@ -405,25 +338,20 @@ login_step:
 _out:   rts
 _typing:                                ; the Connect window is up: start the network
         jsr show_myip
-        lda login_static                ; (Static IP: it waits for the addresses)
+        lda login_mode                  ; (only once DHCP is picked: Static IP waits for
+        cmp #1                          ; Connect, and nothing starts before a choice)
         bne _out
         lda net_state
         cmp #NS_FAILED
         bne +
-        lda net_err                     ; DHCP failed: say so (Connect tries again)
+        lda net_err                     ; DHCP failed: say so (it tries again)
         cmp #E_DHCP
         bne _out
         lda #NS_OFF
         sta net_state
-        lda #CW
-        sta gp_win
-        lda #CG_MYIP
-        sta gp_gid
         lda #<s_cw_noaddr
-        sta gp_text
-        lda #>s_cw_noaddr
-        sta gp_text+1
-        jmp gui_set_text
+        ldx #>s_cw_noaddr
+        jmp login_status
 +       cmp #NS_OFF
         bne _out
         lda l_wait                      ; (a few frames, so the window is on screen first)
@@ -442,10 +370,11 @@ _conn:  jsr show_myip
         lda net_state
         cmp #NS_OFF
         bne _nr
-        lda login_static
-        beq _dhcp
-        lda l_wait                      ; Static IP: once its window is off the screen,
-        beq +                           ; mega-ip again with the addresses (signon.asm)
+        lda login_mode
+        cmp #2
+        bne _dhcp
+        lda l_wait                      ; Static IP: once the screen is drawn, mega-ip
+        beq +                           ; again with the addresses (signon.asm)
         dec l_wait
         rts
 +       #FAR OVL_UI, ui_static_start

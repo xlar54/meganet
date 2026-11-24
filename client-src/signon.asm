@@ -1,59 +1,99 @@
 ;=======================================================================================
 ; signon.asm - the sign-on windows (in the OVL_UI overlay; login.asm keeps the state machine
-; and calls in here): the Connect window, the Sign On window, and the Static Address window.
+; and calls in here): the Connect window and the Sign On window.
 ;
-;   ui_connect        build the Connect window (login.asm open_connect shows it):
-;                     Your address, Network: (o) DHCP ( ) Static IP, Server, a status line,
-;                     Connect
+; The Connect window: Network: ( ) DHCP ( ) Static IP, then the IP address, subnet mask,
+; gateway and DNS server, then the server's address, a status line and Connect. Nothing is
+; picked at first, and the network doesn't start until something is (login_mode):
+;   DHCP       the four boxes greyed; login_step asks for an address, and they show what
+;              DHCP gave (ui_show_dhcp). Connect: to the server once there's an address
+;   Static IP  the four boxes typed in (the DNS server may stay empty). Connect checks them,
+;              then login_step restarts mega-ip with them (ui_static_start, about 4 s) and
+;              connects
+; Connect is greyed until one is picked.
+;
+;   ui_connect        build the Connect window (login.asm open_connect shows it)
 ;   ui_signon         build and show the Sign On window
-;   ui_connect_click  a click in the Connect window: the radio buttons, or Connect. With
-;                     Static IP chosen, Connect opens the Static Address window first
-;   ui_static_event   the Static Address window: OK (check the addresses, then login.asm's
-;                     login_step starts the network with them: ui_static_start), Cancel
-;   ui_static_start   (login_step) restart mega-ip with the static addresses: about 4 s
+;   ui_connect_click  a click in the Connect window: DHCP, Static IP, or Connect
+;   ui_show_dhcp      (show_myip) the DHCP address and the rest in the four boxes
+;   ui_static_start   (login_step) mega-ip again, with the static addresses
 ;
-; The static addresses typed are kept here (the overlay is written back to attic after each
-; call), so the window shows them again; at first, what DHCP found, if it found anything.
+; What's in the boxes is kept here (the overlay is written back to attic after each call), so
+; the window shows it again after Back or a lost connection.
 ;=======================================================================================
 
-SW              = $f2                   ; the Static Address window
-SG_IP           = 2                     ; its text boxes (labels are the odd ids)
-SG_MASK         = 4
-SG_GW           = 6
-SG_DNS          = 8
-SG_STATUS       = 9
-SG_OK           = 10
-SG_CANCEL       = 11
-SW_H            = 124
-CONNECT_H       = LOGIN_H + 16          ; the Connect window: the Network row more
+CONNECT_X       = 82
+CONNECT_Y       = 66
+CONNECT_W       = 476
+CONNECT_H       = 116
+CG_IP           = 10                    ; the four address boxes: CG_IP + n
+CG_MASK         = 11
+CG_GW           = 12
+CG_DNS          = 13
 
 ;---------------------------------------------------------------------------------------
 ; the windows
 ;---------------------------------------------------------------------------------------
 ui_connect:
-        #GUI_WIN CW, LOGIN_X, LOGIN_Y, LOGIN_W, CONNECT_H, 0, s_cw_title
-        #GUI_GAD CW, 1, GK_LABEL, 8, 4, 108, 12, 0, 0, s_cw_myip
-        #GUI_GAD CW, CG_MYIP, GK_LABEL, 118, 4, 162, 12, 0, 0, s_cw_getting
-        #GUI_GAD CW, 7, GK_LABEL, 8, 20, 108, 12, 0, 0, s_cw_net
-        #GUI_GAD CW, CG_DHCP, GK_RADIO, 118, 19, 64, 12, 0, 0, s_cw_dhcp
-        #GUI_GAD CW, CG_STATIC, GK_RADIO, 186, 19, 96, 12, 0, 0, s_cw_static
-        #GUI_GAD CW, 3, GK_LABEL, 8, 36, 108, 12, 0, 0, s_cw_server
-        #GUI_GAD CW, CG_SERVER, GK_TEXT, 118, 36, 162, 12, 0, 15, l_server
-        #GUI_GAD CW, CG_STATUS, GK_LABEL, 10, 54, 268, 10, GGF_CENTRE, 0, s_cw_hint
-        #GUI_GAD CW, CG_CONNECT, GK_BUTTON, 92, 72, 104, 16, GGF_DEFAULT, 0, s_cw_connect
-        jmp ui_radios
-
-; the radio buttons as login_static says
-ui_radios:
-        lda #1
-        ldx login_static
+        #GUI_WIN CW, CONNECT_X, CONNECT_Y, CONNECT_W, CONNECT_H, 0, s_cw_title
+        #GUI_GAD CW, 20, GK_LABEL, 6, 4, 92, 12, 0, 0, s_cw_net
+        #GUI_GAD CW, CG_DHCP, GK_RADIO, 100, 3, 64, 12, 0, 0, s_cw_dhcp
+        #GUI_GAD CW, CG_STATIC, GK_RADIO, 172, 3, 100, 12, 0, 0, s_cw_static
+        #GUI_GAD CW, 21, GK_LABEL, 6, 20, 92, 12, 0, 0, s_cw_ip
+        #GUI_GAD CW, CG_IP, GK_TEXT, 100, 19, 126, 12, GGF_DISABLED, 15, ui_txt
+        #GUI_GAD CW, 22, GK_LABEL, 236, 20, 100, 12, 0, 0, s_cw_mask
+        #GUI_GAD CW, CG_MASK, GK_TEXT, 336, 19, 126, 12, GGF_DISABLED, 15, (ui_txt + 16)
+        #GUI_GAD CW, 23, GK_LABEL, 6, 35, 92, 12, 0, 0, s_cw_gw
+        #GUI_GAD CW, CG_GW, GK_TEXT, 100, 34, 126, 12, GGF_DISABLED, 15, (ui_txt + 32)
+        #GUI_GAD CW, 24, GK_LABEL, 236, 35, 100, 12, 0, 0, s_cw_dns
+        #GUI_GAD CW, CG_DNS, GK_TEXT, 336, 34, 126, 12, GGF_DISABLED, 15, (ui_txt + 48)
+        #GUI_GAD CW, 3, GK_LABEL, 6, 51, 92, 12, 0, 0, s_cw_server
+        #GUI_GAD CW, CG_SERVER, GK_TEXT, 100, 50, 126, 12, 0, 15, l_server
+        #GUI_GAD CW, CG_STATUS, GK_LABEL, 6, 66, 456, 10, GGF_CENTRE, 0, s_cw_hint
+        #GUI_GAD CW, CG_CONNECT, GK_BUTTON, 182, 80, 104, 16, GGF_DEFAULT | GGF_DISABLED, 0, s_cw_connect
+        lda login_mode                  ; (picked before: Back, or a lost connection)
         beq +
-        lda #0
-+       ldx #CG_DHCP
-        jsr _set
-        lda login_static
+        jsr ui_mode
++       lda #CW
+        ldx #CG_SERVER
+        jmp gui_focus
+
+; the gadgets as login_mode says: the radio buttons, the four boxes (Static IP only), Connect
+ui_mode:
+        ldx #CG_DHCP                    ; the radio buttons
+        ldy #1
+        jsr _radio
         ldx #CG_STATIC
-_set:   sta gp_x
+        ldy #2
+        jsr _radio
+        lda #GGF_DISABLED               ; the boxes
+        ldx login_mode
+        cpx #2
+        bne +
+        lda #0
++       sta ui_t
+        lda #CG_IP
+        sta ui_k
+-       lda ui_t
+        sta gp_flags
+        lda #CW
+        ldx ui_k
+        jsr gui_set_flags
+        inc ui_k
+        lda ui_k
+        cmp #CG_DNS + 1
+        bne -
+        lda #GGF_DEFAULT                ; Connect
+        sta gp_flags
+        lda #CW
+        ldx #CG_CONNECT
+        jmp gui_set_flags
+; X = a radio button: on if login_mode = Y
+_radio: lda #0
+        cpy login_mode
+        bne +
+        lda #1
++       sta gp_x
         lda #0
         sta gp_x+1
         lda #CW
@@ -78,18 +118,49 @@ ui_signon:
 ui_connect_click:
         lda ge_gid
         cmp #CG_DHCP
-        bne +
-        lda #0
-        bra _mode
-+       cmp #CG_STATIC
-        bne +
+        bne _static
+        lda login_mode                  ; DHCP
+        cmp #1
+        beq _out
+        jsr ui_keep                     ; (what was typed stays, for Static IP later)
         lda #1
-_mode:  sta login_static
-        jmp ui_radios
-+       cmp #CG_CONNECT
+        sta login_mode
+        lda #0
+        sta l_ipshown                   ; (its boxes: DHCP's answer, when there is one)
+        lda login_staticup              ; the static addresses in use: the stack afresh
         beq +
-        rts
-+       lda #CW                         ; the server's address (kept, for Back)
+        lda #0
+        sta login_staticup
+        lda #NS_OFF
+        sta net_state
++       lda #3                          ; (login_step: a few frames, then the request)
+        sta l_wait
+        jsr ui_mode
+        lda #<s_cw_asking
+        ldx #>s_cw_asking
+        jmp login_status
+_static:
+        cmp #CG_STATIC
+        bne _connect
+        lda login_mode
+        cmp #2
+        beq _out
+        lda #2
+        sta login_mode
+        jsr ui_mode
+        lda #CW
+        ldx #CG_IP
+        jsr gui_focus
+        lda #<s_cw_type
+        ldx #>s_cw_type
+        jmp login_status
+_out:   rts
+_connect:
+        cmp #CG_CONNECT
+        bne _out
+        lda login_mode
+        beq _out
+        lda #CW                         ; the server's address (kept, for Back)
         ldx #CG_SERVER
         jsr gui_get_text
         sta txt_ptr
@@ -113,97 +184,21 @@ _mode:  sta login_static
         sta login_ip,x
         dex
         bpl -
-        lda login_static                ; Static IP: its addresses first
-        beq +
-        jmp ui_static_open
-+       lda login_staticup              ; DHCP again after static addresses: start afresh
-        beq +
-        lda #0
-        sta login_staticup
-        sta l_ipshown
-        lda #NS_OFF
-        sta net_state
-        lda #CW
-        sta gp_win
-        lda #CG_MYIP
-        sta gp_gid
-        lda #<s_cw_getting
-        sta gp_text
-        lda #>s_cw_getting
-        sta gp_text+1
-        jsr gui_set_text
+        lda login_mode                  ; Static IP: the addresses checked first
+        cmp #2
+        bne +
+        jmp ui_static_ok
 +       lda #LS_CONNECTING
         sta login_state
         lda #<s_cw_conn
         ldx #>s_cw_conn
         jmp login_status
 
-;---------------------------------------------------------------------------------------
-; the Static Address window
-;---------------------------------------------------------------------------------------
-ui_static_open:
-        lda ui_have                     ; nothing typed yet: what DHCP found, if anything
-        bne _win
-        lda net_state
-        cmp #NS_READY
-        bne _win
-        .if MOCK_NET == 0 && BRIDGE_NET == 0
-        #NET_A MIP_GET_LOCAL_IP
-        jsr ui_ip_in
-        ldx #0
-        jsr ui_ip_text
-        #NET_A MIP_GET_SUBNET_MASK
-        jsr ui_ip_in
-        ldx #16
-        jsr ui_ip_text
-        #NET_A MIP_GET_GATEWAY_IP
-        jsr ui_ip_in
-        ldx #32
-        jsr ui_ip_text
-        #NET_A MIP_GET_PRIMARY_DNS
-        jsr ui_ip_in
-        ldx #48
-        jsr ui_ip_text
-        .endif
-_win:   #GUI_WIN SW, LOGIN_X, LOGIN_Y + 8, LOGIN_W, SW_H, GWF_MODAL | GWF_CLOSE | GWF_MOVABLE, s_sw_title
-        #GUI_GAD SW, 1, GK_LABEL, 8, 4, 108, 12, 0, 0, s_sw_ip
-        #GUI_GAD SW, SG_IP, GK_TEXT, 118, 4, 162, 12, 0, 15, ui_txt
-        #GUI_GAD SW, 3, GK_LABEL, 8, 20, 108, 12, 0, 0, s_sw_mask
-        #GUI_GAD SW, SG_MASK, GK_TEXT, 118, 20, 162, 12, 0, 15, (ui_txt + 16)
-        #GUI_GAD SW, 5, GK_LABEL, 8, 36, 108, 12, 0, 0, s_sw_gw
-        #GUI_GAD SW, SG_GW, GK_TEXT, 118, 36, 162, 12, 0, 15, (ui_txt + 32)
-        #GUI_GAD SW, 7, GK_LABEL, 8, 52, 108, 12, 0, 0, s_sw_dns
-        #GUI_GAD SW, SG_DNS, GK_TEXT, 118, 52, 162, 12, 0, 15, (ui_txt + 48)
-        #GUI_GAD SW, SG_STATUS, GK_LABEL, 10, 70, 268, 10, GGF_CENTRE, 0, s_sw_hint
-        #GUI_GAD SW, SG_OK, GK_BUTTON, 52, 86, 88, 16, GGF_DEFAULT, 0, s_sw_ok
-        #GUI_GAD SW, SG_CANCEL, GK_BUTTON, 148, 86, 88, 16, 0, 0, s_sw_cancel
-        lda #SW
-        ldx #SG_IP
-        jsr gui_focus
-        lda #SW
-        jmp gui_win_show
-
-ui_static_event:
-        lda ge_type
-        cmp #GE_CLOSE
-        beq _cancel
-        cmp #GE_CLICK
-        bne _out
-        lda ge_gid
-        cmp #SG_CANCEL
-        beq _cancel
-        cmp #SG_OK
-        beq ui_static_ok
-_out:   rts
-_cancel:
-        jsr ui_keep                     ; (what was typed stays for next time)
-        lda #SW
-        jmp gui_win_close
-
-; OK: every address checked (DNS may be empty), then login_step starts the network with them
+; Connect with Static IP: every address checked (the DNS server may be empty), then
+; login_step restarts mega-ip with them (ui_static_start) once the screen is drawn
 ui_static_ok:
         jsr ui_keep
-        lda #0                          ; each box in turn: A = its offset in ui_txt
+        lda #0                          ; each box in turn: its offset in ui_txt
         sta ui_k
 _box:   lda ui_k
         clc
@@ -240,16 +235,14 @@ _next:  lda ui_k
         bne _box
         lda ui_txt + 48                 ; (DNS given?)
         sta ui_dns
-        lda #SW
-        jsr gui_win_close
         lda #NS_OFF                     ; login_step: LS_CONNECTING with the network off and
         sta net_state                   ; Static IP: ui_static_start, after a redraw
         lda #2
         sta l_wait
         lda #LS_CONNECTING
         sta login_state
-        lda #<s_sw_start
-        ldx #>s_sw_start
+        lda #<s_cw_start
+        ldx #>s_cw_start
         jmp login_status
 _bad:   lda ui_k                        ; which one
         lsr
@@ -258,27 +251,25 @@ _bad:   lda ui_k                        ; which one
         lsr
         tax
         lda ui_err_lo,x
-        sta gp_text
+        pha
         lda ui_err_hi,x
-        sta gp_text+1
-        lda #SW
-        sta gp_win
-        lda #SG_STATUS
-        sta gp_gid
-        jmp gui_set_text
+        tax
+        pla
+        jmp login_status
 
-; the four boxes' texts -> ui_txt (16 bytes each), and remember they were typed
+; the four boxes' texts -> ui_txt (16 bytes each)
 ui_keep:
         lda #0
         sta ui_k
-_box:   lda ui_k                        ; gadget 2, 4, 6, 8
+_box:   lda ui_k                        ; gadget CG_IP + k / 16
+        lsr
         lsr
         lsr
         lsr
         clc
-        adc #SG_IP
+        adc #CG_IP
         tax
-        lda #SW
+        lda #CW
         jsr gui_get_text
         bcs _next
         sta txt_ptr
@@ -300,9 +291,61 @@ _next:  lda ui_k
         sta ui_k
         cmp #64
         bne _box
-        lda #1
-        sta ui_have
         rts
+
+; (show_myip, DHCP: the network is ready) its address, mask, gateway and DNS server in the
+; four boxes
+ui_show_dhcp:
+        .if MOCK_NET == 0 && BRIDGE_NET == 0
+        #NET_A MIP_GET_LOCAL_IP
+        jsr ui_ip_in
+        ldx #0
+        jsr ui_ip_text
+        #NET_A MIP_GET_SUBNET_MASK
+        jsr ui_ip_in
+        ldx #16
+        jsr ui_ip_text
+        #NET_A MIP_GET_GATEWAY_IP
+        jsr ui_ip_in
+        ldx #32
+        jsr ui_ip_text
+        #NET_A MIP_GET_PRIMARY_DNS
+        jsr ui_ip_in
+        ldx #48
+        jsr ui_ip_text
+        .else
+        ldx #63                         ; (no network of its own: stand-ins)
+-       lda ui_standin,x
+        sta ui_txt,x
+        dex
+        bpl -
+        .endif
+        lda #CG_IP
+        sta ui_k
+        lda #<ui_txt
+        sta gp_text
+        lda #>ui_txt
+        sta gp_text+1
+-       lda #CW
+        sta gp_win
+        lda ui_k
+        sta gp_gid
+        jsr gui_set_text
+        clc
+        lda gp_text
+        adc #16
+        sta gp_text
+        bcc +
+        inc gp_text+1
++       inc ui_k
+        lda ui_k
+        cmp #CG_DNS + 1
+        bne -
+        lda #1
+        sta l_ipshown
+        lda #<s_cw_ready
+        ldx #>s_cw_ready
+        jmp login_status
 
 ; (login_step) mega-ip again, with the static addresses: carry set if it failed
 ui_static_start:
@@ -339,8 +382,6 @@ ui_static_start:
         .endif
         lda #1
         sta login_staticup
-        lda #0
-        sta l_ipshown                   ; (Your address: the static one)
         clc
 _out:   rts
 ; A, X, Y = bytes 1, 2, 3 -> X, Y, Z for the #NET call (byte 0 goes in A after)
@@ -492,33 +533,53 @@ pi_d:   .byte 0
 ui_ip:          .fill 4
 ui_addr:        .fill 16                ; IP, mask, gateway, DNS (4 bytes each)
 ui_txt:         .fill 16                ; the same as typed (16 each)
-        .null "255.255.255.0"         ; (a sensible mask to start with)
+        .null "255.255.255.0"           ; (a sensible mask to start with)
         .fill 2
         .fill 32
-ui_have:        .byte 0                 ; 1 once the window has been used
+        .if MOCK_NET || BRIDGE_NET
+ui_standin:     .null "10.0.0.65"       ; (what DHCP "gives" a build with no network)
+        .fill 6
+        .null "255.255.255.0"
+        .fill 2
+        .null "10.0.0.1"
+        .fill 7
+        .null "8.8.8.8"
+        .fill 8
+        .endif
 ui_dns:         .byte 0
 ui_k:           .byte 0
 ui_t:           .byte 0
 ui_h:           .byte 0
 ui_o:           .byte 0
-ui_err_lo:      .byte <s_sw_badip, <s_sw_badmask, <s_sw_badgw, <s_sw_baddns
-ui_err_hi:      .byte >s_sw_badip, >s_sw_badmask, >s_sw_badgw, >s_sw_baddns
+ui_err_lo:      .byte <s_cw_badmy, <s_cw_badmask, <s_cw_badgw, <s_cw_baddns
+ui_err_hi:      .byte >s_cw_badmy, >s_cw_badmask, >s_cw_badgw, >s_cw_baddns
 
 s_cw_title:     .null "Connect"
-s_cw_myip:      .null "Your address:"
 s_cw_net:       .null "Network:"
 s_cw_dhcp:      .null "DHCP"
 s_cw_static:    .null "Static IP"
+s_cw_ip:        .null "IP address:"
+s_cw_mask:      .null "Subnet mask:"
+s_cw_gw:        .null "Gateway:"
+s_cw_dns:       .null "DNS server:"
 s_cw_server:    .null "Server:"
         .if MOCK_NET || BRIDGE_NET              ; (so a test disk is never taken for the real one)
-s_cw_hint:      .null "Xemu test build: no Ethernet."
+s_cw_hint:      .null "Xemu test build: no Ethernet. Pick DHCP or Static IP."
         .elsif DEBUG_NET
-s_cw_hint:      .null "Debug build: F1 shows the log."
+s_cw_hint:      .null "Debug build: F1 shows the log. Pick DHCP or Static IP."
         .else
-s_cw_hint:      .null "Check the server, then Connect."
+s_cw_hint:      .null "Pick DHCP or Static IP, then Connect."
         .endif
 s_cw_connect:   .null "Connect"
+s_cw_asking:    .null "Asking for an address (DHCP)..."
+s_cw_ready:     .null "Address found: check the server, then Connect."
+s_cw_type:      .null "Type the addresses (DNS may be empty), then Connect."
+s_cw_start:     .null "Starting the network..."
 s_cw_badip:     .null "Server: four numbers, like 192.168.1.10"
+s_cw_badmy:     .null "IP address: four numbers, 0-255"
+s_cw_badmask:   .null "Subnet mask: four numbers, 0-255"
+s_cw_badgw:     .null "Gateway: four numbers, 0-255"
+s_cw_baddns:    .null "DNS server: four numbers, 0-255"
 s_cw_conn:      .null "Connecting to the server..."
 s_lw_title:     .null "Sign On"
 s_lw_name:      .null "Screen name:"
@@ -527,16 +588,3 @@ s_lw_hint:      .null "Sign On, or New User to join."
 s_lw_signon:    .null "Sign On"
 s_lw_new:       .null "New User"
 s_lw_back:      .null "Back"
-s_sw_title:     .null "Static Address"
-s_sw_ip:        .null "IP address:"
-s_sw_mask:      .null "Subnet mask:"
-s_sw_gw:        .null "Gateway:"
-s_sw_dns:       .null "DNS server:"
-s_sw_hint:      .null "The DNS server may be left empty."
-s_sw_ok:        .null "OK"
-s_sw_cancel:    .null "Cancel"
-s_sw_start:     .null "Starting the network..."
-s_sw_badip:     .null "IP address: four numbers, 0-255"
-s_sw_badmask:   .null "Subnet mask: four numbers, 0-255"
-s_sw_badgw:     .null "Gateway: four numbers, 0-255"
-s_sw_baddns:    .null "DNS server: four numbers, 0-255"

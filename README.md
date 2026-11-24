@@ -105,10 +105,13 @@ Build and run
 
 Client: `build.bat` assembles `client-src/main.asm` and writes `target/meganet.d81`, the disk
 for a real MEGA65. `run.bat` builds it and starts Xemu. On a MEGA65, plug in Ethernet on a
-network with DHCP, run the server on a PC (or use a hosted one), check its IP address on the
-sign-on screen, and click Connect, then Sign On. Without DHCP, pick **Static IP** on the
-Connect window: Connect then asks for the IP address, subnet mask, gateway and (if you like)
-a DNS server, and starts the network with them. The address starts filled in with the first
+network, run the server on a PC (or use a hosted one), and on the Connect window pick how
+the MEGA65 gets its address. Nothing starts until you pick:
+- **DHCP** asks the network for an address, and the window shows the address, mask, gateway
+  and DNS server it got.
+- **Static IP** lets you type them in. The DNS server may stay empty.
+
+Check the server's address, click Connect, then Sign On. The address starts filled in with the first
 line of `private/server_address.txt` (or `MEGANET_SERVER`), when there is one: the build writes
 it to `client-src/gen/server.asm`, so it stays out of git. The first time,
 click New User instead: a step-by-step sign-up (screen name, password, about you, about me, then
