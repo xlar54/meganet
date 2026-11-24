@@ -2,7 +2,9 @@
 # puts this file on the disk as VERSION, where the server reads it: a newer disk in the
 # server's "MegaNet Client" file library is offered to older clients (server-src updates.py).
 #   build   raise it for each release: a whole number, what the client and server compare
-#   name    the version people see (Connect window, update window, File Library): "2.1"
+#   name    the version people see (Connect window, update window, File Library): always
+#           one digit, a dot, one digit, like 2.1 (after 2.9 comes 3.0). The update is saved
+#           on the SD card as MEGANE and the two digits: 2.1 -> MEGANE21.D81
 #   oldest  the oldest client that may still sign on to a server that has this disk; older
 #           ones must update first (raise it when the protocol changes in a way they can't
 #           follow)

@@ -269,7 +269,7 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
 3. **When an older client connects,** the server's "MegaNet Update" window comes up over the
    Sign On: Download or Later; if the client is older than the release's `oldest`, Download or
    Disconnect, and it can't sign on.
-4. **Download** is the File Library's download of a D81 to the SD card's root (`MEGANETn.D81`):
+4. **Download** is the File Library's download of a D81 to the SD card's root (`MEGANE21.D81` (MEGANET cut short with the version's digits)):
    the client stages it in attic, checks the CRC and writes it, never over an existing file. So
    every client that can write to its SD card can update, the first one included, and the disk
    it's running from is never touched: a dropped connection or a power cut can't leave half an

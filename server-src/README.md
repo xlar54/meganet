@@ -1155,7 +1155,7 @@ is the File Library's **MegaNet Client** library, made when the first disk appea
 entry for each disk, so anyone can download one by hand too.
 
 When a client connects with an older build, the server shows **MegaNet Update** (`$49`) over
-the Sign On window: the versions, **Download** (the disk to the SD card's root as `MEGANETn.D81`,
+the Sign On window: the versions, **Download** (the disk to the SD card's root as `MEGANE21.D81` (MEGANET cut short with the version's digits),
 by the File Library's download: staged, CRC-checked, never over a file that's there) and
 **Later** (or **Disconnect**, when the client is older than the release's `oldest`: LOGIN is
 refused until then). Afterwards it says how to start it: the Freeze Menu (hold RESTORE), 0 for

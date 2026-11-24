@@ -59,10 +59,11 @@ def build_name(build):
     return BUILD_NAMES.get(build, str(build))
 
 
-def sd_name(build):
-    """The update's 8.3 name on the SD card: MEGANET7.D81, then MN000012.D81."""
-    base = "MEGANET%d" % build
-    return (base if len(base) <= 8 else "MN%06d" % (build % 1000000)) + ".D81"
+def sd_name(name):
+    """The update's 8.3 name on the SD card, from its version's name: its letters and digits
+    after as much of MEGANET as fits in 8 (2.1 -> MEGANE21.D81, 2 -> MEGANET2.D81)."""
+    tag = re.sub(r"[^0-9A-Za-z]", "", str(name)).upper()[:8]
+    return ("MEGANET"[:8 - len(tag)] + tag) + ".D81"
 
 
 class Updates:
@@ -177,7 +178,7 @@ class Updates:
             lines = ["You can sign on as you are, or get it first."]
         if session.caps & Caps.SD_WRITE:
             lines += ["Download saves it on your SD card as",
-                      "%s. Your disk now stays as it is." % sd_name(new)]
+                      "%s. Your disk now stays as it is." % sd_name(rel[0]["name"])]
             buttons = [("Download", lambda b: self.download(session), GFlag.DEFAULT)]
         else:
             lines += ["Your MegaNet can't save to an SD card:",
@@ -223,7 +224,7 @@ class Updates:
         if f is None:
             return session.alert("MegaNet Update", "The new disk isn't in its library.")
         session.before_sign_on.add(self.files.WIN_TRANSFER)
-        UpdateDownload(self, session, f, sd_name(rel[0]["build"]), data, rel[0]).start()
+        UpdateDownload(self, session, f, sd_name(rel[0]["name"]), data, rel[0]).start()
         return None
 
     def done(self, session, path, version, ok):

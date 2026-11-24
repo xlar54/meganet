@@ -60,8 +60,9 @@ class VersionTest(unittest.TestCase):
             d81.files(b"short")
 
     def test_sd_names(self):
-        self.assertEqual(sd_name(2), "MEGANET2.D81")
-        self.assertEqual(sd_name(123), "MN000123.D81")
+        self.assertEqual(sd_name("2"), "MEGANET2.D81")
+        self.assertEqual(sd_name("2.1"), "MEGANE21.D81")
+        self.assertEqual(sd_name("3.0"), "MEGANE30.D81")
 
 
 class UpdateTest(ServerTest):

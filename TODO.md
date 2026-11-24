@@ -43,7 +43,7 @@
 - [x] Client updates (2026-11-22, branch client-update): client-src/VERSION (build, oldest)
       compiled in and put on the disk; a newer D81 in the server's filelibs/meganet_client/
       ("MegaNet Client" library) is offered to older clients before they sign on: Download
-      (to the SD card as MEGANETn.D81, by the File Library's download) and Later, or
+      (to the SD card as MEGANE21.D81 (MEGANET cut short with the version's digits), by the File Library's download) and Later, or
       Disconnect when too old. deploy.ps1 -PublishClient. Tried in Xemu: the offer window
 - [ ] Update in place (no remounting): write the files to the running disk under temp
       names, scratch, rename, restart; needs new client code (a DOS command message)

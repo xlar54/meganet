@@ -120,8 +120,11 @@ def read_version(path=VERSION_FILE):
         sys.exit('client-src/VERSION: build=1..65535 and oldest=1..build')
     out.setdefault('oldest', 1)
     out.setdefault('name', str(out['build']))
-    if not re.fullmatch(r'[0-9A-Za-z.]{1,8}', out['name']):
-        sys.exit('client-src/VERSION: name is 1-8 letters, digits and dots, like 2.1')
+    # always one digit each, major.minor (2.1; after 2.9 comes 3.0): the update's SD card
+    # name is MEGANE and the two digits, MEGANE21.D81 (server-src updates.sd_name)
+    if not re.fullmatch(r'\d\.\d', out['name']):
+        sys.exit('client-src/VERSION: name is one digit, a dot, one digit, like 2.1 '
+                 '(after 2.9 comes 3.0)')
     return out
 
 

@@ -86,14 +86,16 @@ Status: early.
   The disk has `MEGANET` and the overlay files, built together.
 - **Updates:** the client's version is `client-src/VERSION`, also on the disk as `VERSION`.
   - `build` is a whole number that the client and server compare.
-  - `name` (for example 2.1) is what the Connect screen, the update window and the library
-    show.
+  - `name` is what the Connect screen, the update window and the library show. It is
+    always one digit, a dot, one digit, like 2.1. After 2.9 comes 3.0.
 
   Put a newer `meganet.d81` in the server's `filelibs/meganet_client/` and older clients are
   offered it when they connect. The "MegaNet Client" library lists only the newest disk, and
-  publishing removes the older ones. Download saves it on their SD card as `MEGANETn.D81`
-  (n is the build). Members too old for the server must download it before signing on. See
-  `server-src/README.md`, "Publishing a client update".
+  publishing removes the older ones. Download saves it on their SD card as an 8.3 name:
+  MEGANE and the version's two digits. So 2.1 is `MEGANE21.D81`, and publishing
+  calls the file on the server the same (`megane21.d81`). Members too old for the server
+  must download it before signing on. See `server-src/README.md`, "Publishing a client
+  update".
 - **Server Log:** everything the server logs (connections, sign-ons and failed ones, what
   people do in each area, refusals, crashes with their tracebacks) is kept in the database
   as well, for admins to read in Admin > Server Log... with filters by area, level, user and
