@@ -1158,8 +1158,8 @@ When a client connects with an older build, the server shows **MegaNet Update** 
 the Sign On window: the versions, **Download** (the disk to the SD card's root as `MEGANE21.D81` (MEGANET cut short with the version's digits),
 by the File Library's download: staged, CRC-checked, never over a file that's there) and
 **Later** (or **Disconnect**, when the client is older than the release's `oldest`: LOGIN is
-refused until then). Afterwards it says how to start it: the Freeze Menu (hold RESTORE), 0 for
-drive 8, pick the disk, reset. The disk the client is running from isn't touched. Every client
+refused until then). Afterwards it says how to start it: turn the MEGA65 off, then start it
+again with the new disk. The disk the client is running from isn't touched. Every client
 with `Caps.SD_WRITE` can do this (the first client too: it needs nothing new); one without is
 told to ask the Sysop. The windows and the download's replies are accepted before sign-on
 (`session.before_sign_on`).

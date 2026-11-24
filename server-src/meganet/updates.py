@@ -13,7 +13,7 @@ window before the Sign On (WIN_UPDATE): the versions, and
     client with Caps.SD_WRITE already does: it stages the image, checks its CRC and writes
     it, never over a file that's there) and Later; or, when the client is older than the
     release's "oldest", Download and Disconnect, and it can't sign on.
-Afterwards it says how to start the new disk (mount it as drive 8, reset). The disk the
+Afterwards it says how to start the new disk (turn the MEGA65 off and on with it). The disk the
 client runs from isn't touched, so a dropped connection can't leave half an update.
 """
 
@@ -234,9 +234,8 @@ class Updates:
                              flags=WFlag.MODAL | WFlag.MOVABLE)
         if ok:
             lines = ["Saved %s: MegaNet version %s." % (path, version["name"]),
-                     "To start it, hold RESTORE for the Freeze Menu,",
-                     "press 0 for drive 8 and pick %s," % path,
-                     "then reset the MEGA65."]
+                     "To use it, turn your MEGA65 off, then start",
+                     "it again with %s as its disk." % path]
         else:
             lines = ["The new disk didn't arrive: try again, or get",
                      "it later from File Library > %s." % CLIENT_TITLE]

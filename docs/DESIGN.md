@@ -273,7 +273,7 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
    the client stages it in attic, checks the CRC and writes it, never over an existing file. So
    every client that can write to its SD card can update, the first one included, and the disk
    it's running from is never touched: a dropped connection or a power cut can't leave half an
-   update. The user then mounts the new disk (the Freeze Menu) and resets.
+   update. The user then turns the MEGA65 off and starts it again with the new disk.
 5. A later client could update in place (write its files to the disk it runs from under
    temporary names, scratch the old ones, rename the new ones, restart): no remounting, but it
    needs new client code, so only clients from then on could do it.

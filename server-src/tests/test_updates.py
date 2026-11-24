@@ -145,6 +145,8 @@ class UpdateTest(ServerTest):
         c.windows.pop(WIN_UPDATE, None)
         w = await c.wait_window("MegaNet Update")
         self.assertIn("Saved MEGANET5.D81: MegaNet version 5.", self.texts(w))
+        self.assertIn("To use it, turn your MEGA65 off, then start", self.texts(w))
+        self.assertIn("it again with MEGANET5.D81 as its disk.", self.texts(w))
         c.click_text(WIN_UPDATE, "OK")
         await c.wait_for(lambda: WIN_UPDATE not in c.windows, "closed")
         ok, msg = await self.login(c, "frank", "pass1", new=True)
