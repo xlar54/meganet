@@ -45,6 +45,7 @@ from .protocol import (TOAST_NO_SLOT, clean_text, S, C, Writer, Deframer, Protoc
 log = logging.getLogger("meganet")
 
 RING_GAP = 3.0               # seconds: a burst of messages rings once (ring)
+TAKEOVER_WAIT = 5.0          # seconds a sign-on waits for its name's old session to go
 SID_SLOT = 10                # the resource slot a SID tune goes in (1 chess, 2-7 the Art
                              # Gallery, 8 One, 9 poker)
 
@@ -138,6 +139,7 @@ class Session:
         self.signup = None           # signup.Wizard while the New User wizard runs
         self.conn = None             # the server log's connection number (its first row)
         self.closed = False
+        self.gone = asyncio.Event()  # set once the server has cleaned up after it (server.py)
 
     # ---- the server log (serverlog.py): console and database ----
 
@@ -398,6 +400,12 @@ class Session:
         self.closed = True
         self.writer.close()
 
+    def kill(self):
+        """Drop the connection at once, unsent data and all: for a session that's gone quiet
+        (a MEGA65 switched off without signing off), whose buffer would never drain."""
+        self.closed = True
+        self.writer.transport.abort()
+
     # ---- receiving ----
 
     async def run(self):
@@ -614,8 +622,20 @@ class Session:
         row = db.user(name)                      # (after the password: no hint to strangers)
         if row is not None and row["locked"]:
             return False, "This account is locked. Ask the Sysop."
-        if self.server.find_user(name):
-            return False, "%s is already signed on." % db.canonical_name(name)
+        old = self.server.find_user(name)
+        if old is not None and old is not self:
+            # still signed on (a MEGA65 switched off or reset, its connection not yet seen to
+            # be gone): with the right password, that session goes and this one takes over
+            old.log("signed on again from another connection: this one closed", area="login")
+            self.log("%s was still signed on: that session closed" % old.user, area="login")
+            old.kill()
+            try:
+                await asyncio.wait_for(old.gone.wait(), TAKEOVER_WAIT)
+            except asyncio.TimeoutError:
+                pass
+            if self.server.find_user(name) is not None:
+                return False, "%s is already signed on: try again in a moment." % (
+                    db.canonical_name(name))
         return True, "Welcome back, %s." % db.canonical_name(name)
 
 

@@ -1,5 +1,6 @@
 """End-to-end tests: a real server on a random port, fake clients over real TCP."""
 
+import asyncio
 import tempfile
 import unittest
 
@@ -111,12 +112,14 @@ class SignOnTest(ServerTest):
         self.assertFalse(ok)
 
     async def test_already_signed_on(self):
+        """Signing on again takes over: the old session goes (test_connection.py has more)."""
+        asyncio.get_running_loop().set_exception_handler(lambda lp, ctx: None)  # (its reset)
         await self.signed_on("Erin")
         c = await self.client("x")
         c.send_hello()
         ok, msg = await self.login(c, "erin", "secret")
-        self.assertFalse(ok)
-        self.assertIn("already", msg)
+        self.assertTrue(ok, msg)
+        self.assertEqual(sum(1 for s in self.server.sessions if s.user == "Erin"), 1)
 
 
 class ChatTest(ServerTest):

@@ -124,6 +124,7 @@ class Server:
             session.log("disconnected after %d:%02d" % (mins // 60, mins % 60)
                         + (" (signed on as %s)" % session.user if session.user else ""),
                         area="conn")
+            session.gone.set()                   # (a sign-on taking over waits for this)
 
     def permissions_changed(self, role_id=None, user_id=None):
         """An admin changed a role's permissions (role_id) or moved a user to another role

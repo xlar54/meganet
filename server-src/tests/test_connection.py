@@ -57,3 +57,29 @@ class ConnectionTest(ServerTest):
         self.assertTrue(any("No route to host" in r["text"] for r in rows))
         self.assertTrue(self.server.db.log_entries(text="disconnected after")[0])
         self.assertIn(self.session_of("alice"), self.server.sessions)    # the others go on
+
+    async def test_signing_on_again_takes_over_the_old_session(self):
+        """A MEGA65 switched off without signing off leaves its session open: signing on
+        again (the right password) closes that one and goes ahead."""
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(lambda lp, ctx: None)      # (the old socket's reset)
+        await self.signed_on("bob")
+        old = self.session_of("bob")
+        c = await self.client("bob again")
+        c.send_hello(100, 0)
+        await c.wait_for(lambda: c.hello, "HELLO")
+        ok, msg = await self.login(c, "bob", "wrong")          # the wrong password: no
+        self.assertFalse(ok)
+        self.assertIn(old, self.server.sessions, "the old one is untouched")
+        ok, msg = await self.login(c, "bob", "secret")
+        self.assertTrue(ok, msg)
+        self.assertEqual(msg, "Welcome back, bob.")
+        self.assertTrue(old.closed and old.gone.is_set())
+        self.assertNotIn(old, self.server.sessions)
+        new = self.server.find_user("bob")
+        self.assertIsNotNone(new)
+        self.assertIsNot(new, old)
+        self.assertEqual(sum(1 for s in self.server.sessions if s.user == "bob"), 1)
+        await c.wait_window("Welcome")
+        rows = self.server.db.log_entries(text="signed on again")[0]
+        self.assertTrue(rows, "logged")
