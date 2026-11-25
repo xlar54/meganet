@@ -307,6 +307,8 @@ CREATE INDEX IF NOT EXISTS log_conn ON log (conn);
 """
 
 NAME_RE = re.compile(r"[A-Za-z0-9 ]{3,10}")     # (lists show 10)
+SYSTEM_USER = 0                  # private messages from MegaNet itself (a referral, ...)
+SYSTEM_NAME = "MegaNet"          # what they show as the sender (no member may take it)
 FORUM_NAME_MAX = 20
 FIRST_FORUM = "General"          # the forum a new database starts with
 LOBBY = "Lobby"                  # the chat room a new database starts with (never deleted)
@@ -340,6 +342,8 @@ USER_COLUMNS = [("role_id", "INTEGER REFERENCES roles(id)"),
                 ("ring_away", "INTEGER NOT NULL DEFAULT 1"),
                 # My Account's "Activity ticker" (livedesk.py): on unless they untick it
                 ("show_ticker", "INTEGER NOT NULL DEFAULT 1"),
+                # the member who referred them (sign-up's "Referred by"), if any
+                ("referred_by", "INTEGER"),
                 # an admin locked it (User Editor > Lock): it can't sign on until unlocked
                 ("locked", "INTEGER NOT NULL DEFAULT 0")]
 # The bank (bank.py): its settings are one JSON setting; a new account's opening balance is
@@ -565,6 +569,8 @@ def check_new_name(name):
         return "Screen names are 3-10 letters, digits or spaces."
     if name != name.strip() or "  " in name:
         return "No leading, trailing or double spaces in screen names."
+    if name.lower() == SYSTEM_NAME.lower():
+        return "%s is MegaNet's own name: please choose another." % SYSTEM_NAME
     return None
 
 
@@ -914,7 +920,8 @@ class Database:
 
     _USER_SQL = ("SELECT u.id, u.name, u.created, u.role_id, r.name AS role, u.first_name, "
                  "u.last_name, u.email, u.location, u.birthdate, u.about, u.last_login, "
-                 "u.karma, u.tos_agreed, u.credits, u.ring_away, u.show_ticker, u.locked FROM users u "
+                 "u.karma, u.tos_agreed, u.credits, u.ring_away, u.show_ticker, u.locked, "
+                 "u.referred_by FROM users u "
                  "LEFT JOIN roles r ON r.id = u.role_id ")
 
     def user(self, name=None, user_id=None):
@@ -962,6 +969,11 @@ class Database:
         with self.conn:
             self.conn.execute("UPDATE users SET ring_away = ? WHERE id = ?",
                               (1 if on else 0, user_id))
+
+    def set_referred_by(self, user_id, referrer_id):
+        with self.conn:
+            self.conn.execute("UPDATE users SET referred_by = ? WHERE id = ?",
+                              (referrer_id, user_id))
 
     def set_show_ticker(self, user_id, on):
         with self.conn:
@@ -1033,7 +1045,9 @@ class Database:
     # The body is the message's lines joined with "\n". A message stays until both the sender
     # (del_sender: gone from their Sent folder) and the recipient (del_recip) have deleted it.
 
-    _PM_SQL = ("SELECT m.id, m.from_user, m.to_user, COALESCE(f.name, '?') AS from_name, "
+    _PM_SQL = ("SELECT m.id, m.from_user, m.to_user, "
+               "CASE WHEN m.from_user = %d THEN '%s' ELSE COALESCE(f.name, '?') END AS from_name, "
+               % (SYSTEM_USER, SYSTEM_NAME) +
                "COALESCE(t.name, '?') AS to_name, m.sent, m.subject, m.body, m.read "
                "FROM private_messages m LEFT JOIN users f ON f.id = m.from_user "
                "LEFT JOIN users t ON t.id = m.to_user ")

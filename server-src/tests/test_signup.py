@@ -67,27 +67,28 @@ class WizardMixin:
         c.value(WIN_SIGNUP, gadget_of(win, Kind.PASSWORD, 0), pw)
         c.value(WIN_SIGNUP, gadget_of(win, Kind.PASSWORD, 1), pw if confirm is None else confirm)
 
-    def fill3(self, c, date=("--", "--", "--"), location="", email=""):
+    def fill3(self, c, date=("--", "--", "--"), location="", email="", referral=""):
         win = c.windows[WIN_SIGNUP]
         for i, row in enumerate(date):
             gid = gadget_of(win, Kind.DROPDOWN, i)
             c.pick_dropdown(WIN_SIGNUP, gid, win.gadgets[gid]["rows"].index(row))
         c.value(WIN_SIGNUP, gadget_of(win, Kind.TEXTBOX, 0), location)
         c.value(WIN_SIGNUP, gadget_of(win, Kind.TEXTBOX, 1), email)
+        c.value(WIN_SIGNUP, gadget_of(win, Kind.TEXTBOX, 2), referral)
 
     def fill4(self, c, lines):
         win = c.windows[WIN_SIGNUP]
         c.text(WIN_SIGNUP, gadget_of(win, Kind.EDIT), lines)
 
     async def to_review(self, c, name, pw="pass1", date=("--", "--", "--"), location="",
-                        email="", about=()):
+                        email="", about=(), referral=""):
         self.fill1(c, name)
         self.assertIsNone(await self.press(c, "Next"))
         await self.at(c, 2)
         self.fill2(c, pw)
         self.assertIsNone(await self.press(c, "Next"))
         await self.at(c, 3)
-        self.fill3(c, date, location, email)
+        self.fill3(c, date, location, email, referral)
         self.assertIsNone(await self.press(c, "Next"))
         await self.at(c, 4)
         self.fill4(c, about)
@@ -244,6 +245,53 @@ class SignupTest(WizardMixin, PagesBase):
         c.send_login("", "", new=True)
         await c.wait_for(lambda: len(c.login_results) > n, "refused")
         self.assertEqual(c.login_results[-1], (False, "You are already signed on."))
+
+    async def test_referral(self):
+        """Referred by: a member's name (checked on step 3), shown in the review; on OK the
+        referrer gets the bank's referral credits, a private message from MegaNet and a
+        toast, and the new account remembers them."""
+        bob = self.bob
+        bob_id = self.server.db.user("bob")["id"]
+        before = self.server.db.credits(bob_id)
+        c = await self.start()
+        self.fill1(c, "Gina")
+        self.assertIsNone(await self.press(c, "Next"))
+        await self.at(c, 2)
+        self.fill2(c, "pass1")
+        self.assertIsNone(await self.press(c, "Next"))
+        await self.at(c, 3)
+        self.fill3(c, referral="nobody")
+        self.assertEqual(await self.press(c, "Next"),
+                         "No member is called nobody: check it, or leave it empty.")
+        self.fill3(c, referral="Gina")
+        self.assertEqual(await self.press(c, "Next"), "Referred by: someone else, not yourself.")
+        self.fill3(c, referral="BOB")                       # (any case)
+        self.assertIsNone(await self.press(c, "Next"))
+        await self.at(c, 4)
+        self.fill4(c, ["one", "two", "three"])
+        self.assertIsNone(await self.press(c, "Next"))
+        win = await self.at(c, 5)
+        shown = self.values(win)
+        self.assertIn("Referred by:", shown)
+        self.assertIn("BOB", shown)
+        self.assertIn("one ...", shown, "About Me: one line, to make room")
+        ok, _msg = await self.accept(c)
+        self.assertTrue(ok)
+        paid = self.server.screens.bank.settings()["referral"]
+        self.assertGreater(paid, 0)
+        self.assertEqual(self.server.db.credits(bob_id), before + paid)
+        gina = self.server.db.user("Gina")
+        self.assertEqual(gina["referred_by"], bob_id)
+        e = self.server.db.credit_log(bob_id)[0]
+        self.assertEqual((e["reason"], e["delta"], e["memo"]), ("referral", paid, "Gina"))
+        m = self.server.db.inbox(bob_id)[0]
+        self.assertEqual((m["from_user"], m["from_name"], m["subject"]),
+                         (db.SYSTEM_USER, db.SYSTEM_NAME, "You referred Gina"))
+        self.assertIn("Gina has just joined MegaNet and says you referred them.", m["body"])
+        await bob.wait_for(lambda: any("you referred Gina" in t[2] for t in bob.toasts),
+                           "bob's toast")
+        self.assertEqual(db.check_new_name("MegaNet"),
+                         "MegaNet is MegaNet's own name: please choose another.")
 
     async def test_nothing_optional_given(self):
         c = await self.start()

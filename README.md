@@ -38,7 +38,10 @@ Status: early.
   Web Browser.
 - **Bank:** every user has **credits**: a starting balance (set by the Sysop), more for
   playing games (extra for a win at chess, One or Tic-Tac-Toe), message board posts, chat,
-  voting, and every hour signed on and active, each with a daily limit. Areas > Bank shows
+  voting, and every hour signed on and active, each with a daily limit. A new member can
+  name the member who referred them when signing up ("Referred by"). That member gets the
+  referral credits (100 to start with, set in Bank Settings) and a private message from
+  MegaNet about it. Areas > Bank shows
   the balance and a statement of every change, gives credits to another user (they get a
   private message), and lends credits at daily interest (part of what you earn repays it;
   an overdue loan stops gifts and poker). Poker is played with credits. My Account shows

@@ -12,6 +12,7 @@ messages, and at sign-on; clicking it opens the inbox. Every handler checks mail
 
 import time
 
+from . import db as dbmod
 from . import permissions as perms
 from .compose import Composer, refuse, sent
 from .protocol import WFlag, GFlag, Icon, SLOT_MAIL, clean_text
@@ -288,6 +289,8 @@ class Inbox:
         if self.msg_id is None:
             return self.say("Pick a message first.")
         m = self.db.private_message(self.msg_id)
+        if not self.sent and m["from_user"] == dbmod.SYSTEM_USER:
+            return self.say("That's from MegaNet itself: no one to reply to.")
         to = m["to_name"] if self.sent else m["from_name"]
         return self.mail.compose(self.session, to=to, subject=reply_subject(m["subject"]))
 

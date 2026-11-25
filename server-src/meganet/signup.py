@@ -10,8 +10,9 @@ One window, WIN_SIGNUP (20), centred, modal, W x H = 448 x 152, sent again for e
     1  Screen name   a welcome, the rule, a 10-character text box; First Name and Last Name
                      (required, db.check_real_name)
     2  Password      Password and Confirm, with the rule (db.check_new_password)
-    3  About you     Birthdate (Month / Day / Year drop-downs, as My Account), Location, Email
-                     (all optional)
+    3  About you     Birthdate (Month / Day / Year drop-downs, as My Account), Location, Email,
+                     Referred by (a member's screen name: they get the bank's referral
+                     credits and a private message from MegaNet) (all optional)
     4  About me      a TextArea as wide as My Account's (30-character lines, 8 lines, all shown)
     5  Review        every value on labels
     6  Terms of Service   the Terms (db.tos(), edited in Admin > Terms of Service...) in a
@@ -72,6 +73,7 @@ TAKEN = "That name is taken, please try another."
 BUSY = "Someone is signing up with that name: try another."
 MISMATCH = "The passwords don't match. Please type them again."
 NOT_GIVEN = "not given"
+NO_REFERRER = "No member is called %s: check it, or leave it empty."
 WELCOME_TITLE = "Welcome to MegaNet!"
 WELCOME_TEXT = "Account set up! An admin has been told and will upgrade your access."
 WELCOME_SYSOP = "Account set up! As the first member, you are the Sysop."
@@ -134,6 +136,7 @@ class Wizard:
         self.month = self.day = self.year = 0          # drop-down rows (0 = "--")
         self.years = [NOT_SET] + year_rows()
         self.location = self.email = ""
+        self.referral = ""           # "Referred by" (step 3): a member's screen name, or ""
         self.about = []
         self.win = None
 
@@ -216,6 +219,11 @@ class Wizard:
         y += 15
         self._label(win, y, "Email Address:")
         win.email = win.add(TextBox(FIELD_X, y, FIELD_W, BOX_H, self.email))
+        y += 15                                  # a member who sent them: they get credits
+        self._label(win, y, "Referred by:")
+        win.referral = win.add(TextBox(FIELD_X, y, NAME_W, BOX_H, self.referral))
+        win.add(Label(FIELD_X + NAME_W + 8, y + 2, FIELD_W - NAME_W - 8, 10,
+                      "(a member's name)"))
 
     def _step4(self, win):
         self._text(win, 20, "Say hello! A few lines about yourself (optional).",
@@ -225,14 +233,18 @@ class Wizard:
 
     def _step5(self, win):
         self._text(win, 18, "Please check your details, then click Next.")
-        about = self.about[:2] or [NOT_GIVEN]
-        if len(self.about) > 2:
-            about[1] += " ..."
+        shown = 1 if self.referral else 2        # (8 rows fit above the status line)
+        about = self.about[:shown] or [NOT_GIVEN]
+        if len(self.about) > shown:
+            about[-1] += " ..."
         rows = [("Screen name:", self.name), ("Name:", "%s %s" % (self.first, self.last)),
                 ("Password:", "*" * len(self.password)),
                 ("Birthdate:", self.birthdate_text()),
                 ("Location:", self.location or NOT_GIVEN),
-                ("Email Address:", self.email or NOT_GIVEN), ("About Me:", about[0])]
+                ("Email Address:", self.email or NOT_GIVEN)]
+        if self.referral:
+            rows.append(("Referred by:", self.referral))
+        rows.append(("About Me:", about[0]))
         rows += [("", line) for line in about[1:]]
         for i, (label, value) in enumerate(rows):
             y = 30 + REVIEW_ROW * i
@@ -268,8 +280,19 @@ class Wizard:
                                                win.year.selected or 0)
             self.location = clean_text(win.location.value).strip()
             self.email = clean_text(win.email.value).strip()
+            self.referral = clean_text(win.referral.value).strip()
         elif self.step == 4:
             self.about = tidy_about(win.about.lines, win.about.columns())
+
+    def referral_problem(self):
+        """None if "Referred by" is empty or names a member (not themselves)."""
+        if not self.referral:
+            return None
+        if self.name and self.referral.lower() == self.name.lower():
+            return "Referred by: someone else, not yourself."
+        if self.db.user(self.referral) is None:
+            return NO_REFERRER % short(self.referral, 10)
+        return None
 
     def birthdate(self):
         """(YYYY-MM-DD or "", None) or (None, problem): My Account's rules."""
@@ -297,7 +320,7 @@ class Wizard:
         if step == 3:
             _date, problem = self.birthdate()
             return (dbmod.check_email(self.email) or problem
-                    or length_problem(self.email, self.location))
+                    or length_problem(self.email, self.location) or self.referral_problem())
         if step == 4:
             return about_problem(self.about)
         return None
@@ -348,6 +371,12 @@ class Wizard:
         self.db.set_profile(user["id"], self.first, self.last, self.email, self.location,
                             birthdate, self.about)
         self.db.set_tos_agreed(user["id"])
+        referrer = self.db.user(self.referral) if self.referral else None
+        if referrer is not None and referrer["id"] != user["id"]:   # (still there?)
+            self.db.set_referred_by(user["id"], referrer["id"])
+            paid = self.session.server.screens.bank.referral(referrer["id"], user["id"],
+                                                             self.name)
+            self.session.log("referred by %s (%d credits to them)" % (referrer["name"], paid))
         first = self.db.user_count() == 1
         if not first:
             self.db.add_admin_message(user["id"], ADMIN_SUBJECT, [ADMIN_TEXT % self.name])

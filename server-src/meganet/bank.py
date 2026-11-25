@@ -63,6 +63,7 @@ LIMITS = {
     "interest": (2, 0, 50, "Interest, % a day"),
     "loan_days": (14, 1, 365, "Loan days"),
     "repay_share": (50, 0, 100, "Earnings to loan, %"),
+    "referral": (100, 0, 100_000, "Credits for a referral"),
 }
 EARN_MAX, PER_DAY_MAX = 1000, 1000
 
@@ -170,6 +171,32 @@ class Bank:
                 s.toast("+%s: %s" % (credits(amount), what))
         self.changed(user_id)
         return amount
+
+    def referral(self, referrer_id, new_id, new_name):
+        """A new member said `referrer_id` sent them (sign-up's "Referred by"): the referrer
+        gets the referral credits (Bank Settings), a private message from MegaNet about it,
+        and a toast if signed on. Returns the credits paid."""
+        amount = self.settings()["referral"]
+        paid = 0
+        if amount > 0 and self.db.add_credits(referrer_id, amount, "referral", new_name,
+                                              new_id) is not None:
+            paid = amount
+        lines = ["%s has just joined MegaNet and says you referred them." % new_name]
+        if paid:
+            lines.append("Thank you! %s have been added to your balance." % credits(paid))
+        else:
+            lines.append("Thank you for spreading the word!")
+        self.db.send_private_message(dbmod.SYSTEM_USER, referrer_id,
+                                     "You referred %s" % new_name, lines)
+        mail = self.server.screens.mail
+        mail.arrived(referrer_id)
+        mail.changed(referrer_id)
+        for s in self.sessions_of(referrer_id):
+            s.toast(("+%s: you referred %s" % (credits(paid), new_name)) if paid
+                    else "%s joined: you referred them" % new_name)
+        if paid:
+            self.changed(referrer_id)
+        return paid
 
     def adjust(self, user_id, new_balance, by):
         """An admin sets a balance (the User Editor). True if it changed."""
@@ -322,6 +349,9 @@ class Bank:
             amount, per_day = st["earn"][reason]
             if amount and per_day:
                 lines.append("  %-24s %s, %d times a day" % (what, credits(amount), per_day))
+        if st["referral"]:
+            lines.append("  %-24s %s, when they sign up" % ("Referring a new member",
+                                                           credits(st["referral"])))
         lines += ["", "Winning pays %d times a day at most against the same person. An hour "
                   "counts only the minutes you're doing something." % SAME_OPPONENT_WINS, ""]
         if st["loan_max"]:
@@ -347,7 +377,8 @@ def statement_row(e):
     """A ledger row in the statement: when, the change, the balance after, what."""
     what = e["reason"]
     if e["other_name"]:
-        what += {"gift": " from ", "gift sent": " to "}.get(e["reason"], " v ") + e["other_name"]
+        what += {"gift": " from ", "gift sent": " to ", "referral": " of "}.get(
+            e["reason"], " v ") + e["other_name"]
     return "%s %8s %9s  %s" % (time.strftime("%m-%d %H:%M", time.localtime(e["at"])),
                                ("%+d" % e["delta"]) if e["delta"] else "",
                                num(e["balance"]), what)

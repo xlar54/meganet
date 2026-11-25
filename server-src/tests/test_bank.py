@@ -247,13 +247,14 @@ class BankTest(PagesBase):
         a.click_text(w.id, "Save")
         await a.wait_for(lambda: has(w, "Playing a game: 0 to 1,000."), "refused")
         a.value(w.id, boxes[0], "7")
-        a.value(w.id, boxes[-5], "250")                      # Starting credits
-        a.value(w.id, boxes[-3], "1.5")                      # interest
+        a.value(w.id, boxes[-6], "250")                      # Starting credits
+        a.value(w.id, boxes[-4], "1.5")                      # interest
+        a.value(w.id, boxes[-1], "75")                       # credits for a referral
         a.click_text(w.id, "Save")
         await a.wait_for(lambda: w.id not in a.windows, "saved")
         st = self.bank.settings()
-        self.assertEqual((st["earn"]["game played"], st["start"], st["interest"]),
-                         ([7, 20], 250, 1.5))
+        self.assertEqual((st["earn"]["game played"], st["start"], st["interest"],
+                          st["referral"]), ([7, 20], 250, 1.5, 75))
         # the User Editor sets a balance, and History has the statement
         a.pick("User Editor...")
         ed = await a.wait_window("User Editor")
