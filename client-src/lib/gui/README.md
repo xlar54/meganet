@@ -34,10 +34,12 @@ left corner).
 
 - **Colours:** palette entries 0-15 (`GC_*`). `gui_init` writes them. A program's art uses 16-254;
   entry 255 shows the colour-RAM colour in FCM.
-- **Skins:** `gui_set_skin` (A = `GUI_SKIN_CLASSIC` or `GUI_SKIN_PIN`) switches the look and
-  redraws everything. Each skin has its own palette for entries 0-15 and `GS_N` bytes of
-  colour roles and style bits (`l_skin_tab`), copied to `gs`: the four bevels (window, button,
-  text box, pressed button) and the group frame, the menu bar's colours, the desktop colour
+- **Skins:** `gui_set_skin` (A = `GUI_SKIN_CLASSIC`, `GUI_SKIN_PIN` or `GUI_SKIN_DARK`)
+  switches the look and redraws everything. Each skin has its own palette for entries 0-15
+  and `GS_N` bytes of colour roles and style bits (`l_skin_tab`), copied to `gs`: the four
+  bevels (window, button, text box, pressed button) and the group frame, the menu bar's
+  colours, text (`GS_INK`), the inside of boxes and lists (`GS_PAPER`), selected rows, button
+  faces, title bars, the default button's ring, the scroll track, the desktop colour
   (`gs+GS_DESKBG`, for the program's own backdrop), and `GS_STYLE` bit 7 (pinstriped title
   bars: close box at the left, the title centred, the minimize box at the far right) and bit
   6 (rounded button corners). The default is Classic. To add a skin, add its palette lists

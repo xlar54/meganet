@@ -398,9 +398,11 @@ class Skin(IntEnum):
     CLASSIC = 0          # grey 3D, navy title bars
     PINSTRIPE = 1        # classic colour Mac style: pinstriped title bars, black outlines,
                          # rounded buttons, a white menu bar, a periwinkle desktop
+    DARK = 2             # dark mode: flat charcoal windows, light grey text, a blue accent,
+                         # rounded buttons, a near-black desktop (the Pinstripe icons)
 
 
-SKIN_NAMES = {Skin.CLASSIC: "Classic", Skin.PINSTRIPE: "Pinstripe"}
+SKIN_NAMES = {Skin.CLASSIC: "Classic", Skin.PINSTRIPE: "Pinstripe", Skin.DARK: "Dark"}
 SKIN_BUILD = 5           # the first client build that knows S.SKIN
 
 class Caps(IntFlag):

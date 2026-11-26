@@ -127,6 +127,7 @@ GC_LIGHT        = 4                     ; DFDFDF
 GC_TITLE        = 5                     ; active title bar, navy
 GC_DESK         = 6                     ; desktop teal
 GC_TITLE2       = 7                     ; light blue
+GC_INK          = 7                     ; (the Dark skin's text: its entry 7 is light grey)
 GC_TIP          = 8                     ; tooltip yellow
 GC_RED          = 9
 GC_GREEN        = 10
@@ -141,7 +142,9 @@ GC_CYAN         = 15
 GUI_SKIN_CLASSIC = 0                    ; Windows 95 style: grey 3D, navy title bars
 GUI_SKIN_PIN    = 1                     ; classic colour Mac style: pinstriped title bars,
                                         ; black outlines, rounded buttons, white menu bar
-GUI_SKINS       = 2
+GUI_SKIN_DARK   = 2                     ; dark mode: flat charcoal, light grey text, a blue
+                                        ; accent, rounded buttons
+GUI_SKINS       = 3
 GS_FRAME        = 0                     ; bevels, 4 colours each: outer top-left, outer
 GS_RAISE        = 4                     ; bottom-right, inner top-left, inner bottom-right
 GS_SUNK         = 8                     ; (window, button, text box, pressed button, group)
@@ -155,7 +158,18 @@ GS_DROP         = 24                    ; a menu's drop-down
 GS_PFACE        = 25                    ; a pressed button's face
 GS_STYLE        = 26                    ; bit 7: pinstriped title bars; bit 6: rounded buttons
 GS_DESKBG       = 27                    ; the desktop (the program's backdrop fills it)
-GS_N            = 28
+GS_INK          = 28                    ; text, ticks, carets, arrows
+GS_PAPER        = 29                    ; inside text boxes, lists, views, check boxes
+GS_SELFG        = 30                    ; a selected list row's text (on GC_TITLE)
+GS_BFACE        = 31                    ; a button's face (and the title-bar boxes')
+GS_TACT         = 32                    ; the front window's title bar (not pinstripes)
+GS_TINACT       = 33                    ; the others'
+GS_TTXT         = 34                    ; their titles
+GS_TTXT2        = 35
+GS_DEFRING      = 36                    ; the default button's extra border
+GS_ETCH         = 37                    ; under a disabled button's grey text
+GS_TRACK        = 38                    ; a scroll bar's track
+GS_N            = 39
 
 ; gadget kinds (the same numbers as the MegaNet protocol)
 GK_LABEL        = 1
@@ -1725,10 +1739,10 @@ l_gui_draw_win:
         jsr l_tb_pin
         jmp _minb
 +       jsr l_gw_front
-        ldy #GC_SHADOW
+        ldy gs+GS_TINACT
         cmp l_gd_ws
         bne +
-        ldy #GC_TITLE
+        ldy gs+GS_TACT
 +       tya
         jsr l_gd_fill
         ; the title, bold (twice, one pixel apart), clipped short of the close box
@@ -1757,10 +1771,10 @@ l_gui_draw_win:
         lda l_gwt_hi,x
         sta txt_ptr+1
         jsr l_gw_front
-        ldy #GC_LIGHT
+        ldy gs+GS_TTXT2
         cmp l_gd_ws
         bne +
-        ldy #GC_WHITE
+        ldy gs+GS_TTXT
 +       sty gt_fg
         lda #$ff
         sta gt_bg
@@ -1819,7 +1833,7 @@ l_gui_draw_win:
         adc #GUI_TITLE_H - 3
         sta gr_y1
         jsr l_gd_raised
-        lda #GC_FACE
+        lda gs+GS_BFACE
         jsr l_gd_fill
         jsr l_gd_cross
 _minb:  ldx l_gd_ws                     ; minimize (or restore) box: right - 35 .. right - 21
@@ -1832,7 +1846,7 @@ _minb:  ldx l_gd_ws                     ; minimize (or restore) box: right - 35 
         lda #5
 +       jsr l_tb_rect
         jsr l_gd_raised
-        lda #GC_FACE
+        lda gs+GS_BFACE
         jsr l_gd_fill
         ldy #l_tb_minimize - l_tb_icons
         ldx l_gd_ws
@@ -2096,8 +2110,14 @@ _lp:    lda l_tb_icons,y
         lda #0
         sta gr_y0+1
         sta gr_y1+1
-        lda l_tb_icons+4,y
-        phy
+        lda l_tb_icons+4,y              ; (black: the skin's ink; face: its button face)
+        bne +
+        lda gs+GS_INK
+        bra ++
++       cmp #GC_FACE
+        bne +
+        lda gs+GS_BFACE
++       phy
         jsr l_gd_fill
         ply
         tya
@@ -2621,7 +2641,7 @@ _clk:   lda frame_count
 
 ; an X in the middle of gr (the close box's inside)
 l_gd_cross:                             ; corner to corner of gr, two pixels thick
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta d6_col
         lda #0
         sta d6_y+1
@@ -3067,7 +3087,7 @@ l_gui_draw_gad0:
         sta gt_n
         lda #0
         sta gt_pw
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta gt_fg
         lda gg_flags,x
         and #GGF_DISABLED
@@ -3116,7 +3136,7 @@ _box:   jmp l_gd_rows
 ; a progress bar: sunken, white, navy from the left for gg_val percent (0-100)
 l_gd_progress:
         jsr l_gd_sunken                 ; (gr: inside the bevel)
-        lda #GC_WHITE
+        lda gs+GS_PAPER
         jsr l_gd_fill
         ldx l_gd_gs
         lda gg_val,x
@@ -3280,7 +3300,7 @@ l_gd_button:
         lda gg_flags,x
         and #GGF_DEFAULT
         beq +
-        lda #GC_BLACK                   ; the default button's extra black border
+        lda gs+GS_DEFRING               ; the default button's extra border (black)
         tax
         jsr l_gd_edges
         jsr l_gd_shrink
@@ -3291,7 +3311,7 @@ l_gd_button:
         lda gs+GS_PFACE
         bra _face
 _up:    jsr l_gd_raised
-        lda #GC_FACE
+        lda gs+GS_BFACE
 _face:  jsr l_gd_fill
         jsr l_gd_round
         jsr l_gd_clip
@@ -3308,7 +3328,7 @@ _face:  jsr l_gd_fill
         lda gg_flags,x
         and #GGF_DISABLED
         beq _txt
-        lda #GC_WHITE                   ; disabled: etched (white, then grey on top)
+        lda gs+GS_ETCH                  ; disabled: etched (white, then grey on top)
         sta gt_fg
         lda gt_x
         pha
@@ -3360,7 +3380,7 @@ l_gd_check:
         sta gr_y0+1
         sta gr_y1+1
         jsr l_gd_sunken
-        lda #GC_WHITE
+        lda gs+GS_PAPER
         jsr l_gd_fill
         ldx l_gd_gs
         lda gg_val,x
@@ -3368,7 +3388,7 @@ l_gd_check:
         lda gg_kind,x
         cmp #GK_RADIO
         beq _dot
-        lda #GC_BLACK                   ; a tick: \ then /, two pixels thick
+        lda gs+GS_INK                   ; a tick: \ then /, two pixels thick
         sta d6_col
         ldy #0
 _t:     phy
@@ -3420,7 +3440,7 @@ _t:     phy
         bne _t
 _out:   rts
 _dot:   jsr l_gd_shrink                 ; radio: a black dot in the middle
-        lda #GC_BLACK
+        lda gs+GS_INK
         jmp l_gd_fill
 
 ; A = window, X = gadget, gp_x = value: a check box's state or a list's selected row
@@ -3549,7 +3569,7 @@ l_gd_textbox:
         lda gr_x0+1
         adc #0
         sta gt_x+1
-        lda #GC_WHITE                   ; each character on white, over the old one
+        lda gs+GS_PAPER                 ; each character on white, over the old one
         sta gt_bg
         jsr gui_text
         jsr l_gd_spare                  ; and white around it
@@ -3594,7 +3614,7 @@ l_gd_textbox:
         lda #0
         sta d6_y+1
         sta d6_y1+1
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta d6_col
         jsr d6_fill
 _out:   jmp d6_clip_all
@@ -4462,7 +4482,7 @@ l_gb_rowy:
 ; right, the rows from gb_top
 l_gd_rows:
         jsr l_gd_sunken
-        lda #GC_WHITE
+        lda gs+GS_PAPER
         jsr l_gd_fill
         ldx l_gd_gs
         ldy gg_big,x
@@ -4508,7 +4528,7 @@ _vl:    ldy l_gb_t
         adc l_gb_k
         and #GUI_VIEW_LINES - 1
         jsr l_gb_get
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta gt_fg
         lda #$ff
         sta gt_bg
@@ -4527,7 +4547,7 @@ _er:    ldy l_gb_t
         cmp gb_n,y
         bcs _caret
         jsr l_gb_get
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta gt_fg
         lda #$ff
         sta gt_bg
@@ -4580,7 +4600,7 @@ _caret: ldx l_gd_gs                     ; the cursor, if it has the keyboard
         lda #0
         sta d6_y+1
         sta d6_y1+1
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta d6_col
         jsr d6_fill
 _cdone: jmp d6_clip_all
@@ -4595,7 +4615,7 @@ _lr:    ldy l_gb_t
         bcs _done
         jsr l_gb_get
         ldy l_gb_t
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta gt_fg
         lda #$ff
         sta gt_bg
@@ -4622,7 +4642,7 @@ _lr:    ldy l_gb_t
         lda #GC_TITLE
         sta d6_col
         jsr d6_fill
-        lda #GC_WHITE
+        lda gs+GS_SELFG
         sta gt_fg
 _ln:    jsr l_gb_text
         inc l_gb_k
@@ -4772,7 +4792,7 @@ l_sb_draw:
         sta gr_x0
         lda sb_x0+1
         sta gr_x0+1
-        lda #GC_LIGHT
+        lda gs+GS_TRACK
         jsr l_gd_fill
         lda l_sb_save+2                 ; the up button: top 9 rows
         sta gr_y0
@@ -4821,7 +4841,7 @@ l_sb_button:
         sta gr_y0+1
         sta gr_y1+1
         jsr l_gd_raised
-        lda #GC_FACE
+        lda gs+GS_BFACE
         jmp l_gd_fill
 ; a small triangle in the button whose top row is A: X = 0 up, 1 down (grey when there's
 ; nothing to scroll)
@@ -4830,7 +4850,7 @@ l_sb_arrow:
         adc #3
         sta l_sb_ay
         stx l_sb_dir
-        ldy #GC_BLACK
+        ldy gs+GS_INK
         lda sb_has
         bne +
         ldy #GC_SHADOW
@@ -5414,7 +5434,7 @@ l_mn_title:
         sta gr_y1+1
         lda #GUI_MENU_H - 2
         sta gr_y1
-        ldx #GC_BLACK
+        ldx gs+GS_INK
         tya
         cmp l_mn_open
         bne +
@@ -5653,7 +5673,7 @@ l_md_row:
         sta gr_y1
         lda #GC_SHADOW
         jmp l_gd_fill
-_text:  ldx #GC_BLACK
+_text:  ldx gs+GS_INK
         lda gs+GS_DROP
         ldy l_md_r
         cpy l_md_hov
@@ -5949,14 +5969,14 @@ l_ts_draw:
         jsr l_ts_rect
         lda #GC_TIP
         jsr l_gd_fill
-        lda #GC_BLACK
+        lda gs+GS_INK
         tax
         jsr l_gd_edges
         lda #<l_ts_buf
         sta txt_ptr
         lda #>l_ts_buf
         sta txt_ptr+1
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta gt_fg
         lda #$ff
         sta gt_bg
@@ -6322,8 +6342,10 @@ l_nt_wifi:
         lda gs+GS_MENU
         jsr l_gd_fill
         ldx l_nw_i
-        lda l_nw_cols-3,x
-        sta l_nw_k
+        lda l_nw_cols-3,x               ; (black: the skin's ink, on its menu bar)
+        bne +
+        lda gs+GS_INK
++       sta l_nw_k
         lda #0
         sta d6_y+1
         sta l_nw_c
@@ -6334,7 +6356,7 @@ _px:    lda l_nw_bm,x
         ldy l_nw_k
         cmp #"#"
         beq _pl
-        ldy #GC_BLACK
+        ldy gs+GS_INK
         cmp #"+"
         bne _nx
 _pl:    sty d6_col
@@ -6800,7 +6822,7 @@ l_white:
         lda d6_x1+1
         sbc d6_x+1
         bcc _no
-        lda #GC_WHITE
+        lda gs+GS_PAPER
         sta d6_col
         jmp d6_fill
 _no:    rts
@@ -6840,9 +6862,9 @@ l_ed_drawrow:
 +       ldx #6
         stx l_gb_sh
         jsr l_gb_get
-+       lda #GC_BLACK
++       lda gs+GS_INK
         sta gt_fg
-        lda #GC_WHITE
+        lda gs+GS_PAPER
         sta gt_bg
         jsr l_gb_text
         lda gt_x                        ; the rest of the row white
@@ -6896,7 +6918,7 @@ l_ed_drawrow:
         lda #0
         sta d6_y+1
         sta d6_y1+1
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta d6_col
         jsr d6_fill
 _out:   jmp d6_clip_all
@@ -7367,7 +7389,7 @@ GUI_DROP_ROWS   = 8                     ; rows the pop-up shows at once
 ; draw drop-down l_gd_gs (gr = its rectangle)
 l_gd_drop:
         jsr l_gd_sunken
-        lda #GC_WHITE
+        lda gs+GS_PAPER
         jsr l_gd_fill
         ldx l_gd_gs
         ldy gg_big,x
@@ -7419,7 +7441,7 @@ l_gd_drop:
         ldx #6
         stx l_gb_sh
         jsr l_gb_get
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta gt_fg
         lda #$ff
         sta gt_bg
@@ -7536,11 +7558,11 @@ l_dd_inner:
 l_dd_draw:
         jsr d6_clip_all
         jsr l_dd_inner
-        lda #GC_BLACK
+        lda gs+GS_INK
         tax
         jsr l_gd_edges
         jsr l_gd_shrink
-        lda #GC_WHITE
+        lda gs+GS_PAPER
         jsr l_gd_fill
         ldy l_gb_t
         lda l_dd_vis
@@ -7572,7 +7594,7 @@ _r:     ldy l_gb_t
         cmp gb_n,y
         bcs _done
         jsr l_gb_get
-        lda #GC_BLACK
+        lda gs+GS_INK
         sta gt_fg
         lda #$ff
         sta gt_bg
@@ -7599,7 +7621,7 @@ _r:     ldy l_gb_t
         lda #GC_TITLE
         sta d6_col
         jsr d6_fill
-        lda #GC_WHITE
+        lda gs+GS_SELFG
         sta gt_fg
 _t:     jsr l_gb_text
         inc l_gb_k
@@ -7794,9 +7816,13 @@ GUIPAL_B = [0, 255, 192, 128, 223, 128, 128, 208, 225, 0, 0, 64, 255, 24, 0, 255
 PINPAL_R = [0, 255, 221, 136, 238, 51, 102, 16, 255, 192, 0, 64, 0, 8, 255, 0]
 PINPAL_G = [0, 255, 221, 136, 238, 85, 102, 132, 255, 0, 128, 64, 0, 8, 255, 255]
 PINPAL_B = [0, 255, 221, 136, 238, 187, 187, 208, 225, 0, 0, 64, 255, 24, 0, 255]
-l_gui_pal_r:    .byte GUIPAL_R, PINPAL_R        ; (skin n: entries 16n ..)
-l_gui_pal_g:    .byte GUIPAL_G, PINPAL_G
-l_gui_pal_b:    .byte GUIPAL_B, PINPAL_B
+; the dark skin: charcoal greys, a blue accent, entry 7 a soft light grey for text
+DARKPAL_R = [0, 255, 40, 112, 60, 56, 20, 214, 70, 210, 40, 64, 40, 8, 240, 0]
+DARKPAL_G = [0, 255, 40, 112, 60, 128, 20, 214, 70, 60, 170, 64, 110, 8, 200, 200]
+DARKPAL_B = [0, 255, 44, 120, 66, 240, 24, 220, 86, 60, 80, 64, 230, 24, 60, 210]
+l_gui_pal_r:    .byte GUIPAL_R, PINPAL_R, DARKPAL_R     ; (skin n: entries 16n ..)
+l_gui_pal_g:    .byte GUIPAL_G, PINPAL_G, DARKPAL_G
+l_gui_pal_b:    .byte GUIPAL_B, PINPAL_B, DARKPAL_B
 
 L_CLASSIC .macro
                 .byte GC_LIGHT, GC_BLACK, GC_WHITE, GC_SHADOW   ; frame
@@ -7807,6 +7833,9 @@ L_CLASSIC .macro
                 .byte GC_FACE, GC_SHADOW, GC_TITLE, GC_WHITE    ; menu bar, line, highlight
                 .byte GC_FACE, GC_FACE, 0                       ; drop-down, pressed, style
                 .byte GC_BLACK                                  ; desktop
+                .byte GC_BLACK, GC_WHITE, GC_WHITE, GC_FACE     ; ink, paper, selected, button
+                .byte GC_TITLE, GC_SHADOW, GC_WHITE, GC_LIGHT   ; title bars, their text
+                .byte GC_BLACK, GC_WHITE, GC_LIGHT              ; default ring, etch, track
                 .endm
 gui_skin:       .byte GUI_SKIN_CLASSIC
 gs:             #L_CLASSIC              ; the skin's colours and shapes (GS_*), Classic's first
@@ -7820,6 +7849,21 @@ l_skin_tab:     #L_CLASSIC
                 .byte GC_WHITE, GC_BLACK, GC_BLACK, GC_WHITE    ; menu bar, line, highlight
                 .byte GC_WHITE, GC_SHADOW, $c0                  ; drop-down, pressed, style
                 .byte GC_DESK                                   ; desktop: periwinkle
+                .byte GC_BLACK, GC_WHITE, GC_WHITE, GC_FACE     ; ink, paper, selected, button
+                .byte GC_TITLE, GC_SHADOW, GC_WHITE, GC_LIGHT   ; (title bars: pinstripes)
+                .byte GC_BLACK, GC_WHITE, GC_LIGHT              ; default ring, etch, track
+                ; Dark: flat 1-pixel borders, light grey text (entry 7), a blue accent
+                .byte GC_SHADOW, GC_SHADOW, GC_FACE, GC_FACE    ; frame
+                .byte GC_SHADOW, GC_SHADOW, GC_LIGHT, GC_LIGHT  ; raised
+                .byte GC_SHADOW, GC_SHADOW, GC_DESK, GC_DESK    ; sunken
+                .byte GC_TITLE, GC_TITLE, GC_TITLE, GC_TITLE    ; pressed: the accent
+                .byte GC_SHADOW, GC_SHADOW, GC_FACE, GC_FACE    ; group
+                .byte GC_FACE, GC_BLACK, GC_TITLE, GC_WHITE     ; menu bar, line, highlight
+                .byte GC_LIGHT, GC_TITLE, $40                   ; drop-down, pressed, style
+                .byte GC_DESK                                   ; desktop: near black
+                .byte GC_INK, GC_DESK, GC_WHITE, GC_LIGHT       ; ink, paper, selected, button
+                .byte GC_LIGHT, GC_FACE, GC_INK, GC_SHADOW      ; title bars, their text
+                .byte GC_TITLE, GC_LIGHT, GC_FACE               ; default ring, etch, track
                 .cerror * - l_skin_tab != GS_N * GUI_SKINS, "l_skin_tab isn't GS_N a skin"
 
 ; the pointer: a Windows-style arrow, black outline (sprite GUI_PTR_SPR) over a white

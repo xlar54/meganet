@@ -98,7 +98,9 @@ Status: early.
 - **Looks (skins):** My Account > Preferences > Look picks how the client looks (since
   2.3): **Classic** (grey 3D, navy title bars) or **Pinstripe** (a classic colour Mac style:
   pinstriped title bars with the close box at the left, black outlines, rounded buttons, a
-  white menu bar and a periwinkle desktop, with its own desktop icons). The server keeps it
+  white menu bar and a periwinkle desktop, with its own desktop icons) or **Dark** (dark mode
+  for night: flat charcoal windows, soft light grey text, a blue accent, rounded buttons, a
+  near-black desktop and Pinstripe's flat icons). The server keeps it
   per member and sends it at sign-on; the sign-on screen itself is always Classic.
 - **Updates:** the client's version is `client-src/VERSION`, also on the disk as `VERSION`.
   - `build` is a whole number that the client and server compare.

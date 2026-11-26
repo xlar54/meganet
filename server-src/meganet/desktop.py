@@ -336,8 +336,9 @@ DESKTOP_RIGHT = [
 
 def pixels(name, skin=Skin.CLASSIC):
     """An icon's DESK_ICON_W x DESK_ICON_H bytes, in the skin's style (Classic's if it has
-    none of its own)."""
-    rows = (ICONS_PIN if skin == Skin.PINSTRIPE else ICONS).get(name) or ICONS[name]
+    none of its own). Dark uses the flat Pinstripe pictures."""
+    flat = skin in (Skin.PINSTRIPE, Skin.DARK)
+    rows = (ICONS_PIN if flat else ICONS).get(name) or ICONS[name]
     if len(rows) != DESK_ICON_H or any(len(r) != DESK_ICON_W for r in rows):
         raise ValueError("icon %s isn't %dx%d" % (name, DESK_ICON_W, DESK_ICON_H))
     return bytes(PALETTE[ch] for row in rows for ch in row)

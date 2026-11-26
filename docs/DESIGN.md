@@ -385,14 +385,18 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   classic colour Mac style: pinstriped title bars on the front window with the title centred,
   the close box at the left and the minimize box at the far right, black outlines, rounded
   buttons, flat outlined text boxes, a white menu bar with black highlights, a periwinkle
-  desktop). My Account's Preferences has a "Look" drop-down for clients that know skins;
+  desktop) and 2 Dark (flat 1-pixel borders, charcoal windows, light grey text in palette
+  entry 7, dark boxes and lists, a blue accent for selections, pressed buttons and the
+  default button's ring, a near-black desktop; it uses `ICONS_PIN`). My Account's Preferences has a "Look" drop-down for clients that know skins;
   it's saved in `users.skin`, sent at once (the client draws everything again) and at every
   sign-on, before the menu bar. The desktop icons follow it: `desktop.ICONS_PIN` has each
   picture in the Pinstripe style. Older clients are never sent `S.SKIN` and see no Look.
   On the client (`lib/gui/gui.asm`): each skin is a 16-colour palette (entries 0-15) and
   `GS_N` bytes of colour roles and style bits (`l_skin_tab`) copied to `gs` by
-  `gui_set_skin`; the bevels, menu bar and buttons read `gs`, and two style bits switch the
-  title bar and the button corners. The sign-on screen is drawn in Classic (the skin comes
+  `gui_set_skin`; the bevels, menu bar, buttons, title bars, text ("ink"), box insides
+  ("paper") and selections read `gs`, and two style bits switch the title bar and the button
+  corners. Black and white themselves stay true, so desktop icons and pictures look the same
+  in every skin. The sign-on screen is drawn in Classic (the skin comes
   with the sign-on).
 - **Object model that mirrors the client's GUI** (`meganet/ui.py`): the server builds `Window`
   objects out of `Gadget` objects (`Button`, `Label`, `TextBox`, `Password`, `ListBox`,
