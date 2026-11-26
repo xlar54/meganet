@@ -183,6 +183,14 @@ login_logo:
         sta ll_dst,x
         dex
         bpl -
+        clc                             ; (into the buffer being drawn: gui_redraw's may be
+        lda ll_dst+2                    ; off-screen)
+        adc d6_bk
+        sec
+        sbc #`F640_BUF0
+        sta ll_dst+2
+        lda d6_hi
+        sta ll_dst+3
         lda #LOGO_CH
         sta ll_n
 _row:   ldx #3

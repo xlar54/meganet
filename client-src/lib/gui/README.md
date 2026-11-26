@@ -160,8 +160,15 @@ left corner).
   once at its new place, kept on the screen and below the menu bar. The pointer uses sprites
   `GUI_PTR_SPR` and `+1` (0-1), so a program has sprites 6 and 7 free.
 - **Desktop:** `gui_desk_hook` = a routine that draws the backdrop, or 0 for a plain `GUI_DESK` fill.
+- **No flicker:** with `GUI_BACK` set to a 128,000-byte, bank-aligned buffer (attic is fine),
+  `gui_redraw` draws the whole screen there, waits for the frame, then copies it to the
+  screen. Drawing goes through draw640's `d6_bk` / `d6_hi` (`d6_target`), so a desktop hook
+  must draw with draw640 or address the framebuffer through them. Small changes still draw
+  on the screen directly.
 - **Typing:** the focused text box takes printable keys, DEL, cursor left/right and HOME. TAB moves to
-  the window's next text box. Clicking puts the cursor where you clicked.
+  the window's next text box. Clicking puts the cursor where you clicked. A box holds 63
+  characters. With `GUI_LONG` set (`GUI_LONGN` buffers of `GUI_LONGMAX` bytes in bank 0), a
+  text box flagged `GGF_LONG` holds `GUI_LONGMAX - 1` while a buffer is free.
 - **Tests:**
   - Mouse events: write `type, x lo, x hi, y` quads to `gui_dbg_ev` and the count to `gui_dbg_evn`
     (`EV_DOWN` = 2, `EV_UP` = 3).

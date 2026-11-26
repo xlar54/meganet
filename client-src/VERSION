@@ -8,6 +8,6 @@
 #   oldest  the oldest client that may still sign on to a server that has this disk; older
 #           ones must update first (raise it when the protocol changes in a way they can't
 #           follow)
-build=3
-name=2.1
+build=4
+name=2.2
 oldest=1

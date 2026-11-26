@@ -239,7 +239,7 @@ class ChatSide:
         win = Window("Chat with %s" % other_name, x + 16 * k, y + 4 * k, CHAT_W, CHAT_H,
                      win_id=win_id, on_close=lambda w: chat.leave(self))
         self.view = win.add(TextView(6, 6, 348, 106))
-        self.entry = win.add(TextBox(6, 118, 276, 12))
+        self.entry = win.add(TextBox(6, 118, 276, 12, flags=GFlag.LONG))
         win.add(Button(288, 116, 66, 16, "Send", GFlag.DEFAULT,
                        on_click=lambda b: chat.say(self)))
         self.win = win

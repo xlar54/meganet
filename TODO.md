@@ -26,6 +26,12 @@
 - [ ] Live desktop next: shimmer the logo's stripes (palette cycling), smooth 1-2 pixel
       ticker scrolling (check the speed on real hardware), a "today" panel under the logo
 - [x] Released as client 2.1 (build 3): older clients ignore the messages
+- [x] Client 2.2 (build 4, 2026-11-25): full redraws drawn off-screen in attic (GUI_BACK) and
+      copied at once: no flicker (tried on a real MEGA65); chat, IM and Page Admin typing
+      lines hold 124 characters (GGF_LONG, two buffers at $FF00; tried in Xemu over the
+      bridge, a chat room and an IM at once)
+- [ ] Redraws: if the copy shows a tear, or attic drawing is slow, redraw and copy only the
+      area that changed (a dirty rectangle)
 - [x] Connect window: DHCP or Static IP (the Static Address window: IP, mask, gateway, DNS;
       tested in Xemu through the bridge, which has no stack of its own)
 - [ ] Static IP on a real MEGA65 (mega-ip restarted with the addresses); keep the addresses

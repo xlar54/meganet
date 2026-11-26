@@ -163,7 +163,7 @@ class UpdateTest(ServerTest):
         self.put_disk(5, oldest=4)
         c = await self.connect("old", 3)
         w = await c.wait_window("MegaNet Update")
-        self.assertIn("This server needs version 4 or newer to sign on.", self.texts(w))
+        self.assertIn("Signing on here needs version 2.2 or newer.", self.texts(w))
         self.assertFalse(any(g["text"] == "Later" for g in w.gadgets.values()))
         ok, msg = await self.login(c, "frank", "pass1", new=True)
         self.assertFalse(ok)

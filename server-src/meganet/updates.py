@@ -52,7 +52,7 @@ def parse_version(text):
 
 
 # What the older builds were called (their disks said only a number)
-BUILD_NAMES = {1: "1", 2: "2", 3: "2.1"}
+BUILD_NAMES = {1: "1", 2: "2", 3: "2.1", 4: "2.2"}
 
 
 def build_name(build):
@@ -172,7 +172,7 @@ class Updates:
         win.add(Label(8, 4, W - 16, 10, "MegaNet %s is ready: you have version %s."
                       % (rel[0]["name"], build_name(session.build)), flags=GFlag.BOLD))
         if state == "required":
-            lines = ["This server needs version %s or newer to sign on."
+            lines = ["Signing on here needs version %s or newer."
                      % build_name(rel[0]["oldest"])]
         else:
             lines = ["You can sign on as you are, or get it first."]

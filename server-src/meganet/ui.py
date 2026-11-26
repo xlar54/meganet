@@ -342,6 +342,8 @@ class TextBox(Gadget):
     sends VALUE before any CLICK in the same window, so a button handler sees the current text."""
     kind = Kind.TEXTBOX
     MAX_CHARS = 63          # the client's text boxes hold at most this many characters
+    LONG_CHARS = 124        # ... or this many with GFlag.LONG (client 2.2 on; two such boxes
+                            # at a time, others hold MAX_CHARS)
 
     def __init__(self, x, y, w, h=12, text="", **kw):
         super().__init__(x, y, w, h, text, **kw)

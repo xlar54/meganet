@@ -292,11 +292,12 @@ class RoomWindow:
                     self.unban_button = b
                 else:
                     self.on_person.append(b)
+            win.add(Button(8 + 6 * 80, y, 76, 16, "Topic", on_click=self._topic))
             y += self.MOD_ROW
-        self.entry = win.add(TextBox(8, y + 2, 290, 12))
-        win.add(Button(304, y, 56, 16, "Send", GFlag.DEFAULT, on_click=self._send))
-        if mod:
-            win.add(Button(366, y, 64, 16, "Topic", on_click=self._topic))
+        # what you type: as wide as the conversation, Send at its right end
+        view_w = lx - 16
+        self.entry = win.add(TextBox(8, y + 2, view_w - 62, 12, flags=GFlag.LONG))
+        win.add(Button(8 + view_w - 56, y, 56, 16, "Send", GFlag.DEFAULT, on_click=self._send))
         win.add(Button(self.W - 8 - 88, y, 88, 16, "Rooms...", on_click=self._rooms))
         self.status = win.add(Label(8, y + 18, self.W - 16, 10, "You are in %s." % room.name))
         self.win = win

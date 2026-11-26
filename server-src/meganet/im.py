@@ -106,7 +106,7 @@ class IMs:
                              flags=WFlag.CLOSE | WFlag.MOVABLE, on_close=lambda w: None)
         win.conv = c
         win.view = win.add(TextView(8, 4, 344, 88, list(c.lines)))
-        win.entry = win.add(TextBox(8, 98, 280, 12))
+        win.entry = win.add(TextBox(8, 98, 280, 12, flags=GFlag.LONG))
         win.send_b = win.add(Button(296, 96, 56, 16, "Send", GFlag.DEFAULT,
                                     on_click=lambda b: self._send(b, c)))
         win.owner, win.partner = session, partner

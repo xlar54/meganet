@@ -93,6 +93,12 @@ GUI_BIG_MEM     = $8200000              ; their rows: GUI_MAXBIG x 8 KB (attic)
 GUI_MAXICON     = 12                    ; desktop icons (columns of GUI_ICON_ROWS): slots
 GUI_ICON_LEFT   = 8                     ; 0-7 from the left edge, 8-11 from the right
 GUI_DESK_MEM    = $8240000              ; their pictures, 512 bytes each (64 KB aligned)
+GUI_LONG        = 0                     ; GUI_LONGN buffers of GUI_LONGMAX bytes in bank 0 for
+GUI_LONGN       = 2                     ; text boxes with GGF_LONG (chat lines), one each while
+GUI_LONGMAX     = 125                   ; they last; 0: none
+GUI_BACK        = 0                   ; a 128,000-byte off-screen buffer (bank aligned,
+                                        ; attic is fine): gui_redraw draws there, then copies
+                                        ; it to the screen in one go (no flicker). 0: none
         .endweak
 GUI_ICON_W      = 32                    ; a desktop icon's picture (pixels are twice as tall
 GUI_ICON_H      = 16                    ; as wide: it looks square), a label under it
@@ -158,6 +164,8 @@ GGF_MULTILINE   = 8
 GGF_CENTRE      = 16                    ; label text centred
 GGF_NEEDTEXT    = 32                    ; button greyed while text box gg_val (an id) is empty
 GGF_BOLD        = 64                    ; label text bold (drawn twice, one pixel apart)
+GGF_LONG        = 128                   ; text box: GUI_LONGMAX - 1 characters (a GUI_LONG
+                                        ; buffer, while one is free), not 63
 
 GE_NONE         = 0
 GE_CLICK        = 1
@@ -1523,6 +1531,45 @@ gui_redraw:
         inc gui_redraws+1
 +       lda #0
         sta l_gui_later
+        .if GUI_BACK
+        lda gui_back_on
+        beq +
+        lda #`GUI_BACK                  ; everything below goes off-screen
+        ldx #GUI_BACK >> 24
+        jsr d6_target
++       jsr l_gui_redraw1
+        jsr d6_target_screen
+        lda gui_back_on
+        beq _done
+        jsr wait_frame                  ; (just below the picture: the copy runs from the top
+        .for l_h = 0, l_h < 2, l_h += 1 ; with the beam, ahead of it on chip RAM)
+        lda #<(GUI_BACK + l_h * 64000)
+        sta ptr1
+        lda #>(GUI_BACK + l_h * 64000)
+        sta ptr1+1
+        lda #`(GUI_BACK + l_h * 64000)
+        sta ptr1+2
+        lda #(GUI_BACK + l_h * 64000) >> 24
+        sta ptr1+3
+        lda #<(F640_BUF0 + l_h * 64000)
+        sta ptr2
+        lda #>(F640_BUF0 + l_h * 64000)
+        sta ptr2+1
+        lda #`(F640_BUF0 + l_h * 64000)
+        sta ptr2+2
+        lda #(F640_BUF0 + l_h * 64000) >> 24
+        sta ptr2+3
+        lda #<64000
+        sta tmp5
+        lda #>64000
+        sta tmp5+1
+        jsr dma_copy_far
+        .next
+_done:  rts
+        .cerror (GUI_BACK & $ffff) != 0, "GUI_BACK must start a 64 KB bank"
+gui_back_on:    .byte 1                 ; 0: gui_redraw draws on the screen as it goes
+l_gui_redraw1:
+        .endif
         jsr d6_clip_all
         lda gui_desk_hook+1
         beq _plain
@@ -2424,6 +2471,9 @@ _slot:  jsr l_gg_release                 ; (a replaced gadget's block goes back)
         bcc ++
 +       lda #GUI_TEXTMAX - 1
 +       sta gg_max,x
+        .if GUI_LONG
+        jsr l_gg_long
+        .endif
         lda #0
         sta gg_val,x
         jsr l_gg_copy
@@ -2474,6 +2524,62 @@ _nobig: lda gg_kind,x                   ; the window's first text box gets the k
         sta gw_focus,y
 _done:  clc
         rts
+
+        .if GUI_LONG
+; slot X, being filled: a long buffer (GUI_LONGN of them at GUI_LONG) if it has GGF_LONG
+; and one is free, else its own 64 bytes. X kept
+l_gg_long:
+        stx l_long_x
+        ldy #GUI_LONGN - 1              ; first, buffers given back: slot X's (refilled), and
+_fr:    ldx l_long_gs,y                 ; any whose gadget is gone
+        cpx #$ff
+        beq _nf
+        cpx l_long_x
+        beq _rel
+        lda gg_win,x
+        cmp #$ff
+        bne _nf
+_rel:   lda l_long_lo,y                 ; (the slot's own buffer back)
+        sta l_gtb_lo,x
+        lda l_long_hi,y
+        sta l_gtb_hi,x
+        lda #$ff
+        sta l_long_gs,y
+_nf:    dey
+        bpl _fr
+        ldx l_long_x
+        lda gg_flags,x
+        bpl _out
+        lda gg_kind,x
+        cmp #GK_TEXT
+        bne _out
+        ldy #GUI_LONGN - 1
+-       lda l_long_gs,y
+        cmp #$ff
+        beq _take
+        dey
+        bpl -
+        bra _out                        ; none free: its own 63 characters
+_take:  lda l_gtb_lo,x
+        sta l_long_lo,y
+        lda l_gtb_hi,x
+        sta l_long_hi,y
+        lda l_long_blo,y
+        sta l_gtb_lo,x
+        lda l_long_bhi,y
+        sta l_gtb_hi,x
+        txa
+        sta l_long_gs,y
+        lda #GUI_LONGMAX - 1
+        sta gg_max,x
+_out:   rts
+l_long_x:       .byte 0
+l_long_gs:      .fill GUI_LONGN, $ff    ; the slot with each long buffer, $ff none
+l_long_lo:      .fill GUI_LONGN         ; that slot's own buffer
+l_long_hi:      .fill GUI_LONGN
+l_long_blo:     .byte <(GUI_LONG + range(GUI_LONGN) * GUI_LONGMAX)
+l_long_bhi:     .byte >(GUI_LONG + range(GUI_LONGN) * GUI_LONGMAX)
+        .endif
 
 ; gp_text -> gadget X's buffer (up to gg_max), length, cursor at the end. X kept
 l_gg_copy:

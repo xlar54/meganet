@@ -374,6 +374,8 @@ class GFlag(IntFlag):
     NEEDTEXT = 32        # a button the client greys out while one text box is empty (the
                          # box's gid comes after the GADGET as the button's S.SET_VALUE)
     BOLD = 64            # a label's text in bold (older clients draw it plain)
+    LONG = 128           # a text box of up to TextBox.LONG_CHARS characters (one at a time
+                         # on the client; older clients, and a second one, hold 63)
 
 
 BROADCAST_MAX = 79       # S.BROADCAST: characters across the bottom row

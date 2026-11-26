@@ -113,6 +113,8 @@ ASCII. The authoritative list of messages is [`server-src/meganet/protocol.py`](
 - Client -> server (`$80`-`$FF`): `HELLO`, `CLICK`, `VALUE`, `SELECT`, `LIST_NEED`, `MENU_PICK`,
   `WIN_CLOSED`, `KEY` (raw keys, only for gadgets flagged RAWKEYS: games), `FILE_ACK`,
   `NOTIFY_CLICK`, `TEXT`, `PING`.
+- **Long text boxes:** a `GADGET` text box with flag `LONG` (128) holds up to 124 characters
+  instead of 63 (client 2.2 on, two at a time). Older clients ignore the flag and hold 63.
 - **Is the server still there?** `PING` (`$8F`, no payload) is answered with `PONG` (`$1C`, no
   payload), signed on or not. The client counts any frame from the server as a sign of life.
   Signed on, after 30 seconds with nothing from the server it sends `PING`; if nothing at all

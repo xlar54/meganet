@@ -16,6 +16,9 @@
 ;                  d6_y (any pixel row), in d6_col on d6_bg ($ff = transparent)
 ;   d6_char        one character A there; d6_tc moves on
 ;
+;   d6_target      A/X/Y = bits 16-23, 24-31 of the buffer to draw into (bank aligned, may
+;                  be in attic: an off-screen buffer); d6_target_screen puts F640_BUF0 back
+;
 ; Needs fcm640 (F640_BUF0 is drawn into) and a font: D6_FONT, glyphs for ASCII 32-127,
 ; 8 bytes each, bit 7 = the left pixel. d6_p is a 4-byte base-page pointer (default ptr1).
 ;=======================================================================================
@@ -48,6 +51,16 @@ l_d6_str:       .word 0
 l_d6_gl:        .word 0
 l_d6_row:       .byte 0
 l_d6_fast:      .byte 0
+d6_bk:          .byte `F640_BUF0        ; the buffer drawn into: bits 16-23, 24-31
+d6_hi:          .byte F640_BUF0 >> 24
+
+d6_target_screen:
+        lda #`F640_BUF0
+        ldx #F640_BUF0 >> 24
+d6_target:
+        sta d6_bk
+        stx d6_hi
+        rts
 
 d6_clip_all:
         lda #0
@@ -145,9 +158,9 @@ d6_addr:
         adc l_d6_rowm,x
         sta d6_p+1
         lda l_d6_rowh,x
-        adc #`F640_BUF0
+        adc d6_bk
         sta d6_p+2
-        lda #F640_BUF0 >> 24
+        lda d6_hi
         sta d6_p+3
         rts
 l_d6_rowm:      .byte <((range(25) * 5120) >> 8)
@@ -384,7 +397,7 @@ l_d6_dma:
         adc l_d6f_bm
         sta l_d6_fj_d+1
         lda l_d6f_bh
-        adc #`F640_BUF0
+        adc d6_bk
         pha
         and #$0f
         sta l_d6_fj_b
@@ -393,7 +406,13 @@ l_d6_dma:
         lsr
         lsr
         lsr
-        ora #(F640_BUF0 >> 20) & $f0
+        sta l_d6_fj_mb                  ; (bits 20-23, then 24-27 above them)
+        lda d6_hi
+        asl
+        asl
+        asl
+        asl
+        ora l_d6_fj_mb
         sta l_d6_fj_mb
         lda d6_col
         sta l_d6_fj_v

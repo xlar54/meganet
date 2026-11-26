@@ -129,9 +129,9 @@ pic_ptrs:
         sta ptr2+1
         lda #GUI_RES_MEM >> 24
         sta ptr1+3
-        lda #`F640_BUF0
-        sta ptr2+2
-        lda #F640_BUF0 >> 24
+        lda d6_bk                       ; (the buffer being drawn: the screen, or the
+        sta ptr2+2                      ; off-screen one during gui_redraw)
+        lda d6_hi
         sta ptr2+3
         rts
 

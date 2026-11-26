@@ -9,7 +9,7 @@
 ;   $12000/$13000  screen RAMs (fcm640)
 ;   $20000-$3F3FF  the framebuffer (the ROM area, unprotected after the takeover):
 ;                  mega-ip will take $42000-$47FFF and $50000-$515FF (weather65's layout)
-;   $8000000     the logo (attic)
+;   $8000000     the logo (attic); $8160000 the off-screen buffer for redraws (GUI_BACK)
 ;   $8300000     File Library downloads and uploads, staged (storage.asm, 1 MB)
 ;   $8200000     GUI list / view rows (16 x 8 KB); $8240000 desktop icon pictures (12 x 512)
 ;   $8250000     grid cells (256 a gadget slot); $8400000 resource slots, 16 x 64 KB: a
@@ -50,9 +50,15 @@ GUI_MAXGAD      = DEBUG_NET ? 60 : 80   ; gadgets in all of them (< 128: some lo
 GUI_MAXBIG      = 16                    ; lists, views, text areas, drop-downs (attic, 8 KB each)
 GUI_NSLOTS      = 9                     ; menu-bar icons: link.asm's, then the server's 0-7
                                         ; (7: the SID tune playing, sidplay.asm)
-GUI_TBUF        = $eb00                 ; the gadget texts (80 x 64): under the KERNAL ROM,
+GUI_BACK        = $8160000              ; full redraws are drawn here, then copied to the
+                                        ; screen at once (lib/gui gui_redraw: no flicker)
+GUI_TBUF        = $eb00                ; the gadget texts (80 x 64): under the KERNAL ROM,
                                         ; after proto.asm's frame buffers ($E000-$EAFF)
         .cerror GUI_TBUF + GUI_MAXGAD * 64 > $fffa, "the gadget texts run into the vectors"
+GUI_LONG        = DEBUG_NET ? 0 : GUI_TBUF + GUI_MAXGAD * 64   ; two long text boxes (chat
+GUI_LONGN       = 2                     ; rooms, IMs, Page Admin: 124 characters); the debug
+GUI_LONGMAX     = 125                   ; build's log has the room
+        .cerror GUI_LONG && GUI_LONG + GUI_LONGN * GUI_LONGMAX > $fffa, "the long text boxes run into the vectors"
 UNPACK_BUF      = $40000                ; boot only
 
 ; the layout (lib/overlay.asm, overlays.asm): the resident part, then the overlays, each its

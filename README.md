@@ -87,6 +87,13 @@ Status: early.
   - in the debug build, the connection log (`OVL3`).
 
   The disk has `MEGANET` and the overlay files, built together.
+- **Screen drawing:** when windows open, close or move, the client draws the whole screen
+  off-screen in attic RAM first and then copies it to the screen in one go, so nothing
+  flickers (since 2.2). Small changes such as typing draw straight to the screen.
+- **Typing space:** text boxes hold 63 characters. The typing lines of chat rooms, instant
+  messages and Page Admin chats hold 124 (since 2.2: two such boxes at once, a third gets
+  63). The client has room for only two in bank 0. The debug build keeps 63, because its
+  connection log uses that RAM.
 - **Updates:** the client's version is `client-src/VERSION`, also on the disk as `VERSION`.
   - `build` is a whole number that the client and server compare.
   - `name` is what the Connect screen, the update window and the library show. It is
