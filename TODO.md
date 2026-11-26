@@ -43,6 +43,13 @@
         `TextView.append_spaced`: every client gets it once the server is deployed)
   - [x] Chess Rankings (server only): wins, losses, draws and an Elo rating for games between
         people; the Chess Lobby's Rankings... lists them best first
+  - [x] Skin upkeep: the Message Boards icon's notes yellow in Dark (server; a test keeps the
+        flat icons to colours every skin keeps); `tools/check_colours.py` in build.bat stops
+        the build on hard-coded black / white / light grey in the GUI's drawing code
+  - [ ] Next client release: the menu bar's "!" page alert is invisible in Dark between
+        flashes (fixed in the source, found by check_colours.py)
+  - [ ] Before the next client feature: room in the resident part (about 350 bytes left at
+        2.3): move rarely used GUI code (the Pinstripe title bar, menu-bar icons) to overlays
   - [ ] Skins on real hardware; check the Pinstripe screens not tried yet (lists, scroll
         bars, pressed buttons, check boxes, alerts, Paint, games)
   - [ ] Skins next: Mac-style X check boxes and round radio buttons, a pressed button drawn

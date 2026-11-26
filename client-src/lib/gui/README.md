@@ -42,7 +42,11 @@ left corner).
   faces, title bars, the default button's ring, the scroll track, the desktop colour
   (`gs+GS_DESKBG`, for the program's own backdrop), and `GS_STYLE` bit 7 (pinstriped title
   bars: close box at the left, the title centred, the minimize box at the far right) and bit
-  6 (rounded button corners). The default is Classic. To add a skin, add its palette lists
+  6 (rounded button corners). The default is Classic. New drawing code must use those
+  roles, not `#GC_BLACK` / `#GC_WHITE` / `#GC_LIGHT`: `tools/check_colours.py` (run by
+  `build.bat`) stops the build on one unless its comment says `(fixed colour: why)`.
+  Server-drawn art for the flat icon set uses only colours every skin keeps
+  (`desktop.SKIN_STABLE`). To add a skin, add its palette lists
   and its `GS_N` bytes and raise `GUI_SKINS`; new shapes need a style bit and code.
 - **Events:**
   - `GE_CLICK`: a button released over itself, or RETURN for the front window's `GGF_DEFAULT` button.

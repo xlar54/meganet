@@ -536,10 +536,10 @@ l_gui_init2:
         ldy #>l_gui_arrow_f
         jsr hws_shape
         ldx #GUI_PTR_SPR
-        lda #GC_BLACK
+        lda #GC_BLACK                   ; (fixed colour: the pointer's outline)
         jsr hws_colour
         ldx #GUI_PTR_SPR + 1
-        lda #GC_WHITE
+        lda #GC_WHITE                   ; (fixed colour: and its body)
         jsr hws_colour
         jsr mouse_init
         ldx #0                          ; the drag brackets
@@ -1999,7 +1999,7 @@ _nomin: jsr _bar                        ; the title: centred in left + 24 .. rig
         jsr l_gw_front
         cmp l_gd_ws
         bne +
-        ldy #GC_BLACK
+        ldy #GC_BLACK                   ; (fixed colour: only the Pinstripe skin runs this)
 +       sty gt_fg
         lda #$ff
         sta gt_bg
@@ -2549,7 +2549,7 @@ l_dk_label:
         lda #$ff
         sta gt_n
         sta gt_bg
-        lda #GC_WHITE
+        lda #GC_WHITE                   ; (fixed colour: desktop labels, on every skin's desk)
         sta gt_fg
         cpx l_dk_sel
         bne +
@@ -6244,12 +6244,12 @@ l_nt_draw:
 _env:   lda gs+GS_MENU                  ; 2: a plain white envelope on the bar, a black
         jsr l_gd_fill                   ; outline and an X corner to corner (the folds)
         jsr l_gd_shrink
-        lda #GC_WHITE
+        lda #GC_WHITE                   ; (fixed colour: the envelope, as in every skin)
         jsr l_gd_fill
-        lda #GC_BLACK
+        lda #GC_BLACK                   ; (fixed colour)
         tax
         jsr l_gd_edges
-        lda #GC_BLACK
+        lda #GC_BLACK                   ; (fixed colour)
         sta d6_col
         lda #0
         sta d6_y+1
@@ -6280,11 +6280,11 @@ _env:   lda gs+GS_MENU                  ; 2: a plain white envelope on the bar, 
         lda gr_y1
         sta d6_y1
         jmp d6_line
-_alert: ldx #GC_BLACK                   ; 1: "!" - red on the flash, grey between
+_alert: ldx gs+GS_INK                   ; 1: "!" - red on the flash, the bar between
         lda gs+GS_MENU
         ldy l_nt_phase
         beq +
-        ldx #GC_WHITE
+        ldx #GC_WHITE                   ; (fixed colour: white on red)
         lda #GC_RED
 +       stx gt_fg
         jsr l_gd_fill

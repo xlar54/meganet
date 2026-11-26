@@ -169,8 +169,12 @@ ICONS["bank"] = [                                # a bank: gold pediment, white 
     ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
 ]
 
-# The Pinstripe skin's pictures (protocol.Skin.PINSTRIPE): crisp black outlines, flat colours
-# and a grey drop shadow, in the style of a classic colour Mac (originals, not copies).
+# The Pinstripe skin's pictures (protocol.Skin.PINSTRIPE), also Dark's: crisp black outlines,
+# flat colours and a grey drop shadow, in the style of a classic colour Mac (originals, not
+# copies). Only colours that look the same in every skin: not g, l or t (the window face, the
+# light grey and the tooltip colour, which each skin redefines; Dark makes them dark greys).
+# s and n stay a mid grey and a blue everywhere. tests/test_skins.py checks this.
+SKIN_STABLE = set(".kwrGdbycsn")
 ICONS_PIN = {
     "chat": [                                    # a speech balloon, three dots; one behind
         "................................",
@@ -195,12 +199,12 @@ ICONS_PIN = {
         ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
         ".kddddddddddddddddddddddddddddks",
         ".kdkkkkkkkkkkdddddkkkkkkkkkkddks",
-        ".kdkwwwrrwwwkddddktttttrrtttkdks",
-        ".kdkwwrrrrwwksdddktttrrrrtttksks",
-        ".kdkwwwwwwwwksdddkttttttttttksks",
-        ".kdkwkkkkkwwksdddktkkkkkkkttksks",
-        ".kdkwwwwwwwwksdddkttttttttttksks",
-        ".kdkwkkkkwwwksdddktkkkkktttksdks",
+        ".kdkwwwrrwwwkddddkyyyyyrryyykdks",
+        ".kdkwwrrrrwwksdddkyyyrrrryyyksks",
+        ".kdkwwwwwwwwksdddkyyyyyyyyyyksks",
+        ".kdkwkkkkkwwksdddkykkkkkkyyyksks",
+        ".kdkwwwwwwwwksdddkyyyyyyyyyyksks",
+        ".kdkwkkkkwwwksdddkykkkkkyyyksdks",
         ".kdkwwwwwwwwksdddkkkkkkkkkkkkdks",
         ".kdkkkkkkkkkksddddsssssssssssdks",
         ".kddsssssssssdddddddddddddddddks",

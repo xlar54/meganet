@@ -58,6 +58,9 @@ REM Assets: client-src\assets (the logo PNG) -> client-src\gen\*, target\assets\
 REM TCP/IP stack (client-src\mega-ip) -> target\assets\ethbin
 python tools\build_assets.py %MOCKARG%
 if errorlevel 1 exit /b 1
+REM Skins: the GUI's drawing code takes its colours from the skin (tools\check_colours.py)
+python tools\check_colours.py
+if errorlevel 1 exit /b 1
 
 REM M65DEFS: extra 64tass defines for test builds, e.g. set M65DEFS=-D DBG_ROWS=8
 set TASS=.\64tass.exe -C -I client-src %MOCKDEF% %M65DEFS% client-src\main.asm

@@ -41,6 +41,10 @@ class SkinTest(ServerTest):
             self.assertIn(name, desktop.ICONS_PIN, "a Pinstripe picture for %s" % name)
             self.assertNotEqual(desktop.pixels(name, Skin.CLASSIC),
                                 desktop.pixels(name, Skin.PINSTRIPE), name)
+            used = {c for row in desktop.ICONS_PIN[name] for c in row}
+            self.assertLessEqual(used, desktop.SKIN_STABLE,
+                                 "%s uses a colour Dark redefines: %s"
+                                 % (name, sorted(used - desktop.SKIN_STABLE)))
 
     async def test_classic_at_sign_on(self):
         c = await self.signed_on("alice", build=SKIN_BUILD)
