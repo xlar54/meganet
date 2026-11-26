@@ -3553,6 +3553,18 @@ l_gd_textbox:
         sbc gt_n
         inc a
         sta gg_scr,x
++       ; and no empty space after the text while some is out of view on the left (DEL at
+        ; the end would scroll the box blank, hiding the start that still gets sent):
+        ; scr <= len + 1 - n, 0 if it all fits
+        lda gg_len,x
+        inc a
+        sec
+        sbc gt_n
+        bcs +
+        lda #0
++       cmp gg_scr,x
+        bcs +
+        sta gg_scr,x
 +       clc
         lda l_gtb_lo,x
         adc gg_scr,x
