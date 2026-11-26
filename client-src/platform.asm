@@ -82,6 +82,7 @@ DMAOPT_F018B            = $0B
 DMAOPT_SRC_MB           = $80
 DMAOPT_DST_MB           = $81
 DMAOPT_DST_STEP_INT     = $85
+DMAOPT_TRANSP_OFF       = $06
 DMAOPT_TRANSP_ON        = $07
 DMAOPT_TRANSP_VAL       = $86
 DMAOPT_END              = $00

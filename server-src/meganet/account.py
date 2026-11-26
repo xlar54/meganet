@@ -8,7 +8,8 @@ protocol.MENU_MY_ACCOUNT), and the Reset Password dialog.
          "42 (OK)", shown, not edited) and the Credits beside it (bank.py: it follows the
          balance while the window is open); on the right, Preferences: "Ring when Away" (the
          doorbell for new messages while Away: session.ring) and "Activity ticker" (the
-         desktop's ticker: livedesk.py); a status line; Reset Password at the bottom left,
+         desktop's ticker: livedesk.py) and, for clients with skins, "Look" (a drop-down:
+         Classic or Pinstripe, protocol.Skin; saved and sent at once); a status line; Reset Password at the bottom left,
          OK (default) and Cancel at the bottom right
     19 = Reset Password (modal): Current password, New password, Confirm; OK, Cancel
 
@@ -23,7 +24,7 @@ import time
 
 from . import db as dbmod
 from . import karma
-from .protocol import WFlag, GFlag, clean_text
+from .protocol import WFlag, GFlag, clean_text, SKIN_NAMES
 from .ui import (add_buttons, closer, Window, Button, CheckBox, Label, TextBox, Password, DropDown,
                  TextArea, Group)
 
@@ -45,6 +46,7 @@ ABOUT_H = 30                     # About Me shows (30 - 6) // 8 = 3 lines
 BUTTON_W, BUTTON_H = 64, 16
 REAL_W = 6 + 8 * dbmod.REAL_NAME_MAX   # 166: first and last names show whole
 ROLE_X = 96                      # the Role, beside the (10-character) Username
+LOOK_X = 56                      # Preferences' "Look:" drop-down, from PREF_X (9 characters)
 
 # Birthdate drop-downs: x offset from FIELD_X and width (room for 3 / 2 / 4 characters)
 MONTH_X, MONTH_W = 0, 48
@@ -196,6 +198,15 @@ class Account:
         win.credits = win.add(Label(FIELD_X + KARMA_W, y + 2, FIELD_W - KARMA_W, 10,
                                     credits_text(user["credits"])))
         y += ROW - 2                            # (right under it: the buttons come next)
+        # Preferences' last row: the client's look (protocol.Skin), for clients with skins
+        # (here: after the birthdate's drop-downs, before the status line)
+        win.look = None
+        if session.skins:
+            y_look = TOP + 4 + 3 * ROW + 6
+            win.add(Label(PREF_X + 8, y_look + 2, LOOK_X - 8, 10, "Look:"))
+            win.look = win.add(DropDown(PREF_X + LOOK_X, y_look, PREF_W - LOOK_X - 8,
+                                        list(SKIN_NAMES.values()),
+                                        list(SKIN_NAMES).index(session.skin)))
         win.status = win.add(Label(LABEL_X, y, PREF_X - LABEL_X - 4, 10, status or ""))
         y = H - 2 - BUTTON_H
         win.add(Button(LABEL_X, y, 144, BUTTON_H, "Reset Password...", on_click=self._reset))
@@ -258,6 +269,14 @@ class Account:
             session.show_ticker = win.ticker.checked
             self.db.set_show_ticker(session.user_id, session.show_ticker)
             self.server.screens.live.update(session)       # (on or off at once)
+        if win.look is not None and win.look.selected is not None:
+            skin = list(SKIN_NAMES)[win.look.selected]
+            if skin != session.skin:
+                session.skin = skin
+                self.db.set_skin(session.user_id, skin)
+                session.send_skin()                         # (redrawn in it at once)
+                self.server.screens.desktop.reskin(session)
+                session.log("look: %s" % SKIN_NAMES[skin])
         session.log("saved My Account")
         return win.close()
 

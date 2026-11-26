@@ -6,7 +6,7 @@ import zlib
 
 from meganet.protocol import (SPRITES, SPRITE_W, SPRITE_H, SPRITE_COLOURS, Local, LocalStatus, LOCAL_SD, LOCAL_MAX, FILE_CHUNK, UP_CHUNK,
                               BROADCAST_MAX, DESK_SLOTS, DESK_ICON_W, DESK_ICON_H, DESK_LABEL_MAX,
-                              TICKER_MAX, DESK_LINE_MAX, BADGE_MAX,
+                              TICKER_MAX, DESK_LINE_MAX, BADGE_MAX, SKIN_NAMES, SKIN_BUILD,
                               DESK_CLEAR, GFlag, S, C, Kind, Writer, Deframer, LOGIN_NEW_USER, MENU_FIRST,
                               MENU_LAST, MENU_SEPARATOR, MEGANET_MENU, NOTIFY_SLOTS, NOTIFY_HINT_MAX, Icon,
                               window_fits, DROPDOWN_ROWS, DROPDOWN_NONE, EDIT_LINES,
@@ -214,6 +214,9 @@ class FakeClient:
         self.events = []         # ("open" / "close" / "icon", window title or slot), in order
         self.storage = FakeStorage()   # drives 8-11 and an SD card (the File Library)
         self.caps = 0            # what send_hello said this client can do
+        self.build = 0           # and its build
+        self.skin = None         # S.SKIN: the last skin sent
+        self.skins = []          # and every one, in order
         self.resources = {}      # S.RESOURCE: slot -> 64 KB
         self.resource_bytes = 0  # how many came
         self.progress = []       # every progress bar value set, in order: (window title, %)
@@ -249,6 +252,7 @@ class FakeClient:
 
     def send_hello(self, build=100, caps=0):
         self.caps = caps
+        self.build = build
         self.send(C.HELLO, Writer().u8(1).u16(build).u8(caps).str("fakeclient"))
 
     def send_login(self, name, password, new=False):
@@ -540,6 +544,11 @@ class FakeClient:
         elif t == S.SID_PAUSE:
             assert self.sid is not None, "S.SID_PAUSE with no tune playing"
             self.sid["paused"] = bool(r.u8())
+        elif t == S.SKIN:
+            assert self.build >= SKIN_BUILD, "S.SKIN for a client that doesn't know it"
+            self.skin = r.u8()
+            assert self.skin in SKIN_NAMES, "skin %d" % self.skin
+            self.skins.append(self.skin)
         elif t == S.TICKER:
             self.ticker = r.str()
             assert len(self.ticker) <= TICKER_MAX, "ticker too long"

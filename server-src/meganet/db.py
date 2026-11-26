@@ -342,6 +342,8 @@ USER_COLUMNS = [("role_id", "INTEGER REFERENCES roles(id)"),
                 ("ring_away", "INTEGER NOT NULL DEFAULT 1"),
                 # My Account's "Activity ticker" (livedesk.py): on unless they untick it
                 ("show_ticker", "INTEGER NOT NULL DEFAULT 1"),
+                # My Account's "Look" (protocol.Skin): the client's skin
+                ("skin", "INTEGER NOT NULL DEFAULT 0"),
                 # the member who referred them (sign-up's "Referred by"), if any
                 ("referred_by", "INTEGER"),
                 # an admin locked it (User Editor > Lock): it can't sign on until unlocked
@@ -921,7 +923,7 @@ class Database:
     _USER_SQL = ("SELECT u.id, u.name, u.created, u.role_id, r.name AS role, u.first_name, "
                  "u.last_name, u.email, u.location, u.birthdate, u.about, u.last_login, "
                  "u.karma, u.tos_agreed, u.credits, u.ring_away, u.show_ticker, u.locked, "
-                 "u.referred_by FROM users u "
+                 "u.referred_by, u.skin FROM users u "
                  "LEFT JOIN roles r ON r.id = u.role_id ")
 
     def user(self, name=None, user_id=None):
@@ -979,6 +981,10 @@ class Database:
         with self.conn:
             self.conn.execute("UPDATE users SET show_ticker = ? WHERE id = ?",
                               (1 if on else 0, user_id))
+
+    def set_skin(self, user_id, skin):
+        with self.conn:
+            self.conn.execute("UPDATE users SET skin = ? WHERE id = ?", (int(skin), user_id))
 
     def set_password(self, user_id, pw_hash):
         with self.conn:

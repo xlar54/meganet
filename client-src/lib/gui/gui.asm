@@ -136,6 +136,27 @@ GC_NIGHT        = 13                    ; very dark blue
 GC_YELLOW       = 14
 GC_CYAN         = 15
 
+; Skins (gui_set_skin): each has its own palette for GC_* 0-15 and the colours and shapes
+; below, copied to gs. The S.SKIN message picks one.
+GUI_SKIN_CLASSIC = 0                    ; Windows 95 style: grey 3D, navy title bars
+GUI_SKIN_PIN    = 1                     ; classic colour Mac style: pinstriped title bars,
+                                        ; black outlines, rounded buttons, white menu bar
+GUI_SKINS       = 2
+GS_FRAME        = 0                     ; bevels, 4 colours each: outer top-left, outer
+GS_RAISE        = 4                     ; bottom-right, inner top-left, inner bottom-right
+GS_SUNK         = 8                     ; (window, button, text box, pressed button, group)
+GS_PRESS        = 12
+GS_GROUP        = 16
+GS_MENU         = 20                    ; the menu bar
+GS_MLINE        = 21                    ; the line under it
+GS_MHIBG        = 22                    ; an open title / the item under the pointer
+GS_MHIFG        = 23                    ; (its text)
+GS_DROP         = 24                    ; a menu's drop-down
+GS_PFACE        = 25                    ; a pressed button's face
+GS_STYLE        = 26                    ; bit 7: pinstriped title bars; bit 6: rounded buttons
+GS_DESKBG       = 27                    ; the desktop (the program's backdrop fills it)
+GS_N            = 28
+
 ; gadget kinds (the same numbers as the MegaNet protocol)
 GK_LABEL        = 1
 GK_BUTTON       = 2
@@ -430,22 +451,55 @@ gui_init:
         jsr gui_palette
         jmp l_gui_init2
 
-; palette entries 0-15: the GUI's colours (again after a full-screen picture used them)
+; palette entries 0-15: the GUI's colours, the skin's (again after a full-screen picture
+; used them)
 gui_palette:
+        lda gui_skin
+        asl
+        asl
+        asl
+        asl
+        tay
         ldx #0
--       lda l_gui_pal_r,x
+-       lda l_gui_pal_r,y
         jsr gui_swap
         sta $d100,x
-        lda l_gui_pal_g,x
+        lda l_gui_pal_g,y
         jsr gui_swap
         sta $d200,x
-        lda l_gui_pal_b,x
+        lda l_gui_pal_b,y
         jsr gui_swap
         sta $d300,x
+        iny
         inx
         cpx #16
         bne -
         rts
+
+; A = a skin (GUI_SKIN_*; an unknown one is Classic): its colours and shapes (gs), and the
+; whole screen drawn again
+gui_set_skin:
+        cmp #GUI_SKINS
+        bcc +
+        lda #0
++       sta gui_skin
+        tax
+        lda #0
+-       dex
+        bmi +
+        clc
+        adc #GS_N
+        bra -
++       tay
+        ldx #0
+-       lda l_skin_tab,y
+        sta gs,x
+        iny
+        inx
+        cpx #GS_N
+        bne -
+        jsr gui_palette
+        jmp gui_redraw_later
 
 l_gui_init2:
         jsr gui_close_all
@@ -717,9 +771,26 @@ l_gd_shrink:
 +       dec gr_y1
         rts
 
-; two-layer bevels; gr ends up inside them
-l_gd_bevel2:                            ; A/X outer, Y = inner top-left, l_gd_ib = inner
-        sty l_gd_it                     ; bottom-right
+; two-layer bevels in the skin's colours (gs + Y: outer top-left, outer bottom-right, inner
+; top-left, inner bottom-right); gr ends up inside them
+l_gd_raised:                            ; a button
+        ldy #GS_RAISE
+        bra l_gd_bev
+l_gd_frame:                             ; a window
+        ldy #GS_FRAME
+        bra l_gd_bev
+l_gd_sunken:                            ; a text box
+        ldy #GS_SUNK
+        bra l_gd_bev
+l_gd_pressed:                           ; a button held down
+        ldy #GS_PRESS
+l_gd_bev:
+        lda gs+2,y
+        sta l_gd_it
+        lda gs+3,y
+        sta l_gd_ib
+        lda gs,y
+        ldx gs+1,y
         jsr l_gd_edges
         jsr l_gd_shrink
         lda l_gd_it
@@ -728,34 +799,41 @@ l_gd_bevel2:                            ; A/X outer, Y = inner top-left, l_gd_ib
         jmp l_gd_shrink
 l_gd_ib:        .byte 0
 l_gd_it:        .byte 0
-l_gd_raised:                            ; a button
-        lda #GC_SHADOW
-        sta l_gd_ib
-        lda #GC_WHITE
-        ldx #GC_BLACK
-        ldy #GC_LIGHT
-        jmp l_gd_bevel2
-l_gd_frame:                             ; a window
-        lda #GC_SHADOW
-        sta l_gd_ib
-        lda #GC_LIGHT
-        ldx #GC_BLACK
-        ldy #GC_WHITE
-        jmp l_gd_bevel2
-l_gd_sunken:                            ; a text box
-        lda #GC_LIGHT
-        sta l_gd_ib
-        lda #GC_SHADOW
-        ldx #GC_WHITE
-        ldy #GC_BLACK
-        jmp l_gd_bevel2
-l_gd_pressed:                           ; a button held down
+
+; the four corner pixels of the rectangle saved in l_sb_save in the window's face colour, if
+; the skin has rounded buttons
+l_gd_round:
+        bit gs+GS_STYLE
+        bvc _no
         lda #GC_FACE
-        sta l_gd_ib
-        lda #GC_BLACK
-        ldx #GC_WHITE
-        ldy #GC_SHADOW
-        jmp l_gd_bevel2
+        sta d6_col
+        ldy #3
+_c:     ldx #0                          ; corner Y: bit 0 right, bit 1 bottom
+        tya
+        lsr
+        bcc +
+        ldx #4
++       lda l_sb_save,x
+        sta d6_x
+        sta d6_x1
+        lda l_sb_save+1,x
+        sta d6_x+1
+        sta d6_x1+1
+        ldx #2
+        tya
+        and #2
+        beq +
+        ldx #6
++       lda l_sb_save,x
+        sta d6_y
+        sta d6_y1
+        lda l_sb_save+1,x
+        sta d6_y+1
+        sta d6_y1+1
+        jsr d6_fill                     ; (keeps Y)
+        dey
+        bpl _c
+_no:    rts
 
 ; clip draw640 to gr
 l_gd_clip:
@@ -1642,7 +1720,11 @@ l_gui_draw_win:
         sta gr_y1
         lda #0
         sta gr_y1+1
-        jsr l_gw_front
+        bit gs+GS_STYLE                 ; pinstripes: the skin's own bar, title, close box
+        bpl +
+        jsr l_tb_pin
+        jmp _minb
++       jsr l_gw_front
         ldy #GC_SHADOW
         cmp l_gd_ws
         bne +
@@ -1741,11 +1823,14 @@ l_gui_draw_win:
         jsr l_gd_fill
         jsr l_gd_cross
 _minb:  ldx l_gd_ws                     ; minimize (or restore) box: right - 35 .. right - 21
-        lda gw_flags,x
+        lda gw_flags,x                  ; (pinstripes: right - 19 .. right - 5)
         and #GWF_MIN
         beq _gads
         lda #21
-        jsr l_tb_rect
+        bit gs+GS_STYLE
+        bpl +
+        lda #5
++       jsr l_tb_rect
         jsr l_gd_raised
         lda #GC_FACE
         jsr l_gd_fill
@@ -1769,6 +1854,186 @@ _gads:  ldx l_gd_ws                     ; (minimized: no gadgets)
         cpx #GUI_MAXGAD
         bne -
 _end:   jmp d6_clip_all
+
+; the pinstripe skin's title bar in gr (window l_gd_ws): stripes while it's in front, plain
+; gaps for the boxes, the close box at the left (left + 4 .. + 20: square on the screen), the
+; title bold and centred on a plain gap, black in front, grey behind
+l_tb_pin:
+        lda #GC_FACE
+        jsr l_gd_fill
+        jsr l_gw_front
+        cmp l_gd_ws
+        bne _gaps
+        lda #1                          ; rows 1, 3, .. 9, x0 + 1 .. x1 - 1
+        sta l_tb_by
+_st:    jsr l_gd_cp
+        inc d6_x
+        bne +
+        inc d6_x+1
++       lda d6_x1
+        bne +
+        dec d6_x1+1
++       dec d6_x1
+        clc
+        lda gr_y0
+        adc l_tb_by
+        sta d6_y
+        sta d6_y1
+        lda #GC_SHADOW
+        sta d6_col
+        jsr d6_fill
+        lda l_tb_by
+        clc
+        adc #2
+        sta l_tb_by
+        cmp #GUI_TITLE_H
+        bcc _st
+_gaps:  ldx l_gd_ws
+        lda gw_flags,x
+        and #GWF_CLOSE
+        beq _nocl
+        jsr _bar                        ; the close box's gap: left + 3 .. + 21
+        clc
+        lda gr_x0
+        adc #21
+        sta gr_x1
+        lda gr_x0+1
+        adc #0
+        sta gr_x1+1
+        clc
+        lda gr_x0
+        adc #3
+        sta gr_x0
+        bcc +
+        inc gr_x0+1
++       lda #GC_FACE
+        jsr l_gd_fill
+        jsr l_gd_shrink                 ; the box
+        jsr l_gd_raised
+        lda #GC_FACE
+        jsr l_gd_fill
+_nocl:  ldx l_gd_ws
+        lda gw_flags,x
+        and #GWF_MIN
+        beq _nomin
+        jsr _bar                        ; the minimize box's gap: right - 21 .. - 3
+        sec
+        lda gr_x1
+        sbc #3
+        sta gr_x1
+        bcs +
+        dec gr_x1+1
++       sec
+        sbc #18
+        sta gr_x0
+        lda gr_x1+1
+        sbc #0
+        sta gr_x0+1
+        lda #GC_FACE
+        jsr l_gd_fill
+_nomin: jsr _bar                        ; the title: centred in left + 24 .. right - 24
+        clc
+        lda gr_x0
+        adc #24
+        sta gr_x0
+        bcc +
+        inc gr_x0+1
++       sec
+        lda gr_x1
+        sbc #24
+        sta gr_x1
+        bcs +
+        dec gr_x1+1
++       jsr l_gd_clip
+        ldx l_gd_ws
+        lda l_gwt_lo,x
+        sta txt_ptr
+        lda l_gwt_hi,x
+        sta txt_ptr+1
+        jsr l_gd_hmid                   ; gt_x; l_gu_t = its width
+        sec                             ; its gap: gt_x - 6 .. gt_x + width + 6
+        lda gt_x
+        sbc #6
+        sta d6_x
+        lda gt_x+1
+        sbc #0
+        sta d6_x+1
+        clc
+        lda gt_x
+        adc l_gu_t
+        sta d6_x1
+        lda gt_x+1
+        adc l_gu_t+1
+        sta d6_x1+1
+        clc
+        lda d6_x1
+        adc #6
+        sta d6_x1
+        bcc +
+        inc d6_x1+1
++       lda gr_y0
+        sta d6_y
+        lda gr_y1
+        sta d6_y1
+        lda #0
+        sta d6_y+1
+        sta d6_y1+1
+        lda #GC_FACE
+        sta d6_col
+        jsr d6_fill
+        ldy #GC_SHADOW
+        jsr l_gw_front
+        cmp l_gd_ws
+        bne +
+        ldy #GC_BLACK
++       sty gt_fg
+        lda #$ff
+        sta gt_bg
+        sta gt_n
+        lda #0
+        sta gt_pw
+        clc
+        lda gr_y0
+        adc #(GUI_TITLE_H - 8) / 2
+        sta gt_y
+        lda gt_x                        ; bold: twice, one pixel apart
+        sta l_gd_bx
+        lda gt_x+1
+        sta l_gd_bx+1
+        jsr gui_text
+        clc
+        lda l_gd_bx
+        adc #1
+        sta gt_x
+        lda l_gd_bx+1
+        adc #0
+        sta gt_x+1
+        jsr gui_text
+        jmp d6_clip_all
+; gr = window l_gd_ws, its title bar's rows (top + 3 .. + 13)
+_bar:   ldx l_gd_ws
+        jsr l_gw_rect
+        clc
+        lda gr_y0
+        adc #3
+        sta gr_y0
+        adc #GUI_TITLE_H - 1
+        sta gr_y1
+        lda #0
+        sta gr_y0+1
+        sta gr_y1+1
+        rts
+
+; gr from 19 pixels left of its right edge (a click on the right-hand title-bar box)
+l_gu_right19:
+        sec
+        lda gr_x1
+        sbc #19
+        sta gr_x0
+        lda gr_x1+1
+        sbc #0
+        sta gr_x0+1
+        rts
 
 ; X = window slot, A = from the window's right edge to the box's: gr = a title-bar box,
 ; 15 x 9 (the close box: A = 5; minimize: 21). X kept
@@ -3007,6 +3272,11 @@ l_gd_hmid:
         rts
 
 l_gd_button:
+        ldy #7                          ; (its outline's corners: l_gd_round)
+-       lda gr_x0,y
+        sta l_sb_save,y
+        dey
+        bpl -
         lda gg_flags,x
         and #GGF_DEFAULT
         beq +
@@ -3018,10 +3288,12 @@ l_gd_button:
         cmp l_gd_gs
         bne _up
         jsr l_gd_pressed
+        lda gs+GS_PFACE
         bra _face
 _up:    jsr l_gd_raised
-_face:  lda #GC_FACE
-        jsr l_gd_fill
+        lda #GC_FACE
+_face:  jsr l_gd_fill
+        jsr l_gd_round
         jsr l_gd_clip
         jsr l_gd_hmid
         jsr l_gd_vmid
@@ -3217,13 +3489,8 @@ _val:   lda gp_x
 _no:    rts
 
 l_gd_group:
-        lda #GC_SHADOW
-        ldx #GC_WHITE
-        jsr l_gd_edges
-        jsr l_gd_shrink
-        lda #GC_WHITE
-        ldx #GC_SHADOW
-        jsr l_gd_edges
+        ldy #GS_GROUP
+        jsr l_gd_bev
         jmp d6_clip_all
 
 l_gd_textbox:
@@ -3513,19 +3780,23 @@ _front: ldx l_gu_ws
         adc #GUI_CLIENT_Y - 1
         cmp ev_y
         bcc _client
-        ; the close box: x >= right - 19
+        ; the close box: x >= right - 19 (pinstripes: x <= left + 21)
         lda gw_flags,x
         and #GWF_CLOSE
         beq _minbox
         jsr l_gw_rect
-        sec
-        lda gr_x1
-        sbc #19
-        sta gr_x0
-        lda gr_x1+1
-        sbc #0
-        sta gr_x0+1
-        jsr l_pt_in
+        bit gs+GS_STYLE
+        bpl _rcl
+        clc
+        lda gr_x0
+        adc #21
+        sta gr_x1
+        lda gr_x0+1
+        adc #0
+        sta gr_x1+1
+        bra _incl
+_rcl:   jsr l_gu_right19
+_incl:  jsr l_pt_in
         bcc _minbox
         lda #GE_CLOSE
         ldx l_gu_ws
@@ -3538,12 +3809,16 @@ _front: ldx l_gu_ws
         sec
         rts
 _minbox:                                ; minimize / restore: x right - 35 .. right - 20
-        ldx l_gu_ws
+        ldx l_gu_ws                     ; (pinstripes: right - 19 ..)
         lda gw_flags,x
         and #GWF_MIN
         beq _move
         jsr l_gw_rect
-        sec
+        bit gs+GS_STYLE
+        bpl +
+        jsr l_gu_right19
+        bra _inmin
++       sec
         lda gr_x1
         sbc #20
         sta gr_x1
@@ -3556,7 +3831,7 @@ _minbox:                                ; minimize / restore: x right - 35 .. ri
         lda gr_x1+1
         sbc #0
         sta gr_x0+1
-        jsr l_pt_in
+_inmin: jsr l_pt_in
         bcc _move
         ldx l_gu_ws
         jsr l_gw_minmax
@@ -5101,12 +5376,12 @@ l_mn_draw:
         sta gr_x1+1
         lda #GUI_MENU_H - 2
         sta gr_y1
-        lda #GC_FACE
+        lda gs+GS_MENU
         jsr l_gd_fill
         lda #GUI_MENU_H - 1             ; a line under it
         sta gr_y0
         sta gr_y1
-        lda #GC_SHADOW
+        lda gs+GS_MLINE
         jsr l_gd_fill
         ldy #0
 _t:     cpy mt_n
@@ -5144,10 +5419,10 @@ l_mn_title:
         cmp l_mn_open
         bne +
         phy
-        lda #GC_TITLE
+        lda gs+GS_MHIBG
         jsr l_gd_fill
         ply
-        ldx #GC_WHITE
+        ldx gs+GS_MHIFG
 +       stx gt_fg
         lda #$ff
         sta gt_bg
@@ -5298,7 +5573,7 @@ l_md_draw:
         jsr d6_clip_all
         jsr l_md_rect
         jsr l_gd_raised
-        lda #GC_FACE
+        lda gs+GS_DROP
         jsr l_gd_fill
         lda #0
         sta l_gu_t2
@@ -5369,7 +5644,7 @@ l_md_row:
         iny
         lda (txt_ptr),y
         bne _text
-        lda #GC_FACE
+        lda gs+GS_DROP
         jsr l_gd_fill
         lda gr_y0
         clc
@@ -5379,12 +5654,12 @@ l_md_row:
         lda #GC_SHADOW
         jmp l_gd_fill
 _text:  ldx #GC_BLACK
-        lda #GC_FACE
+        lda gs+GS_DROP
         ldy l_md_r
         cpy l_md_hov
         bne +
-        ldx #GC_WHITE
-        lda #GC_TITLE
+        ldx gs+GS_MHIFG
+        lda gs+GS_MHIBG
 +       stx gt_fg
         jsr l_gd_fill                   ; (fills don't touch txt_ptr)
         lda #$ff
@@ -5946,7 +6221,7 @@ l_nt_draw:
         bne _env
         jsr l_gd_raised                 ; 1: an alert button
         jmp _alert
-_env:   lda #GC_FACE                    ; 2: a plain white envelope on the bar, a black
+_env:   lda gs+GS_MENU                  ; 2: a plain white envelope on the bar, a black
         jsr l_gd_fill                   ; outline and an X corner to corner (the folds)
         jsr l_gd_shrink
         lda #GC_WHITE
@@ -5986,7 +6261,7 @@ _env:   lda #GC_FACE                    ; 2: a plain white envelope on the bar, 
         sta d6_y1
         jmp d6_line
 _alert: ldx #GC_BLACK                   ; 1: "!" - red on the flash, grey between
-        lda #GC_FACE
+        lda gs+GS_MENU
         ldy l_nt_phase
         beq +
         ldx #GC_WHITE
@@ -6044,7 +6319,7 @@ l_nt_wifi:
         ldx #>l_nm_bm
 +       sta _px+1
         stx _px+2
-        lda #GC_FACE
+        lda gs+GS_MENU
         jsr l_gd_fill
         ldx l_nw_i
         lda l_nw_cols-3,x
@@ -6267,7 +6542,7 @@ l_nt_all:
         sta gr_y1+1
         lda #GUI_MENU_H - 2
         sta gr_y1
-        lda #GC_FACE
+        lda gs+GS_MENU
         jsr l_gd_fill
 _icons: lda #0
         sta l_nt_k
@@ -6332,7 +6607,9 @@ l_nt_phase:     .byte 0
 ;=======================================================================================
 ; GK_EDIT: an editable text area. Its lines (up to GUI_EDIT_LINES, each up to the box's
 ; width in characters) are rows 0 .. n-1 of its 8 KB block, 64 bytes each. The cursor is
-; gb_row / gb_col. Typing past the end of a line carries on on a new line below.
+; gb_row / gb_col. Typing past the end of a line carries on on a new line below, taking the
+; word being typed with it (word wrap; a space there just starts the new line). Typing into a
+; full line elsewhere puts the key on a new line below (no re-wrapping of the paragraph).
 ;=======================================================================================
 ; l_gb_w = the characters a line of gadget X holds: (w - 6 - scroll bar) / 8, 1 .. 63
 l_ed_width:
@@ -6681,7 +6958,68 @@ _ins:   lda gb_row,y
         lda l_ed_len
         cmp l_gb_w
         bcc _room
-        lda gb_row,y                    ; full: carry on on a new line below
+        lda gb_col,y                    ; full, typing at its end: word wrap
+        cmp l_ed_len
+        bne _cut
+        lda gb_n,y
+        cmp #GUI_EDIT_LINES
+        bcs _cut                        ; (no line to wrap onto)
+        lda l_ed_kv
+        cmp #' '
+        beq _wsp
+        ldx l_ed_len                    ; the last space on the line
+-       dex
+        bmi _cut                        ; none: cut the word, as before
+        lda l_gb_line,x
+        cmp #' '
+        bne -
+        stx l_ed_p
+        inx                             ; the word after it -> l_ed_tail
+        txa
+        tay
+        ldx #0
+-       lda l_gb_line,y
+        sta l_ed_tail,x
+        beq +
+        iny
+        inx
+        bra -
++       ldx l_ed_p                      ; this line ends before the space
+        stx l_ed_len
+        lda #0
+        sta l_gb_line,x
+        ldy l_gb_t
+        lda gb_row,y
+        jsr l_ed_save
+        lda gb_row,y
+        inc a
+        jsr l_ed_insline                ; (there's room: checked)
+        ldx #0                          ; the word on the new line
+-       lda l_ed_tail,x
+        sta l_gb_line,x
+        beq +
+        inx
+        bra -
++       stx l_ed_len
+        lda gb_row,y
+        inc a
+        sta gb_row,y
+        jsr l_ed_save
+        lda gb_row,y
+        jsr l_ed_load
+        lda l_ed_len                    ; the key goes after it
+        sta gb_col,y
+        jmp _room
+_wsp:   lda gb_row,y                    ; a space at the end: just a new line
+        inc a
+        jsr l_ed_insline
+        lda gb_row,y
+        inc a
+        sta gb_row,y
+        lda #0
+        sta gb_col,y
+        jmp _done
+_cut:   lda gb_row,y                    ; full: carry on on a new line below
         inc a
         jsr l_ed_insline
         bcc +
@@ -7452,9 +7790,37 @@ dd_y1:          .byte 0
 GUIPAL_R = [0, 255, 192, 128, 223, 0, 0, 16, 255, 192, 0, 64, 0, 8, 255, 0]
 GUIPAL_G = [0, 255, 192, 128, 223, 0, 128, 132, 255, 0, 128, 64, 0, 8, 255, 255]
 GUIPAL_B = [0, 255, 192, 128, 223, 128, 128, 208, 225, 0, 0, 64, 255, 24, 0, 255]
-l_gui_pal_r:    .byte GUIPAL_R
-l_gui_pal_g:    .byte GUIPAL_G
-l_gui_pal_b:    .byte GUIPAL_B
+; the pinstripe skin: a light grey face, a blue highlight, a periwinkle desktop
+PINPAL_R = [0, 255, 221, 136, 238, 51, 102, 16, 255, 192, 0, 64, 0, 8, 255, 0]
+PINPAL_G = [0, 255, 221, 136, 238, 85, 102, 132, 255, 0, 128, 64, 0, 8, 255, 255]
+PINPAL_B = [0, 255, 221, 136, 238, 187, 187, 208, 225, 0, 0, 64, 255, 24, 0, 255]
+l_gui_pal_r:    .byte GUIPAL_R, PINPAL_R        ; (skin n: entries 16n ..)
+l_gui_pal_g:    .byte GUIPAL_G, PINPAL_G
+l_gui_pal_b:    .byte GUIPAL_B, PINPAL_B
+
+L_CLASSIC .macro
+                .byte GC_LIGHT, GC_BLACK, GC_WHITE, GC_SHADOW   ; frame
+                .byte GC_WHITE, GC_BLACK, GC_LIGHT, GC_SHADOW   ; raised
+                .byte GC_SHADOW, GC_WHITE, GC_BLACK, GC_LIGHT   ; sunken
+                .byte GC_BLACK, GC_WHITE, GC_SHADOW, GC_FACE    ; pressed
+                .byte GC_SHADOW, GC_WHITE, GC_WHITE, GC_SHADOW  ; group
+                .byte GC_FACE, GC_SHADOW, GC_TITLE, GC_WHITE    ; menu bar, line, highlight
+                .byte GC_FACE, GC_FACE, 0                       ; drop-down, pressed, style
+                .byte GC_BLACK                                  ; desktop
+                .endm
+gui_skin:       .byte GUI_SKIN_CLASSIC
+gs:             #L_CLASSIC              ; the skin's colours and shapes (GS_*), Classic's first
+                .cerror * - gs != GS_N, "gs isn't GS_N bytes"
+l_skin_tab:     #L_CLASSIC
+                .byte GC_BLACK, GC_BLACK, GC_WHITE, GC_SHADOW   ; Pinstripe: frame
+                .byte GC_BLACK, GC_BLACK, GC_WHITE, GC_SHADOW   ; raised
+                .byte GC_BLACK, GC_BLACK, GC_WHITE, GC_WHITE    ; sunken: flat, outlined
+                .byte GC_BLACK, GC_BLACK, GC_SHADOW, GC_LIGHT   ; pressed
+                .byte GC_SHADOW, GC_SHADOW, GC_FACE, GC_FACE    ; group: one grey line
+                .byte GC_WHITE, GC_BLACK, GC_BLACK, GC_WHITE    ; menu bar, line, highlight
+                .byte GC_WHITE, GC_SHADOW, $c0                  ; drop-down, pressed, style
+                .byte GC_DESK                                   ; desktop: periwinkle
+                .cerror * - l_skin_tab != GS_N * GUI_SKINS, "l_skin_tab isn't GS_N a skin"
 
 ; the pointer: a Windows-style arrow, black outline (sprite GUI_PTR_SPR) over a white
 ; fill (the next sprite). Sprite pixels are 2 x 1 of the 640x200 screen.

@@ -211,6 +211,8 @@ class S(IntEnum):
                          # a green dot and starts the names' colour)
     DESK_BADGE = 0x3A    # u8 slot, str text  (on that desktop icon: "" none, BADGE_DOT a green
                          # dot, otherwise the text, up to BADGE_MAX characters, on red)
+    SKIN = 0x3B          # u8 skin (Skin): the client's GUI colours and shapes; it draws
+                         # everything again (clients from SKIN_BUILD; older ones ignore it)
     CANVAS_PEN = 0x31    # u8 mode (CanvasPen), u8 colour (a palette entry), u8 size (1-16):
                          # what the client draws at once while the mouse is held, before the
                          # server's CANVAS_RECT comes
@@ -377,7 +379,6 @@ class GFlag(IntFlag):
     LONG = 128           # a text box of up to TextBox.LONG_CHARS characters (one at a time
                          # on the client; older clients, and a second one, hold 63)
 
-
 BROADCAST_MAX = 79       # S.BROADCAST: characters across the bottom row
 BROADCAST_SECS = 20
 DESK_SLOTS = 12          # S.DESK_ICON slots: 0-7 in columns from the left edge, top to
@@ -390,6 +391,17 @@ DESK_LINE_MAX = 78       # S.DESK_LINE: characters (each ONLINE_DOT is one)
 ONLINE_DOT = "\x01"
 BADGE_MAX = 3            # S.DESK_BADGE: characters
 BADGE_DOT = "*"
+
+
+class Skin(IntEnum):
+    """S.SKIN: the client's look (My Account > Look; users.skin)."""
+    CLASSIC = 0          # grey 3D, navy title bars
+    PINSTRIPE = 1        # classic colour Mac style: pinstriped title bars, black outlines,
+                         # rounded buttons, a white menu bar, a periwinkle desktop
+
+
+SKIN_NAMES = {Skin.CLASSIC: "Classic", Skin.PINSTRIPE: "Pinstripe"}
+SKIN_BUILD = 5           # the first client build that knows S.SKIN
 
 class Caps(IntFlag):
     """C.HELLO's caps byte: what the client can do."""

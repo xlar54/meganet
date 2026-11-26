@@ -34,6 +34,14 @@ left corner).
 
 - **Colours:** palette entries 0-15 (`GC_*`). `gui_init` writes them. A program's art uses 16-254;
   entry 255 shows the colour-RAM colour in FCM.
+- **Skins:** `gui_set_skin` (A = `GUI_SKIN_CLASSIC` or `GUI_SKIN_PIN`) switches the look and
+  redraws everything. Each skin has its own palette for entries 0-15 and `GS_N` bytes of
+  colour roles and style bits (`l_skin_tab`), copied to `gs`: the four bevels (window, button,
+  text box, pressed button) and the group frame, the menu bar's colours, the desktop colour
+  (`gs+GS_DESKBG`, for the program's own backdrop), and `GS_STYLE` bit 7 (pinstriped title
+  bars: close box at the left, the title centred, the minimize box at the far right) and bit
+  6 (rounded button corners). The default is Classic. To add a skin, add its palette lists
+  and its `GS_N` bytes and raise `GUI_SKINS`; new shapes need a style bit and code.
 - **Events:**
   - `GE_CLICK`: a button released over itself, or RETURN for the front window's `GGF_DEFAULT` button.
   - `GE_CLOSE`: the close box. The program decides whether to call `gui_win_close`.
@@ -168,7 +176,10 @@ left corner).
 - **Typing:** the focused text box takes printable keys, DEL, cursor left/right and HOME. TAB moves to
   the window's next text box. Clicking puts the cursor where you clicked. A box holds 63
   characters. With `GUI_LONG` set (`GUI_LONGN` buffers of `GUI_LONGMAX` bytes in bank 0), a
-  text box flagged `GGF_LONG` holds `GUI_LONGMAX - 1` while a buffer is free.
+  text box flagged `GGF_LONG` holds `GUI_LONGMAX - 1` while a buffer is free. A text area
+  word-wraps typing at a line's end: the word after the line's last space moves down with
+  the cursor (a space typed there just starts the new line; a word as long as the line is
+  cut). Typing into the middle of a full line puts the key on a new line below.
 - **Tests:**
   - Mouse events: write `type, x lo, x hi, y` quads to `gui_dbg_ev` and the count to `gui_dbg_evn`
     (`EV_DOWN` = 2, `EV_UP` = 3).

@@ -127,7 +127,7 @@ login_backdrop:
         sta gr_x1+1
         lda #199
         sta gr_y1
-        lda #GC_BLACK
+        lda gs+GS_DESKBG                ; (the skin's: Classic black)
         jsr l_gd_fill
         ldx #0                          ; signed on: one cell row lower, under the menu bar
         lda login_state
@@ -193,6 +193,8 @@ login_logo:
         sta ll_dst+3
         lda #LOGO_CH
         sta ll_n
+        lda #DMAOPT_TRANSP_ON           ; its black (GUI colour 0) shows the desktop's colour
+        sta dmaj_transp
 _row:   ldx #3
 -       lda ll_src,x
         sta ptr1,x
@@ -222,6 +224,8 @@ _row:   ldx #3
         inc ll_dst+2
 +       dec ll_n
         bne _row
+        lda #DMAOPT_TRANSP_OFF
+        sta dmaj_transp
         rts
 _src0:  .dword LOGO_ATTIC
 _dst0:  .dword F640_BUF0 + LOGO_ROW * 5120 + LOGO_COL * 64

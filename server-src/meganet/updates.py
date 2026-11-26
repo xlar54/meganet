@@ -52,7 +52,7 @@ def parse_version(text):
 
 
 # What the older builds were called (their disks said only a number)
-BUILD_NAMES = {1: "1", 2: "2", 3: "2.1", 4: "2.2"}
+BUILD_NAMES = {1: "1", 2: "2", 3: "2.1", 4: "2.2", 5: "2.3"}
 
 
 def build_name(build):

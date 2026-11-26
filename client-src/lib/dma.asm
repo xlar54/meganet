@@ -39,6 +39,9 @@ dmaj_src_mb:
         .byte DMAOPT_DST_MB
 dmaj_dst_mb:
         .byte 0
+dmaj_transp:                            ; DMAOPT_TRANSP_ON: copies (dma_copy_far too) skip
+        .byte DMAOPT_TRANSP_OFF         ; source bytes of 0; put OFF back afterwards
+        .byte DMAOPT_TRANSP_VAL, 0
         .byte DMAOPT_END
 dmaj_cmd:
         .byte DMACMD_COPY

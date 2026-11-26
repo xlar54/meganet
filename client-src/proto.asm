@@ -232,6 +232,7 @@ _types: .byte S_HELLO, S_LOGIN_RESULT, S_WIN_OPEN, S_WIN_CLOSE, S_GADGET, S_SET_
         .byte S_SPRITE, S_SPRITE_MOVE, S_SPRITE_OFF
         .byte S_SID_PLAY, S_SID_STOP, S_SID_PAUSE
         .byte S_TICKER, S_DESK_LINE, S_DESK_BADGE
+        .byte S_SKIN
 _n = * - _types
 _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_text
         .word pm_set_value, pm_focus, pm_alert, pm_win_done, pm_list_rows, pm_append
@@ -245,7 +246,14 @@ _jumps: .word pm_hello, pm_login, pm_win_open, pm_win_close, pm_gadget, pm_set_t
         .word pm_sprite, pm_sprite_move, pm_sprite_off                    ; (sprites.asm)
         .word pm_sid_play, pm_sid_stop, pm_sid_pause                      ; (sidplay.asm)
         .word far_ticker, far_desk_line, far_desk_badge                   ; (desk.asm: overlay)
+        .word pm_skin
         .cerror (_jumps - _types) != _n, "a message without its handler"
+
+; S.SKIN: u8 skin (lib/gui GUI_SKIN_*): the GUI's colours and shapes, everything drawn again
+S_SKIN = $3b
+pm_skin:
+        jsr rd_u8
+        jmp gui_set_skin
 
 ; S.RESOURCE_PACKED: u8 slot, u16 offset, the rest PackBits bytes (lib/gui/grid.asm)
 S_RESOURCE_PACKED = $2c

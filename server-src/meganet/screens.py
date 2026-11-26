@@ -184,6 +184,7 @@ class Screens:
         """Everything a session gets on signing on. The desktop icons come first, under a
         "One moment..." window; then the welcome window, or (`welcome` False) `after()`: the
         sign-up wizard's "account set up" window, which shows the welcome after it."""
+        session.send_skin()                   # (first: the rest is drawn in it)
         self.send_menu(session)
         self.presence.show_icon(session)
         then = (lambda: self.welcome(session)) if welcome else after

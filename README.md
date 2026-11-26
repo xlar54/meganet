@@ -93,7 +93,13 @@ Status: early.
 - **Typing space:** text boxes hold 63 characters. The typing lines of chat rooms, instant
   messages and Page Admin chats hold 124 (since 2.2: two such boxes at once, a third gets
   63). The client has room for only two in bank 0. The debug build keeps 63, because its
-  connection log uses that RAM.
+  connection log uses that RAM. Multi-line text areas (messages, About Me) word-wrap as you
+  type at the end of a line (since 2.3); a paragraph isn't re-wrapped when you edit its middle.
+- **Looks (skins):** My Account > Preferences > Look picks how the client looks (since
+  2.3): **Classic** (grey 3D, navy title bars) or **Pinstripe** (a classic colour Mac style:
+  pinstriped title bars with the close box at the left, black outlines, rounded buttons, a
+  white menu bar and a periwinkle desktop, with its own desktop icons). The server keeps it
+  per member and sends it at sign-on; the sign-on screen itself is always Classic.
 - **Updates:** the client's version is `client-src/VERSION`, also on the disk as `VERSION`.
   - `build` is a whole number that the client and server compare.
   - `name` is what the Connect screen, the update window and the library show. It is

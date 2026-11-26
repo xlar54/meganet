@@ -30,6 +30,21 @@
       copied at once: no flicker (tried on a real MEGA65); chat, IM and Page Admin typing
       lines hold 124 characters (GGF_LONG, two buffers at $FF00; tried in Xemu over the
       bridge, a chat room and an IM at once)
+- [ ] Client 2.3 (in progress, not released):
+  - [x] Text areas word-wrap: typing past a line's end takes the word being typed down to
+        the new line (a word longer than a line is still cut). Tried in Xemu over the bridge
+        (`bridge_test.py mailwrap`)
+  - [x] Skins (branch `skins`): My Account > Look, Classic or Pinstripe (S.SKIN, build 5).
+        Tried in Xemu over the bridge (`bridge_test.py pin`, `pinacct`, `pinmenu`): the
+        desktop, a window, My Account and a menu; Classic unchanged
+  - [ ] Skins on real hardware; check the Pinstripe screens not tried yet (lists, scroll
+        bars, pressed buttons, check boxes, alerts, Paint, games)
+  - [ ] Skins next: Mac-style X check boxes and round radio buttons, a pressed button drawn
+        inverted, the sign-on screen in the last skin used (kept on the disk), more skins
+- [ ] Text areas: full re-wrapping. Typing into the middle of a full line should push its
+      last word down (rippling through the paragraph), and DEL at a line's start should pull
+      words back up. Needs the client to tell its own wraps from typed Returns (a flag per
+      line), and probably a protocol flag so the server can join wrapped lines into paragraphs
 - [ ] Redraws: if the copy shows a tear, or attic drawing is slow, redraw and copy only the
       area that changed (a dirty rectangle)
 - [x] Connect window: DHCP or Static IP (the Static Address window: IP, mask, gateway, DNS;

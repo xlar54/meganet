@@ -114,8 +114,7 @@ ASCII. The authoritative list of messages is [`server-src/meganet/protocol.py`](
   `WIN_CLOSED`, `KEY` (raw keys, only for gadgets flagged RAWKEYS: games), `FILE_ACK`,
   `NOTIFY_CLICK`, `TEXT`, `PING`.
 - **Long text boxes:** a `GADGET` text box with flag `LONG` (128) holds up to 124 characters
-  instead of 63 (client 2.2 on, two at a time). Older clients ignore the flag and hold 63.
-- **Is the server still there?** `PING` (`$8F`, no payload) is answered with `PONG` (`$1C`, no
+  instead of 63 (client 2.2 on, two at a time). Older clients ignore the flag and hold 63.- **Is the server still there?** `PING` (`$8F`, no payload) is answered with `PONG` (`$1C`, no
   payload), signed on or not. The client counts any frame from the server as a sign of life.
   Signed on, after 30 seconds with nothing from the server it sends `PING`; if nothing at all
   comes back within 10 seconds, its connectivity icon (a Wi-Fi fan at the very right of the
@@ -144,7 +143,8 @@ ASCII. The authoritative list of messages is [`server-src/meganet/protocol.py`](
     wide inside its right edge. Lines are (w - 6 - 11) / 8 characters (at most 63), and
     (h - 6) / 8 lines are visible. Initial contents: one `APPEND` per line, after its `GADGET`
     and before `WIN_DONE`; `SET_TEXT` with "" empties it. The client keeps at most 32 lines and
-    wraps typing at the line width.
+    wraps typing at the line width (from 2.3 at the last space, carrying the word down; older
+    clients cut mid-word). Either way it sends the lines as they're shown.
   - **`TEXT` (`$8B`)**: `u8 win`, `u8 gid`, `u8 n`, then n x `str` (the lines; trailing empty
     lines dropped). Before it sends a `CLICK`, the client sends a `TEXT` for every Edit gadget
     of that window, as it sends `VALUE` for text boxes.
@@ -380,6 +380,20 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   Cancel (closes without saving) at the bottom right. New `users` columns (first_name, last_name, email, location,
   birthdate, about, last_login) are added to older databases with ALTER TABLE; an About Me
   saved by the older three-box form is kept and shown wrapped to the area's width.
+- **Skins** (`protocol.Skin`, `S.SKIN` `$3B`: `u8 skin`; clients from build 5, `SKIN_BUILD`):
+  the client's look. 0 Classic (grey 3D, navy title bars, black desktop) and 1 Pinstripe (a
+  classic colour Mac style: pinstriped title bars on the front window with the title centred,
+  the close box at the left and the minimize box at the far right, black outlines, rounded
+  buttons, flat outlined text boxes, a white menu bar with black highlights, a periwinkle
+  desktop). My Account's Preferences has a "Look" drop-down for clients that know skins;
+  it's saved in `users.skin`, sent at once (the client draws everything again) and at every
+  sign-on, before the menu bar. The desktop icons follow it: `desktop.ICONS_PIN` has each
+  picture in the Pinstripe style. Older clients are never sent `S.SKIN` and see no Look.
+  On the client (`lib/gui/gui.asm`): each skin is a 16-colour palette (entries 0-15) and
+  `GS_N` bytes of colour roles and style bits (`l_skin_tab`) copied to `gs` by
+  `gui_set_skin`; the bevels, menu bar and buttons read `gs`, and two style bits switch the
+  title bar and the button corners. The sign-on screen is drawn in Classic (the skin comes
+  with the sign-on).
 - **Object model that mirrors the client's GUI** (`meganet/ui.py`): the server builds `Window`
   objects out of `Gadget` objects (`Button`, `Label`, `TextBox`, `Password`, `ListBox`,
   `DropDown`, `TextView`, `TextArea` (Edit), `CheckBox`, `Radio`, `Progress`...) with

@@ -40,7 +40,7 @@ from .protocol import (TOAST_NO_SLOT, clean_text, S, C, Writer, Deframer, Protoc
                        NOTIFY_HINT_MAX, SLOT_STATUS, Icon, WFlag, Caps, palette_rgb, SPRITES,
                        SPRITE_W, SPRITE_H, SPRITE_COLOURS,
                        RESOURCE_SLOTS, RESOURCE_SIZE,
-                       RESOURCE_CHUNK, Sound)
+                       RESOURCE_CHUNK, Sound, SKIN_NAMES, SKIN_BUILD)
 
 log = logging.getLogger("meganet")
 
@@ -129,6 +129,7 @@ class Session:
         self.status = "available"    # Status menu: available / away / offline (presence.py)
         self.ring_away = True        # My Account's "Ring when I'm Away" (ring())
         self.show_ticker = True      # and its "Activity ticker" (livedesk.py)
+        self.skin = 0                # and its "Look" (protocol.Skin; send_skin)
         self.sid_playing = None      # (key, song) of the SID tune it's playing (play_sid)
         self.sid_now = None          # and what SID Music says about it (sidlib.py)
         self.last_ring = -RING_GAP
@@ -325,6 +326,16 @@ class Session:
             self.send(S.SPRITE_OFF, Writer().u8(n))
 
     # ---- SID tunes (Caps.SID): played by the client in the background ----
+
+    @property
+    def skins(self):
+        """Whether this client knows S.SKIN (My Account offers the Look only then)."""
+        return (self.build or 0) >= SKIN_BUILD
+
+    def send_skin(self):
+        """S.SKIN with this user's look (nothing to a client that doesn't know it)."""
+        if self.skins:
+            self.send(S.SKIN, Writer().u8(self.skin))
 
     def play_sid(self, psid, song, key):
         """Play song `song` (0-based) of a checked tune (sidcheck.parse + check): its C64
@@ -582,6 +593,7 @@ class Session:
         self.user_id = row["id"]
         self.ring_away = bool(row["ring_away"])
         self.show_ticker = bool(row["show_ticker"])
+        self.skin = row["skin"] if row["skin"] in SKIN_NAMES else 0
         self.previous_login = self.server.db.record_login(self.user_id)
         self.load_permissions()
         self.log("signed on as %s (%s, build %s)%s" % (self.user, self.role, self.build,

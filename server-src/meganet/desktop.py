@@ -10,7 +10,7 @@ the column follows when their permissions change.
 import asyncio
 
 from .protocol import (S, WFlag, Writer, DESK_SLOTS, DESK_LEFT, DESK_ICON_W, DESK_ICON_H,
-                       DESK_LABEL_MAX, DESK_CLEAR)
+                       DESK_LABEL_MAX, DESK_CLEAR, Skin)
 from .ui import Window, Label, Progress
 
 # text picture character -> the client's GUI colour (lib/gui GC_*); '.' is transparent
@@ -169,6 +169,155 @@ ICONS["bank"] = [                                # a bank: gold pediment, white 
     ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
 ]
 
+# The Pinstripe skin's pictures (protocol.Skin.PINSTRIPE): crisp black outlines, flat colours
+# and a grey drop shadow, in the style of a classic colour Mac (originals, not copies).
+ICONS_PIN = {
+    "chat": [                                    # a speech balloon, three dots; one behind
+        "................................",
+        "...........kkkkkkkkkkkkkkkkkk...",
+        "..........knnnnnnnnnnnnnnnnnnk..",
+        "..kkkkkkkkkkkkkkkkkkkkknnnnnnk..",
+        ".kwwwwwwwwwwwwwwwwwwwwwknnnnnk..",
+        "kwwwwwwwwwwwwwwwwwwwwwwwknnnnk..",
+        "kwwwwkkwwwwwkkwwwwwkkwwwknnnnk..",
+        "kwwwwkkwwwwwkkwwwwwkkwwwkkkkk...",
+        "kwwwwwwwwwwwwwwwwwwwwwwwksss....",
+        ".kwwwwwwwwwwwwwwwwwwwwwks.......",
+        "..kkkkkwwkkkkkkkkkkkkkkss.......",
+        "......kwwkssssssssssssss........",
+        "......kwks......................",
+        "......kks.......................",
+        "......ks........................",
+        "................................",
+    ],
+    "boards": [                                  # notes pinned to a board, red pins
+        "................................",
+        ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
+        ".kddddddddddddddddddddddddddddks",
+        ".kdkkkkkkkkkkdddddkkkkkkkkkkddks",
+        ".kdkwwwrrwwwkddddktttttrrtttkdks",
+        ".kdkwwrrrrwwksdddktttrrrrtttksks",
+        ".kdkwwwwwwwwksdddkttttttttttksks",
+        ".kdkwkkkkkwwksdddktkkkkkkkttksks",
+        ".kdkwwwwwwwwksdddkttttttttttksks",
+        ".kdkwkkkkwwwksdddktkkkkktttksdks",
+        ".kdkwwwwwwwwksdddkkkkkkkkkkkkdks",
+        ".kdkkkkkkkkkksddddsssssssssssdks",
+        ".kddsssssssssdddddddddddddddddks",
+        ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkks",
+        "..sssssssssssssssssssssssssssss.",
+        "................................",
+    ],
+    "files": [                                   # a blue folder, its tab at the top left
+        "................................",
+        "...kkkkkkkkk....................",
+        "..kwwwwwwwwwk...................",
+        "..kwnnnnnnnnwkkkkkkkkkkkkkkkk...",
+        "..kwnnnnnnnnnnnnnnnnnnnnnnnnnk..",
+        "..kwwwwwwwwwwwwwwwwwwwwwwwwwnks.",
+        "..kwnnnnnnnnnnnnnnnnnnnnnnnnnks.",
+        "..kwnnnnnnnnnnnnnnnnnnnnnnnnnks.",
+        "..kwnnnnnnnnnnnnnnnnnnnnnnnnnks.",
+        "..kwnnnnnnnnnnnnnnnnnnnnnnnnnks.",
+        "..kwnnnnnnnnnnnnnnnnnnnnnnnnnks.",
+        "..kwnnnnnnnnnnnnnnnnnnnnnnnnnks.",
+        "..kkkkkkkkkkkkkkkkkkkkkkkkkkkks.",
+        "...sssssssssssssssssssssssssss..",
+        "................................",
+        "................................",
+    ],
+    "games": [                                   # two dice
+        "................................",
+        "..kkkkkkkkkkkkk.................",
+        ".kwwwwwwwwwwwwwk................",
+        ".kwkkwwwwwwwwwwk.....kkkkkkkkkk.",
+        ".kwkkwwwwwwwwwwk....kwwwwwwwwwwk",
+        ".kwwwwwwkkwwwwwks...kwwwwwwrrwwk",
+        ".kwwwwwwkkwwwwwks...kwwwwwwrrwwk",
+        ".kwwwwwwwwwwkkwks...kwwwwwwwwwwk",
+        ".kwwwwwwwwwwkkwks...kwwrrwwwwwwk",
+        ".kwwwwwwwwwwwwwks...kwwrrwwwwwwk",
+        "..kkkkkkkkkkkkkks...kwwwwwwwwwwk",
+        "...ssssssssssssss....kkkkkkkkkks",
+        ".....................sssssssssss",
+        "................................",
+        "................................",
+        "................................",
+    ],
+    "who": [                                     # two people, one in front
+        "................................",
+        ".........kkkkk..................",
+        "........kyyyyyk.....kkkkk.......",
+        "........kyyyyyk....kyyyyyk......",
+        "........kyyyyyk....kyyyyyk......",
+        ".........kkkkk.....kyyyyyk......",
+        "......kkkkkkkkkk....kkkkk.......",
+        ".....kGGGGGGGGGGkkkkkkkkkkk.....",
+        ".....kGGGGGGGGGkrrrrrrrrrrrk....",
+        ".....kGGGGGGGGGkrrrrrrrrrrrks...",
+        ".....kGGGGGGGGGkrrrrrrrrrrrks...",
+        ".....kkkkkkkkkkkrrrrrrrrrrrks...",
+        "...............kkkkkkkkkkkkks...",
+        "................ssssssssssss....",
+        "................................",
+        "................................",
+    ],
+    "news": [                                    # a page with its corner folded down
+        "......kkkkkkkkkkkkkkkkkk........",
+        "......kwwwwwwwwwwwwwwwwkwk......",
+        "......kwkkkkkkkkkkkkkkwkwwk.....",
+        "......kwwwwwwwwwwwwwwwwkkkkk....",
+        "......kwnnnnnnwwkkkkkkkwwwwks...",
+        "......kwnnnnnnwwwwwwwwwwwwwks...",
+        "......kwnnnnnnwwkkkkkkkkkwwks...",
+        "......kwnnnnnnwwwwwwwwwwwwwks...",
+        "......kwwwwwwwwwkkkkkkkkkwwks...",
+        "......kwkkkkkkkkkkkkkkkkkwwks...",
+        "......kwwwwwwwwwwwwwwwwwwwwks...",
+        "......kwkkkkkkkkkkkkkkkwwwwks...",
+        "......kwwwwwwwwwwwwwwwwwwwwks...",
+        "......kkkkkkkkkkkkkkkkkkkkkks...",
+        ".......ssssssssssssssssssssss...",
+        "................................",
+    ],
+    "voting": [                                  # a list of boxes, one ticked
+        "........kkkkkkkkkkkkkkkkk.......",
+        "........kwwwwwwwwwwwwwwwk.......",
+        "........kwkkkkwwwwwwwwwwks......",
+        "........kwkwwkwkkkkkkkwwks......",
+        "........kwkkkkwwwwwwwwwwks......",
+        "........kwwwwwwwwwwwwGwwks......",
+        "........kwkkkkwwwwwwGGwwks......",
+        "........kwkGwkGkkkkGGkwwks......",
+        "........kwkkGGGwwwGGwwwwks......",
+        "........kwwwwGGwwGGwwwwwks......",
+        "........kwkkkkGGGGwwwwwwks......",
+        "........kwkwwkwGGkkkkwwwks......",
+        "........kwkkkkwwwwwwwwwwks......",
+        "........kkkkkkkkkkkkkkkkks......",
+        ".........sssssssssssssssss......",
+        "................................",
+    ],
+    "bank": [                                    # a stack of gold coins and one on its own
+        "................................",
+        "................................",
+        "........kkkkkkkkkkkk............",
+        ".......kyyyyyyyyyyyyk...........",
+        "......kyyyyyyyyyyyyyyk..........",
+        "......kkyyyyyyyyyyyykk..........",
+        "......kykkkkkkkkkkkkyk...kkkkkk.",
+        "......kkyyyyyyyyyyyykk..kyyyyyyk",
+        "......kykkkkkkkkkkkkyk.kyykkkyyk",
+        "......kkyyyyyyyyyyyykk.kyykyyyyk",
+        "......kykkkkkkkkkkkkyk.kyykkkyyk",
+        "......kkyyyyyyyyyyyykks.kyyyyyyk",
+        ".......kkkkkkkkkkkkkks...kkkkkk.",
+        "........ssssssssssssss.....ssss.",
+        "................................",
+        "................................",
+    ],
+}
+
 # The columns, top to bottom: (picture, label, permission or None, Screens action). LEFT
 # fills slots 0-7 from the left edge, RIGHT slots 8-11 from the right edge (protocol).
 DESKTOP = [
@@ -185,9 +334,10 @@ DESKTOP_RIGHT = [
 ]
 
 
-def pixels(name):
-    """An icon's DESK_ICON_W x DESK_ICON_H bytes."""
-    rows = ICONS[name]
+def pixels(name, skin=Skin.CLASSIC):
+    """An icon's DESK_ICON_W x DESK_ICON_H bytes, in the skin's style (Classic's if it has
+    none of its own)."""
+    rows = (ICONS_PIN if skin == Skin.PINSTRIPE else ICONS).get(name) or ICONS[name]
     if len(rows) != DESK_ICON_H or any(len(r) != DESK_ICON_W for r in rows):
         raise ValueError("icon %s isn't %dx%d" % (name, DESK_ICON_W, DESK_ICON_H))
     return bytes(PALETTE[ch] for row in rows for ch in row)
@@ -256,6 +406,11 @@ class Desktop:
         """Send the icons this session may use; only what changed goes (session.desk)."""
         self._send(session, self.icons_for(session))
 
+    def reskin(self, session):
+        """Every icon again, in the session's new skin."""
+        session.desk = []
+        self.refresh(session)
+
     def _send(self, session, want):
         have = getattr(session, "desk", [])
         for slot in range(DESK_SLOTS):
@@ -268,7 +423,7 @@ class Desktop:
                 w.str("").str("")
             else:
                 one, two = label_lines(new[1])
-                w.str(one).str(two).bytes(pixels(new[0]))
+                w.str(one).str(two).bytes(pixels(new[0], session.skin if session.skins else 0))
             session.send(S.DESK_ICON, w)
         session.desk = want
         if getattr(session, "live_badges", None) is not None:   # (signed on: the badges
