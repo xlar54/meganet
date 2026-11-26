@@ -444,6 +444,12 @@ The forced update (below) uses `FILE_BEGIN` instead of `SAVE_BEGIN`.
   Offer Draw / Resign / Rematch / Lobby. Every rule is enforced: castling, en passant,
   promotion (a dialog), check, checkmate, stalemate, and the automatic draws (insufficient
   material, fifty moves, threefold repetition). No clocks yet.
+  **Rankings** (`games/rankings.py`, table `game_ratings`): a game between two people counts
+  once both have moved (resigning or leaving loses it; games against the computer don't
+  count). Each player has wins, losses, draws and an Elo rating (from 1200, K = 32). The
+  lobby's Rankings... (window 58) lists everyone best first (rating, then wins, then fewer
+  losses) and says where the viewer stands. Any game with a challenge lobby can set
+  `ranked = True` to get the same.
 - **One** (`games/one.py`, rules in `one_rules.py`, cards in `one_art.py`): the card game for
   2-4 by the usual official rules (Wild Draw Four challenges, calling One!, scoring to 500).
   Join asks "Wait for Others" (the queue) or "vs Computer..." (1-3 computer players, played

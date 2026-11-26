@@ -158,6 +158,8 @@ class InstantMessageTest(PresenceBase):
         alice.value(aim.id, gadget_of(aim, Kind.TEXTBOX), "hello bob")
         alice.click_text(aim.id, "Send")
         await bob.wait_for(lambda: "alice: hello bob" in view(bob, im), "reply")
+        self.assertEqual(view(bob, im), ["bob: hi alice", "", "alice: hello bob"],
+                         "a blank line between messages, none before the first")
         self.assertEqual(bob.toasts, [])
         # a New User can't send, but gets messages and opens them (Send greyed)
         carol = await self.signed_on("carol")
@@ -165,7 +167,8 @@ class InstantMessageTest(PresenceBase):
         await carol.wait_for(lambda: carol.icon(SLOT_IM) == Icon.BUBBLE, "carol's bubble")
         carol.notify_click(SLOT_IM)
         cim = await carol.wait_window("IM: bob")
-        self.assertEqual(view(carol, cim), ["bob: hi carol", "* New users can't send messages."])
+        self.assertEqual(view(carol, cim),                  # (a blank line between messages)
+                         ["bob: hi carol", "", "* New users can't send messages."])
         self.assertFalse(carol.enabled(cim.id, "Send"))
         # alice goes Away: bob is told once; Offline: bob can't reach her
         alice.pick_id(M_AWAY)

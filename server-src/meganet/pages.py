@@ -254,8 +254,8 @@ class PrivateChat:
         self.sides = [ChatSide(self, user, admin.user), ChatSide(self, admin, user.user)]
         for side in self.sides:
             side.win.show(side.session)
-        self.sides[0].view.append("* %s has answered your page." % admin.user)
-        self.sides[1].view.append("* You took %s's page." % user.user)
+        self.sides[0].view.append_spaced("* %s has answered your page." % admin.user)
+        self.sides[1].view.append_spaced("* You took %s's page." % user.user)
 
     def other(self, side):
         return self.sides[1] if side is self.sides[0] else self.sides[0]
@@ -266,11 +266,11 @@ class PrivateChat:
             return
         side.entry.set_text("")
         if self.ended:
-            return side.view.append("* The chat has ended.")
+            return side.view.append_spaced("* The chat has ended.")
         line = "%s: %s" % (side.session.user, text)
         for s in self.sides:
             if s.open:
-                s.view.append(line)
+                s.view.append_spaced(line)
         return None
 
     def leave(self, side):
@@ -280,7 +280,7 @@ class PrivateChat:
         if not self.ended:
             self.ended = True
             if other.open:
-                other.view.append("* %s left the chat" % side.session.user)
+                other.view.append_spaced("* %s left the chat" % side.session.user)
         if not other.open and self in self.pages.chats:
             self.pages.chats.remove(self)
 

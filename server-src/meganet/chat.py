@@ -215,8 +215,10 @@ class Chat:
     # ---- talking ----
 
     def say(self, room, line):
+        """A line for everyone in the room, after a blank line (so each message stands apart;
+        not before the first)."""
         for w in room.windows.values():
-            w.view.append(line)
+            w.view.append_spaced(line)
 
     def refresh_people(self, room):
         for w in room.windows.values():

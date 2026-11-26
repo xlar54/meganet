@@ -68,9 +68,12 @@ class Conversation:
         self.away_noted = False
 
     def add(self, line):
-        self.lines = (self.lines + [line])[-KEEP:]
+        """A message, after a blank line (each stands apart; none before the first)."""
+        self.lines = (self.lines + ([""] if self.lines else []) + [line])[-KEEP:]
+        while self.lines and not self.lines[0]:          # (cut to KEEP: no blank at the top)
+            self.lines.pop(0)
         if self.win is not None and self.win.shown:
-            self.win.view.append(line)
+            self.win.view.append_spaced(line)
             return True
         return False
 
@@ -124,9 +127,9 @@ class IMs:
         win.send_b.enable(why is None)
         if why is not None and why != win.why:
             if win.shown:
-                win.view.append("* " + why)
+                win.view.append_spaced("* " + why)
             else:
-                win.view.lines.append("* " + why)
+                win.view.lines += ([""] if win.view.lines else []) + ["* " + why]
         win.why = why
 
     def settings_changed(self):

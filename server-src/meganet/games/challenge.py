@@ -8,11 +8,13 @@ waiting in a queue for whoever comes next, players wait in the lobby and pick an
     either leaving, tells the other. One challenge out at a time; several may come in (shown
     one after another). Cancel withdraws yours.
 
-A game may set `needs_caps` (protocol.Caps) for what its window needs from the client.
+A game may set `needs_caps` (protocol.Caps) for what its window needs from the client, and
+`ranked = True` for a Rankings... button (rankings.py: its players, best first).
 """
 
 from ..protocol import GFlag, WFlag
 from ..ui import AreaWindow, Window, Label, add_buttons, MARGIN
+from . import rankings
 
 WIN_GAME_LOBBY = 51
 WIN_CHALLENGED = 52
@@ -75,6 +77,8 @@ class ChallengeLobby:
         seat.cancel_b = a.command("Cancel Challenge", lambda b: self.withdraw(seat))
         if self.levels:
             a.command("Play Computer...", lambda b: self.ask_level(seat))
+        if getattr(self.cls, "ranked", False):
+            a.command("Rankings...", lambda b: rankings.show(seat.session, self.cls.name))
         seat.status = a.status("")
         seat.win = a.win
         self._buttons(seat)

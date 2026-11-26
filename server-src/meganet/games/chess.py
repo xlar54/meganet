@@ -17,7 +17,8 @@ The window (a dynamic id): the board with its ranks and files, two status lines,
 and the moves ("12. Nf3"), a line to type, and Offer Draw / Resign / Rematch / Lobby. The
 game ends with checkmate, stalemate, the automatic draws (insufficient material, the
 fifty-move rule, threefold repetition), a draw agreed, resigning, or a player leaving. No
-clocks yet.
+clocks yet. Games between two people are ranked once both have moved (rankings.py: wins,
+losses, draws and an Elo rating; the lobby's Rankings... shows them).
 """
 
 import asyncio
@@ -29,7 +30,7 @@ import zlib
 
 from ..protocol import Caps, GFlag, WFlag, GRID_MARK1, GRID_MARK2, clean_text
 from ..ui import Button, Grid, Label, TextBox, TextView, Window, confirm, add_buttons, MARGIN
-from . import chess_engine
+from . import chess_engine, rankings
 from .base import Game
 from .chess_art import PIECES
 from .chess_rules import Position, WHITE, BLACK, colour, name
@@ -130,6 +131,8 @@ class Chess(Game):
     min_players = 2
     max_players = 2
     challenge = True             # a lobby to pick an opponent in (challenge.py)
+    ranked = True                # games between people are ranked (rankings.py; the lobby's
+                                 # Rankings... button)
     computer_levels = tuple(chess_engine.LEVELS)    # the lobby's Play Computer... (challenge.py)
     needs_caps = Caps.GRID
 
@@ -401,7 +404,26 @@ class Chess(Game):
             self.players[0].session.log("chess: %s v %s, %s %s after %d moves" % (
                 white.player.name, black.player.name, score, text, self.pos.fullmove))
         self.pay(score)
+        self.rank(score)
         self.redraw()
+
+    def rank(self, score):
+        """The rankings (rankings.py): a game between two people, once both have moved
+        (fullmove 2: black has moved). The computer's games don't count."""
+        if self.bot is not None or self.pos.fullmove < 2:
+            return
+        white, black = self.side_view(WHITE), self.side_view(BLACK)
+        w, b = white.player.session, black.player.session
+        if w is None or b is None or w.user_id is None or b.user_id is None:
+            return
+        db = w.server.db
+        if score == "1-0":
+            rankings.record(db, self.name, w.user_id, b.user_id)
+        elif score == "0-1":
+            rankings.record(db, self.name, b.user_id, w.user_id)
+        else:
+            rankings.record(db, self.name, w.user_id, b.user_id, draw=True)
+        w.log("chess rankings: %s (white) and %s (black), %s" % (w.user, b.user, score))
 
     def pay(self, score):
         """The bank: both play (a game of at least PAID_MOVES moves); the winner wins."""

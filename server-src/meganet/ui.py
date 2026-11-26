@@ -460,6 +460,12 @@ class TextView(Gadget):
         del self.lines[:-self.KEEP_LINES]
         self._append(line)
 
+    def append_spaced(self, line):
+        """append(), after a blank line unless it's the first: chat messages stand apart."""
+        if self.lines:
+            self.append("")
+        self.append(line)
+
     def set_lines(self, lines, top=False):
         """Replace what it shows, in place: SET_TEXT "" empties it on the client, then an
         APPEND a line (the client redraws it once, at its next frame). It follows the new

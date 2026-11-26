@@ -76,6 +76,10 @@ class RoomsTest(ChatBase):
         await bob.wait_for(lambda: self.people(bob) == ["alice", "bob"], "both in the Lobby")
         await self.say(bob, "hi")
         await alice.wait_for(lambda: "bob: hi" in self.lines(alice), "line")
+        lines = self.lines(alice)                    # a blank line before each, but the first
+        self.assertNotEqual(lines[0], "")
+        self.assertEqual(lines[-2:], ["", "bob: hi"])
+        self.assertFalse(any(a == b == "" for a, b in zip(lines, lines[1:])), "one blank")
 
         # bob (New User) can't make rooms
         await self.rooms(bob)

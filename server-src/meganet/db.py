@@ -82,6 +82,16 @@ CREATE TABLE IF NOT EXISTS poker_chips (        -- credits on a poker table (gam
     chips    INTEGER NOT NULL,                  -- server stopped with them there
     since    INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS game_ratings (       -- player-vs-player results (games/rankings.py):
+    game     TEXT NOT NULL,                     -- "Chess"
+    user_id  INTEGER NOT NULL REFERENCES users(id),
+    rating   INTEGER NOT NULL,                  -- Elo, from RATING_START
+    wins     INTEGER NOT NULL DEFAULT 0,
+    losses   INTEGER NOT NULL DEFAULT 0,
+    draws    INTEGER NOT NULL DEFAULT 0,
+    last     INTEGER NOT NULL,                  -- when they last played a ranked game
+    PRIMARY KEY (game, user_id)
+);
 CREATE TABLE IF NOT EXISTS roles (
     id    INTEGER PRIMARY KEY,
     name  TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -981,6 +991,35 @@ class Database:
         with self.conn:
             self.conn.execute("UPDATE users SET show_ticker = ? WHERE id = ?",
                               (1 if on else 0, user_id))
+
+    # ---- game rankings (games/rankings.py) ----
+
+    def game_rating(self, game, user_id):
+        """(rating, wins, losses, draws) for a user in a game, or None if they've no
+        ranked games."""
+        row = self.conn.execute(
+            "SELECT rating, wins, losses, draws FROM game_ratings WHERE game = ? AND "
+            "user_id = ?", (game, user_id)).fetchone()
+        return tuple(row) if row else None
+
+    def save_game_rating(self, game, user_id, rating, won, lost, drew):
+        """Store a user's new rating and add one win, loss or draw (1 or 0 each)."""
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO game_ratings (game, user_id, rating, wins, losses, draws, last) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (game, user_id) DO UPDATE SET "
+                "rating = excluded.rating, wins = wins + excluded.wins, "
+                "losses = losses + excluded.losses, draws = draws + excluded.draws, "
+                "last = excluded.last",
+                (game, user_id, int(rating), won, lost, drew, int(time.time())))
+
+    def game_rankings(self, game):
+        """Everyone with ranked games: (name, rating, wins, losses, draws, user_id), best
+        first (rating, then wins, then fewer losses, then name)."""
+        return [tuple(r) for r in self.conn.execute(
+            "SELECT u.name, g.rating, g.wins, g.losses, g.draws, g.user_id FROM game_ratings g "
+            "JOIN users u ON u.id = g.user_id WHERE g.game = ? "
+            "ORDER BY g.rating DESC, g.wins DESC, g.losses, u.name COLLATE NOCASE", (game,))]
 
     def set_skin(self, user_id, skin):
         with self.conn:

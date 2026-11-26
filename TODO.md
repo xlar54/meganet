@@ -39,6 +39,10 @@
         desktop, a window, My Account and a menu; Classic unchanged
   - [x] A third skin, Dark (dark mode). Tried in Xemu over the bridge (`pin` scenarios with
         LOOK_ROW_Y=112): the desktop, My Account, a menu, a chat room, Private Messages
+  - [x] A blank line between messages in chat rooms, IMs and Page Admin chats (server only,
+        `TextView.append_spaced`: every client gets it once the server is deployed)
+  - [x] Chess Rankings (server only): wins, losses, draws and an Elo rating for games between
+        people; the Chess Lobby's Rankings... lists them best first
   - [ ] Skins on real hardware; check the Pinstripe screens not tried yet (lists, scroll
         bars, pressed buttons, check boxes, alerts, Paint, games)
   - [ ] Skins next: Mac-style X check boxes and round radio buttons, a pressed button drawn
